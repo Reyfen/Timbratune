@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Euphonia.Core/Euphonia.Core.csproj" />
+    <Project Path="src/Euphonia.Audio.SoundFlow/Euphonia.Audio.SoundFlow.csproj" />
+    <Project Path="src/Euphonia/Euphonia.csproj" />
+    <Project Path="src/Euphonia.Desktop/Euphonia.Desktop.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Euphonia.Core.Tests/Euphonia.Core.Tests.csproj" />
+  </Folder>
+</Solution>

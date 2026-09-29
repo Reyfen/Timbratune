@@ -1,0 +1,51 @@
+[
+  {
+    "id": 1,
+    "label": "vctk_m311",
+    "note": "",
+    "date": "2026-01-01",
+    "source_file": "vctk_m311.wav",
+    "audio": "audio/001.wav",
+    "detail": "analysis/1.json",
+    "duration_s": 10.36,
+    "pitch": {
+      "mean_hz": 103.88,
+      "median_hz": 97.64,
+      "min_hz": 75.41,
+      "max_hz": 488.52,
+      "range_hz": 413.12,
+      "sd_hz": 35.2
+    },
+    "formants": {
+      "f1_hz": 418.51,
+      "f2_hz": 1456.01,
+      "f3_hz": 2471.69
+    },
+    "voice_quality": {
+      "hnr_db": 9.37,
+      "jitter_pct": 2.61,
+      "shimmer_pct": 11.44
+    },
+    "intensity": {
+      "mean_db": 63.64,
+      "min_db": -335.92,
+      "max_db": 74.45
+    },
+    "weight": {
+      "h1a3c_db": 12.05,
+      "h1a3_db": 31.54,
+      "tilt_db_khz": -3.57
+    },
+    "register": {
+      "floor_hz": 130.0,
+      "in_register_pct": 7.4,
+      "semitones_sd": 3.41,
+      "in_register_semitones_sd": 6.63,
+      "onset_sub_pct": 87.6,
+      "mid_sub_pct": 99.0,
+      "offset_sub_pct": 93.9,
+      "phrases_landed_pct": 20,
+      "n_phrases": 5
+    }
+  }
+]

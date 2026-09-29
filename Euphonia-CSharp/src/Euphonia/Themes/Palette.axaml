@@ -1,0 +1,141 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!--
+    Theme tokens, mirroring the CSS custom properties in
+    Euphonia-TypeScript/dashboard-react/src/index.css:
+      Light = "blossom" (the default), Dark = "dusk-plum".
+    Custom-drawn controls look up the *Color* keys; XAML uses the *Brush* keys.
+    Zone colours carry fixed meaning (see Euphonia.Core/Domain/Zones.cs):
+    ZoneMasc = masculine/deeper end ONLY — never a generic "bad".
+  -->
+  <ResourceDictionary.ThemeDictionaries>
+    <ResourceDictionary x:Key="Light">
+      <Color x:Key="BgColor">#f5f0ff</Color>
+      <Color x:Key="BgGlow1Color">#ffd9ea</Color>
+      <Color x:Key="BgGlow2Color">#e4dbff</Color>
+      <Color x:Key="CardColor">#fffafd</Color>
+      <Color x:Key="Card2Color">#fff0f7</Color>
+      <Color x:Key="ControlBgColor">#ffffff</Color>
+      <Color x:Key="LineColor">#ffffff</Color>
+      <Color x:Key="LineSoftColor">#f0dcea</Color>
+      <Color x:Key="ShadowColor">#2EBA8EC4</Color>
+      <Color x:Key="ScrimColor">#8C78608A</Color>
+      <Color x:Key="InkColor">#6b5876</Color>
+      <Color x:Key="InkSoftColor">#7c6789</Color>
+      <Color x:Key="InkStrongColor">#7a5a92</Color>
+      <Color x:Key="InkHeadingColor">#8a6aa8</Color>
+      <Color x:Key="InkAccentColor">#b06a96</Color>
+      <Color x:Key="InkFaintColor">#b7a8c2</Color>
+      <Color x:Key="OnAccentColor">#3a2c42</Color>
+      <Color x:Key="OnZoneColor">#5a4566</Color>
+      <Color x:Key="AccentColor">#ffb6d5</Color>
+      <Color x:Key="Accent2Color">#c9b6ff</Color>
+      <Color x:Key="AccentEmphasisColor">#c04886</Color>
+      <Color x:Key="DangerColor">#c33a3a</Color>
+      <Color x:Key="DangerBgColor">#ffe8e8</Color>
+      <Color x:Key="DangerBorderColor">#ffcccc</Color>
+      <Color x:Key="WaveColor">#bfa9e6</Color>
+      <Color x:Key="WaveProgressColor">#ff9ec5</Color>
+      <Color x:Key="WaveCursorColor">#ff89bb</Color>
+      <Color x:Key="LiveColor">#ff8a80</Color>
+      <Color x:Key="Live2Color">#ff6f9c</Color>
+      <Color x:Key="Chart1Color">#e07ab0</Color>
+      <Color x:Key="Chart2Color">#9b7ad0</Color>
+      <Color x:Key="Chart3Color">#5fb89a</Color>
+      <Color x:Key="Chart4Color">#d99a4e</Color>
+      <Color x:Key="Chart5Color">#cf7fb0</Color>
+      <Color x:Key="Chart3BandColor">#b8ecd8</Color>
+      <Color x:Key="Chart4BandColor">#c9b6ff</Color>
+      <Color x:Key="ZoneMascColor">#bcd3f0</Color>
+      <Color x:Key="ZoneMascInkColor">#5e7fb8</Color>
+      <Color x:Key="ZoneFemColor">#ffb6d5</Color>
+      <Color x:Key="ZoneFemSoftColor">#ffd9ea</Color>
+      <Color x:Key="ZoneNeutralColor">#ffe9a8</Color>
+      <Color x:Key="ZoneGrowColor">#cdc6da</Color>
+      <Color x:Key="ZoneSoftColor">#d7d0e8</Color>
+      <Color x:Key="ZoneComfyColor">#cdeadd</Color>
+      <Color x:Key="ZoneStrongColor">#ffd9ea</Color>
+    </ResourceDictionary>
+    <ResourceDictionary x:Key="Dark">
+      <Color x:Key="BgColor">#14131f</Color>
+      <Color x:Key="BgGlow1Color">#2c1f38</Color>
+      <Color x:Key="BgGlow2Color">#221f3d</Color>
+      <Color x:Key="CardColor">#221b2e</Color>
+      <Color x:Key="Card2Color">#1b1626</Color>
+      <Color x:Key="ControlBgColor">#3d324f</Color>
+      <Color x:Key="LineColor">#12FFFFFF</Color>
+      <Color x:Key="LineSoftColor">#24FFFFFF</Color>
+      <Color x:Key="ShadowColor">#2E07050A</Color>
+      <Color x:Key="ScrimColor">#B30B070D</Color>
+      <Color x:Key="InkColor">#ece3f5</Color>
+      <Color x:Key="InkSoftColor">#a294b4</Color>
+      <Color x:Key="InkStrongColor">#d5bded</Color>
+      <Color x:Key="InkHeadingColor">#dfa9ec</Color>
+      <Color x:Key="InkAccentColor">#eb91d5</Color>
+      <Color x:Key="InkFaintColor">#bfb4cf</Color>
+      <Color x:Key="OnAccentColor">#140c1d</Color>
+      <Color x:Key="OnZoneColor">#37163b</Color>
+      <Color x:Key="AccentColor">#f093c2</Color>
+      <Color x:Key="Accent2Color">#b6a2f2</Color>
+      <Color x:Key="AccentEmphasisColor">#f296d1</Color>
+      <Color x:Key="DangerColor">#ea9f90</Color>
+      <Color x:Key="DangerBgColor">#2f1c18</Color>
+      <Color x:Key="DangerBorderColor">#5f332b</Color>
+      <Color x:Key="WaveColor">#7d6aa8</Color>
+      <Color x:Key="WaveProgressColor">#f093c2</Color>
+      <Color x:Key="WaveCursorColor">#ffa8d0</Color>
+      <Color x:Key="LiveColor">#ed7f6e</Color>
+      <Color x:Key="Live2Color">#e0433e</Color>
+      <Color x:Key="Chart1Color">#e48bba</Color>
+      <Color x:Key="Chart2Color">#b095da</Color>
+      <Color x:Key="Chart3Color">#9cd3c1</Color>
+      <Color x:Key="Chart4Color">#e6bc89</Color>
+      <Color x:Key="Chart5Color">#d897bf</Color>
+      <Color x:Key="Chart3BandColor">#92e2c3</Color>
+      <Color x:Key="Chart4BandColor">#b6a2f2</Color>
+      <Color x:Key="ZoneMascColor">#a8c8ee</Color>
+      <Color x:Key="ZoneMascInkColor">#5d9fec</Color>
+      <Color x:Key="ZoneFemColor">#f59ec6</Color>
+      <Color x:Key="ZoneFemSoftColor">#eeb0cd</Color>
+      <Color x:Key="ZoneNeutralColor">#e8d089</Color>
+      <Color x:Key="ZoneGrowColor">#b3a9c6</Color>
+      <Color x:Key="ZoneSoftColor">#b9b0d2</Color>
+      <Color x:Key="ZoneComfyColor">#a6d6c0</Color>
+      <Color x:Key="ZoneStrongColor">#eeb0cd</Color>
+    </ResourceDictionary>
+  </ResourceDictionary.ThemeDictionaries>
+
+  <SolidColorBrush x:Key="BgBrush" Color="{DynamicResource BgColor}" />
+  <SolidColorBrush x:Key="CardBrush" Color="{DynamicResource CardColor}" />
+  <SolidColorBrush x:Key="Card2Brush" Color="{DynamicResource Card2Color}" />
+  <SolidColorBrush x:Key="ControlBgBrush" Color="{DynamicResource ControlBgColor}" />
+  <SolidColorBrush x:Key="LineBrush" Color="{DynamicResource LineColor}" />
+  <SolidColorBrush x:Key="LineSoftBrush" Color="{DynamicResource LineSoftColor}" />
+  <SolidColorBrush x:Key="ScrimBrush" Color="{DynamicResource ScrimColor}" />
+  <SolidColorBrush x:Key="InkBrush" Color="{DynamicResource InkColor}" />
+  <SolidColorBrush x:Key="InkSoftBrush" Color="{DynamicResource InkSoftColor}" />
+  <SolidColorBrush x:Key="InkStrongBrush" Color="{DynamicResource InkStrongColor}" />
+  <SolidColorBrush x:Key="InkHeadingBrush" Color="{DynamicResource InkHeadingColor}" />
+  <SolidColorBrush x:Key="InkAccentBrush" Color="{DynamicResource InkAccentColor}" />
+  <SolidColorBrush x:Key="InkFaintBrush" Color="{DynamicResource InkFaintColor}" />
+  <SolidColorBrush x:Key="OnAccentBrush" Color="{DynamicResource OnAccentColor}" />
+  <SolidColorBrush x:Key="OnZoneBrush" Color="{DynamicResource OnZoneColor}" />
+  <SolidColorBrush x:Key="AccentBrush" Color="{DynamicResource AccentColor}" />
+  <SolidColorBrush x:Key="Accent2Brush" Color="{DynamicResource Accent2Color}" />
+  <SolidColorBrush x:Key="AccentEmphasisBrush" Color="{DynamicResource AccentEmphasisColor}" />
+  <SolidColorBrush x:Key="DangerBrush" Color="{DynamicResource DangerColor}" />
+  <SolidColorBrush x:Key="DangerBgBrush" Color="{DynamicResource DangerBgColor}" />
+  <SolidColorBrush x:Key="DangerBorderBrush" Color="{DynamicResource DangerBorderColor}" />
+  <SolidColorBrush x:Key="LiveBrush" Color="{DynamicResource Live2Color}" />
+  <SolidColorBrush x:Key="ZoneMascInkBrush" Color="{DynamicResource ZoneMascInkColor}" />
+  <SolidColorBrush x:Key="ZoneFemBrush" Color="{DynamicResource ZoneFemColor}" />
+  <SolidColorBrush x:Key="ZoneFemSoftBrush" Color="{DynamicResource ZoneFemSoftColor}" />
+
+  <LinearGradientBrush x:Key="PageBackgroundBrush" StartPoint="0%,0%" EndPoint="100%,100%">
+    <GradientStop Offset="0" Color="{DynamicResource BgGlow1Color}" />
+    <GradientStop Offset="0.35" Color="{DynamicResource BgColor}" />
+    <GradientStop Offset="1" Color="{DynamicResource BgGlow2Color}" />
+  </LinearGradientBrush>
+
+  <CornerRadius x:Key="CardRadius">22</CornerRadius>
+</ResourceDictionary>

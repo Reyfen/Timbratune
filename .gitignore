@@ -1,0 +1,10 @@
+# Praat's C++ source tree (GPLv3, ~365 MB) — reference only, not part of this repo.
+# The C# app runs the Praat binary fetched by Euphonia-CSharp/scripts/fetch-praat.ps1.
+/Praat/
+
+# stray empty lockfile from running npm at the root
+/package-lock.json
+
+# OS / editor noise
+Thumbs.db
+.DS_Store

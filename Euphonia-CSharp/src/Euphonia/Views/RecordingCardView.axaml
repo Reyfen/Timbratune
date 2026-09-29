@@ -1,0 +1,56 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Euphonia.ViewModels"
+             xmlns:c="using:Euphonia.Controls"
+             x:Class="Euphonia.Views.RecordingCardView"
+             x:DataType="vm:RecordingItemViewModel">
+  <!-- RecordingCard.tsx + WaveformPlayer.tsx. Clicking the card focuses the take above. -->
+  <Border Classes="rec" Classes.active="{Binding IsActive}" ToolTip.Tip="click to view this take above"
+          PointerReleased="OnCardClicked">
+    <StackPanel Spacing="10">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <Border Classes="num" VerticalAlignment="Center">
+          <TextBlock Text="{Binding Id}" FontWeight="Bold" Foreground="{DynamicResource OnAccentBrush}"
+                     HorizontalAlignment="Center" VerticalAlignment="Center" />
+        </Border>
+        <TextBlock Grid.Column="1" Margin="10,0" VerticalAlignment="Center" FontWeight="SemiBold"
+                   Text="{Binding Label}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
+          <TextBlock Classes="cap" VerticalAlignment="Center" Text="{Binding DateLine}" />
+          <Button Classes="ghost" Content="🗑️" ToolTip.Tip="delete this take"
+                  IsVisible="{Binding !IsConfirmingDelete}" Command="{Binding AskDeleteCommand}" />
+        </StackPanel>
+      </Grid>
+
+      <Border Classes="inset" IsVisible="{Binding IsConfirmingDelete}" Background="{DynamicResource DangerBgBrush}">
+        <StackPanel Spacing="8">
+          <TextBlock Classes="sub" Foreground="{DynamicResource DangerBrush}" Text="{Binding ConfirmText}" />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Classes="danger" FontWeight="Bold" Content="yes, delete" Command="{Binding ConfirmDeleteCommand}" />
+            <Button Classes="ghost" Content="cancel" Command="{Binding CancelDeleteCommand}" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <WrapPanel>
+        <Border Classes="chip"><StackPanel><TextBlock FontWeight="Bold" Text="{Binding PitchChip}" /><TextBlock Classes="cap" FontSize="10.5" Text="pitch Hz" /></StackPanel></Border>
+        <Border Classes="chip"><StackPanel><TextBlock FontWeight="Bold" Text="{Binding RangeChip}" /><TextBlock Classes="cap" FontSize="10.5" Text="range Hz" /></StackPanel></Border>
+        <Border Classes="chip"><StackPanel><TextBlock FontWeight="Bold" Text="{Binding F2Chip}" /><TextBlock Classes="cap" FontSize="10.5" Text="F2 Hz" /></StackPanel></Border>
+        <Border Classes="chip"><StackPanel><TextBlock FontWeight="Bold" Text="{Binding LoudChip}" /><TextBlock Classes="cap" FontSize="10.5" Text="loud dB" /></StackPanel></Border>
+        <Border Classes="chip"><StackPanel><TextBlock FontWeight="Bold" Text="{Binding VariabilityChip}" /><TextBlock Classes="cap" FontSize="10.5" Text="variab Hz" /></StackPanel></Border>
+        <Border Classes="chip"><StackPanel><TextBlock FontWeight="Bold" Text="{Binding HnrChip}" /><TextBlock Classes="cap" FontSize="10.5" Text="HNR dB" /></StackPanel></Border>
+      </WrapPanel>
+
+      <TextBlock Classes="sub" Text="{Binding Note}" IsVisible="{Binding HasNote}" />
+
+      <Grid ColumnDefinitions="Auto,*,Auto,Auto" IsVisible="{Binding HasAudio}">
+        <Button Classes="round" Content="{Binding PlayGlyph}" Command="{Binding PlayPauseCommand}" ToolTip.Tip="play / pause" />
+        <c:WaveformView Grid.Column="1" Margin="10,0" VerticalAlignment="Center" Peaks="{Binding Peaks}"
+                        Progress="{Binding Progress}" SeekCommand="{Binding SeekCommand}" />
+        <TextBlock Grid.Column="2" Classes="cap" VerticalAlignment="Center" FontSize="11" Text="{Binding TimeText}" />
+        <Button Grid.Column="3" Classes="ghost" Content="💾" ToolTip.Tip="save a copy of this take's audio"
+                Command="{Binding SaveCopyCommand}" />
+      </Grid>
+    </StackPanel>
+  </Border>
+</UserControl>

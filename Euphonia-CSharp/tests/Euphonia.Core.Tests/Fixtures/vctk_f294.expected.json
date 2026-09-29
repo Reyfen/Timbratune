@@ -1,0 +1,51 @@
+[
+  {
+    "id": 1,
+    "label": "vctk_f294",
+    "note": "",
+    "date": "2026-01-01",
+    "source_file": "vctk_f294.wav",
+    "audio": "audio/001.wav",
+    "detail": "analysis/1.json",
+    "duration_s": 9.81,
+    "pitch": {
+      "mean_hz": 162.82,
+      "median_hz": 178.85,
+      "min_hz": 68.44,
+      "max_hz": 255.87,
+      "range_hz": 187.44,
+      "sd_hz": 57.11
+    },
+    "formants": {
+      "f1_hz": 509.03,
+      "f2_hz": 1391.1,
+      "f3_hz": 2623.35
+    },
+    "voice_quality": {
+      "hnr_db": 12.58,
+      "jitter_pct": 2.4,
+      "shimmer_pct": 9.91
+    },
+    "intensity": {
+      "mean_db": 67.51,
+      "min_db": -339.85,
+      "max_db": 78.46
+    },
+    "weight": {
+      "h1a3c_db": 5.5,
+      "h1a3_db": 17.15,
+      "tilt_db_khz": -7.35
+    },
+    "register": {
+      "floor_hz": 130.0,
+      "in_register_pct": 66.9,
+      "semitones_sd": 6.8,
+      "in_register_semitones_sd": 2.63,
+      "onset_sub_pct": 26.0,
+      "mid_sub_pct": 21.7,
+      "offset_sub_pct": 49.1,
+      "phrases_landed_pct": 40,
+      "n_phrases": 5
+    }
+  }
+]

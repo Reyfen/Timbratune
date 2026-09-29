@@ -1,0 +1,289 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Euphonia.ViewModels"
+             xmlns:c="using:Euphonia.Controls"
+             xmlns:v="using:Euphonia.Views"
+             x:Class="Euphonia.Views.MainView"
+             x:DataType="vm:MainViewModel"
+             Background="{DynamicResource PageBackgroundBrush}">
+  <!-- Port of dashboard-react/src/App.tsx: one scrolling page, top to bottom. -->
+  <UserControl.KeyBindings>
+    <KeyBinding Gesture="Escape" Command="{Binding CloseModalCommand}" />
+  </UserControl.KeyBindings>
+
+  <Grid>
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+      <StackPanel MaxWidth="1140" Margin="24,20,24,40" Spacing="28">
+
+        <!-- ========== hero ========== -->
+        <Grid ColumnDefinitions="*,Auto">
+          <StackPanel Spacing="4">
+            <TextBlock Classes="h1" Text="🎀 Euphonia" />
+            <TextBlock Classes="cap" FontSize="14" Text="finding the sound that feels like you 💗✨" />
+          </StackPanel>
+          <Button Grid.Column="1" Classes="ghost" VerticalAlignment="Top" FontSize="18"
+                  Content="🌓" ToolTip.Tip="switch light / dark" Command="{Binding ToggleThemeCommand}" />
+        </Grid>
+
+        <Border Classes="card" Padding="16,10" IsVisible="{Binding HasActive}" HorizontalAlignment="Left">
+          <TextBlock>
+            <Run Text="{Binding Active.Banner, FallbackValue=''}" FontWeight="SemiBold" />
+            <Run Text="{Binding Active.Date, FallbackValue=''}" Foreground="{DynamicResource InkSoftBrush}" />
+          </TextBlock>
+        </Border>
+
+        <!-- ========== record panel (RecordButton.tsx) ========== -->
+        <Border Classes="card" DataContext="{Binding Record}" x:DataType="vm:RecordViewModel">
+          <StackPanel Spacing="8">
+            <WrapPanel IsVisible="{Binding IsIdle}">
+              <TextBox Classes="label-input" Margin="0,0,10,6" Text="{Binding Label}"
+                       Watermark="what are you trying this take? ✨" />
+              <Button Classes="primary" Margin="0,0,0,6" Content="🎙️ record" Command="{Binding StartCommand}" />
+            </WrapPanel>
+            <StackPanel Orientation="Horizontal" Spacing="12" IsVisible="{Binding IsRecording}">
+              <Button Classes="live" Content="⏹️ stop &amp; analyze" Command="{Binding StopCommand}" />
+              <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Foreground="{DynamicResource LiveBrush}">
+                <Run Text="● recording" />
+                <Run Text="{Binding ElapsedText}" />
+              </TextBlock>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="12" IsVisible="{Binding IsAnalyzing}">
+              <ProgressBar IsIndeterminate="True" Width="140" VerticalAlignment="Center" />
+              <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Text="analyzing… 💗" />
+            </StackPanel>
+            <StackPanel Spacing="6" IsVisible="{Binding IsError}">
+              <TextBlock Foreground="{DynamicResource DangerBrush}" FontWeight="SemiBold" Text="{Binding ErrorDetail}" />
+              <Button Classes="danger" Content="try again" Command="{Binding RetryCommand}" />
+            </StackPanel>
+            <TextBlock Classes="sub" Foreground="{DynamicResource DangerBrush}" Text="{Binding EngineWarning}"
+                       IsVisible="{Binding EngineWarning, Converter={x:Static ObjectConverters.IsNotNull}}" />
+          </StackPanel>
+        </Border>
+
+        <TextBlock Foreground="{DynamicResource DangerBrush}" Text="{Binding LoadError}"
+                   IsVisible="{Binding LoadError, Converter={x:Static ObjectConverters.IsNotNull}}" />
+
+        <!-- ========== take switcher ========== -->
+        <WrapPanel IsVisible="{Binding ShowSwitcher}">
+          <TextBlock Classes="cap" VerticalAlignment="Center" Margin="0,0,8,6" Text="viewing:" />
+          <ItemsControl ItemsSource="{Binding Items}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:RecordingItemViewModel">
+                <!-- TextBlock content: a plain string would turn "_" into an access key -->
+                <Button Classes="pick" Classes.active="{Binding IsActive}"
+                        Command="{Binding $parent[v:MainView].((vm:MainViewModel)DataContext).SelectCommand}"
+                        CommandParameter="{Binding}">
+                  <TextBlock Text="{Binding PickerText}" Foreground="{Binding $parent[Button].Foreground}" />
+                </Button>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </WrapPanel>
+
+        <!-- ========== the take in focus ========== -->
+        <Panel IsVisible="{Binding HasActive}">
+        <StackPanel Spacing="28" DataContext="{Binding Active}" x:DataType="vm:TakeViewModel">
+
+          <!-- 🎀 this take -->
+          <StackPanel Spacing="8">
+            <TextBlock Classes="section" Text="{Binding Title, StringFormat='🎀 {0}'}" />
+            <TextBlock Classes="cap" Text="🔍 tap any card with a colored bar to see how you compare to real voices" />
+            <ItemsControl ItemsSource="{Binding StatCards}" Margin="0,6,0,0">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><WrapPanel ItemWidth="276" /></ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:StatCardViewModel">
+                  <Button Classes="card" Margin="0,0,12,12" MinHeight="176" Command="{Binding Open}"
+                          IsEnabled="{Binding IsClickable}" ToolTip.Tip="{Binding ToolTip}">
+                    <StackPanel Spacing="6">
+                      <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Classes="label" Text="{Binding Title}" />
+                        <c:ZonePill Grid.Column="1" Zone="{Binding Zone}" />
+                      </Grid>
+                      <StackPanel Orientation="Horizontal">
+                        <TextBlock Classes="value" Text="{Binding ValueText}" />
+                        <TextBlock Classes="unit" Text="{Binding Unit}" />
+                      </StackPanel>
+                      <c:ZoneBar IsVisible="{Binding HasZones}" Zones="{Binding Zones}" Value="{Binding Value}"
+                                 Lo="{Binding Lo}" Hi="{Binding Hi}" />
+                      <TextBlock Classes="sub" c:Markup.Text="{Binding Sub}" />
+                      <TextBlock Classes="cap" FontSize="11" Foreground="{DynamicResource InkAccentBrush}"
+                                 IsVisible="{Binding IsClickable}" Text="tap to compare ↗" />
+                    </StackPanel>
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+
+          <!-- ✨ resonance (ResonanceCard.tsx) -->
+          <StackPanel Spacing="8">
+            <WrapPanel>
+              <TextBlock Classes="section" Text="✨ Resonance" Margin="0,0,8,0" />
+              <TextBlock Classes="section-sub" Text="· the &quot;size&quot; your voice sounds, separate from pitch" />
+            </WrapPanel>
+            <Border Classes="card">
+              <StackPanel Spacing="12">
+                <TextBlock Classes="body" c:Markup.Text="Formants are your voice's **brightness / vocal-tract size**. Think of pitch as _which note_ you sing, and resonance as _the size of the room_ it echoes in. Higher = a smaller, brighter, lighter space (reads feminine). Measured as the **median over your vowel nuclei** (the loud, steady cores of syllables) — not every frame — so consonants and glides don't muddy it." />
+                <v:FormantGaugeView DataContext="{Binding F2}" />
+                <v:FormantGaugeView DataContext="{Binding F3}" />
+                <Border Classes="tip">
+                  <TextBlock Classes="body" c:Markup.Text="{Binding ResonanceSummary}" />
+                </Border>
+                <TextBlock Classes="sub" c:Markup.Text="{Binding F1Line}" />
+              </StackPanel>
+            </Border>
+          </StackPanel>
+
+          <!-- 🎚️ register & phrasing (RegisterSection.tsx) -->
+          <StackPanel Spacing="8">
+            <WrapPanel>
+              <TextBlock Classes="section" Text="🎚️ Register &amp; phrasing" Margin="0,0,8,0" />
+              <TextBlock Classes="section-sub" Text="· where your voice holds vs. falls out of register" />
+            </WrapPanel>
+            <Border Classes="card" IsVisible="{Binding NoRegister}">
+              <TextBlock Classes="cap" TextAlignment="Center"
+                         Text="no register data for this take yet ✨&#10;re-run the analyzer to generate it" />
+            </Border>
+            <StackPanel Spacing="14" IsVisible="{Binding HasRegister}">
+              <TextBlock Classes="body" c:Markup.Text="{Binding RegisterIntro}" />
+              <Border Classes="card" Padding="10,12">
+                <c:ContourChart Detail="{Binding Detail}" />
+              </Border>
+              <UniformGrid Columns="3">
+                <Border Classes="card" Margin="0,0,12,0">
+                  <StackPanel Spacing="6">
+                    <TextBlock Classes="label" Text="In-register time" />
+                    <StackPanel Orientation="Horizontal">
+                      <TextBlock Classes="value" Text="{Binding InRegisterText}" />
+                      <TextBlock Classes="unit" Text="%" />
+                    </StackPanel>
+                    <TextBlock Classes="sub" Text="share of voiced time held above the floor · higher = steadier register" />
+                  </StackPanel>
+                </Border>
+                <Border Classes="card" Margin="0,0,12,0">
+                  <StackPanel Spacing="6">
+                    <TextBlock Classes="label" Text="Phrase endings landed" />
+                    <StackPanel Orientation="Horizontal">
+                      <TextBlock Classes="value" Text="{Binding LandedText}" />
+                      <TextBlock Classes="unit" Text="%" />
+                    </StackPanel>
+                    <TextBlock Classes="sub" c:Markup.Text="{Binding LandedSub}" />
+                  </StackPanel>
+                </Border>
+                <Border Classes="card">
+                  <StackPanel Spacing="6">
+                    <TextBlock Classes="label" Text="True melody" />
+                    <StackPanel Orientation="Horizontal">
+                      <TextBlock Classes="value" Text="{Binding MelodyText}" />
+                      <TextBlock Classes="unit" Text="st" />
+                    </StackPanel>
+                    <TextBlock Classes="sub" Text="{Binding MelodySub}" />
+                  </StackPanel>
+                </Border>
+              </UniformGrid>
+              <Border Classes="card">
+                <StackPanel Spacing="10">
+                  <TextBlock Classes="label" Text="Where the register drops happen" />
+                  <TextBlock Classes="sub" c:Markup.Text="% of voiced time spent **below the floor**, by position within a phrase. Taller bar = more crashing there." />
+                  <ItemsControl ItemsSource="{Binding Positions}" HorizontalAlignment="Center">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="36" /></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:PositionBar">
+                        <StackPanel Spacing="4" Width="96">
+                          <Border Height="110" Width="44" CornerRadius="12" Background="{DynamicResource Card2Brush}"
+                                  HorizontalAlignment="Center" ClipToBounds="True">
+                            <Border VerticalAlignment="Bottom" Height="{Binding BarHeight}" CornerRadius="12">
+                              <Border.Background>
+                                <SolidColorBrush Color="{DynamicResource ZoneMascColor}" />
+                              </Border.Background>
+                            </Border>
+                          </Border>
+                          <TextBlock HorizontalAlignment="Center" FontWeight="Bold" Text="{Binding ValueText}" />
+                          <TextBlock Classes="cap" HorizontalAlignment="Center" TextAlignment="Center" Text="{Binding Label}" />
+                        </StackPanel>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                  <Border Classes="tip">
+                    <TextBlock Classes="body" c:Markup.Text="{Binding RegisterTip}" />
+                  </Border>
+                </StackPanel>
+              </Border>
+            </StackPanel>
+          </StackPanel>
+
+          <!-- 📈 trends within this take: one point per detected phrase -->
+          <StackPanel Spacing="8">
+            <WrapPanel>
+              <TextBlock Classes="section" Text="📈 Trends within this take" Margin="0,0,8,0" />
+              <TextBlock Classes="section-sub" Text="· phrase by phrase, in the order you spoke them" />
+            </WrapPanel>
+            <TextBlock Classes="cap" Text="{Binding PhraseTrendsHint}" />
+            <ItemsControl ItemsSource="{Binding PhraseTrends}" IsVisible="{Binding ShowPhraseTrends}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><WrapPanel ItemWidth="368" /></ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:TrendViewModel">
+                  <Border Classes="card" Margin="0,0,12,12">
+                    <StackPanel Spacing="4">
+                      <TextBlock Classes="label" Text="{Binding Title}" />
+                      <TextBlock Classes="cap" Text="{Binding Caption}" />
+                      <c:LineChart Margin="0,6,0,0" Points="{Binding Points}" LineColorKey="{Binding LineColorKey}"
+                                   BandFrom="{Binding BandFrom}" BandTo="{Binding BandTo}"
+                                   BandColorKey="{Binding BandColorKey}" Bands="{Binding Bands}" />
+                      <TextBlock Classes="cap" FontSize="10.5" HorizontalAlignment="Center" Text="phrase →" />
+                    </StackPanel>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </StackPanel>
+        </Panel>
+
+        <!-- ========== 📖 all recordings ========== -->
+        <StackPanel Spacing="8">
+          <TextBlock Classes="section" Text="📖 All recordings" />
+          <Border Classes="card" IsVisible="{Binding NoRecordings}">
+            <TextBlock Classes="cap" TextAlignment="Center"
+                       Text="no recordings yet 💗&#10;record your first take above!" />
+          </Border>
+          <ItemsControl ItemsSource="{Binding Items}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate><WrapPanel ItemWidth="372" /></ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:RecordingItemViewModel">
+                <v:RecordingCardView Margin="0,0,12,12" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+
+        <!-- ========== 💡 cheat sheet ========== -->
+        <StackPanel Spacing="8">
+          <TextBlock Classes="section" Text="💡 What do these mean?" />
+          <v:CheatSheetView />
+        </StackPanel>
+
+        <TextBlock Classes="cap" HorizontalAlignment="Center" TextAlignment="Center"
+                   Text="made with 💗 · numbers are a compass, not a judge · your ears matter most" />
+        <TextBlock Classes="cap" FontSize="11" HorizontalAlignment="Center" TextAlignment="Center"
+                   Foreground="{DynamicResource InkFaintBrush}" Text="{Binding DataFolder, StringFormat='your takes live in {0}'}" />
+      </StackPanel>
+    </ScrollViewer>
+
+    <!-- ========== metric reference modal ========== -->
+    <Panel IsVisible="{Binding IsModalOpen}">
+      <v:MetricModalView DataContext="{Binding Modal}" />
+    </Panel>
+  </Grid>
+</UserControl>

@@ -1,0 +1,13 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Euphonia.ViewModels"
+        xmlns:v="using:Euphonia.Views"
+        x:Class="Euphonia.Views.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Title="Euphonia"
+        Icon="avares://Euphonia/Assets/icon.ico"
+        Width="1200" Height="900" MinWidth="420" MinHeight="480"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource BgBrush}">
+  <v:MainView />
+</Window>

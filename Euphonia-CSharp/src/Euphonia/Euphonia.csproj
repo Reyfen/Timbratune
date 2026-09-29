@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Shared Avalonia UI (views, view models, custom-drawn charts). Platform
+       heads (Euphonia.Desktop today; Android/iOS later) reference this. -->
+  <PropertyGroup>
+    <RootNamespace>Euphonia</RootNamespace>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia" />
+    <PackageReference Include="Avalonia.Themes.Fluent" />
+    <PackageReference Include="Avalonia.Fonts.Inter" />
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Euphonia.Core\Euphonia.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\icon.ico" />
+    <!-- Reference voices (VCTK Corpus, CC BY 4.0 — see Assets/reference/ATTRIBUTION.md).
+         Copied next to the app so the audio player can open them as files. -->
+    <Content Include="Assets\reference\**" Link="reference\%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

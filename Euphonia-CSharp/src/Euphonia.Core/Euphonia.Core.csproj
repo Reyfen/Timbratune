@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- UI-free, platform-free domain + analysis + storage. Everything here must
+       stay portable to macOS / Linux / Android / iOS. -->
+  <PropertyGroup>
+    <RootNamespace>Euphonia.Core</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Written to a temp dir at analysis time, so no install-path assumptions. -->
+    <EmbeddedResource Include="Analysis\analyze.praat" LogicalName="Euphonia.Core.Analysis.analyze.praat" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Euphonia.Core.Tests" />
+  </ItemGroup>
+</Project>

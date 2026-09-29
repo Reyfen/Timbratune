@@ -1,0 +1,85 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Euphonia.Controls"
+             x:Class="Euphonia.Views.CheatSheetView">
+  <!-- CheatSheet.tsx, verbatim.
+       TODO(port): the F2 (1330/1500) and weight (<9) guide numbers below
+       disagree with the real zone tables (F2 1340/1420, weight <10) — kept as
+       in the React app; fix both together. -->
+  <UserControl.Styles>
+    <Style Selector="Border.gloss">
+      <Setter Property="Background" Value="{DynamicResource Card2Brush}" />
+      <Setter Property="CornerRadius" Value="16" />
+      <Setter Property="Padding" Value="14,12" />
+      <Setter Property="Margin" Value="0,0,12,12" />
+    </Style>
+    <Style Selector="TextBlock.h4">
+      <Setter Property="FontSize" Value="15" />
+      <Setter Property="FontWeight" Value="Bold" />
+      <Setter Property="Foreground" Value="{DynamicResource InkHeadingBrush}" />
+      <Setter Property="Margin" Value="0,0,0,4" />
+    </Style>
+    <Style Selector="TextBlock.guide">
+      <Setter Property="FontSize" Value="12.5" />
+      <Setter Property="Foreground" Value="{DynamicResource InkStrongBrush}" />
+      <Setter Property="Margin" Value="0,6,0,4" />
+    </Style>
+  </UserControl.Styles>
+
+  <Expander Header="tap to open your gentle cheat sheet 💗" Padding="14">
+    <StackPanel Spacing="4">
+      <WrapPanel ItemWidth="350">
+        <Border Classes="gloss"><StackPanel>
+          <TextBlock Classes="h4" Text="🎵 Pitch (avg F0)" />
+          <TextBlock Classes="body" Text="The average highness of your voice — the single biggest cue people hear." />
+          <TextBlock Classes="guide" c:Markup.Text="masc &lt;145 · neutral 145–165 · **feminine 165 Hz+**" />
+          <TextBlock Classes="sub" Text="💗 To raise it: think &quot;light &amp; forward,&quot; let your voice float up a touch. Don't force it from the throat." />
+        </StackPanel></Border>
+
+        <Border Classes="gloss"><StackPanel>
+          <TextBlock Classes="h4" Text="🌊 Pitch range &amp; variability" />
+          <TextBlock Classes="body" Text="How far your pitch travels (range) and how much it dances around (variability/SD). Flat = monotone; lively = expressive." />
+          <TextBlock Classes="guide" c:Markup.Text="variability: flat &lt;20 · **natural 20–40** · expressive 40+ Hz" />
+          <TextBlock Classes="sub" Text="💗 Feminine speech tends to be more melodic. Read with feeling — let questions rise, add gentle ups &amp; downs." />
+        </StackPanel></Border>
+
+        <Border Classes="gloss"><StackPanel>
+          <TextBlock Classes="h4" Text="✨ Resonance (F2 &amp; formants)" />
+          <TextBlock Classes="body" c:Markup.Text="Formants are the brightness of your voice — they signal vocal-tract _size_. This is what makes a voice read &quot;small &amp; light&quot; vs &quot;big,&quot; independent of pitch. Now measured as the **median over your vowel nuclei** (loud, steady syllable cores), not every frame — so it separates voices more cleanly." />
+          <TextBlock Classes="guide" c:Markup.Text="F2: deeper &lt;1330 · mid 1330–1500 · **bright 1500 Hz+** (real women avg ~1434, men ~1281; still varies by vowel)" />
+          <TextBlock Classes="sub" Text="💗 To brighten: smile slightly, lift the voice toward the front of your mouth / &quot;mask,&quot; shrink the throat space." />
+        </StackPanel></Border>
+
+        <Border Classes="gloss"><StackPanel>
+          <TextBlock Classes="h4" Text="📣 Loudness (intensity)" />
+          <TextBlock Classes="body" Text="How present and projected your voice is. Your current focus! Soft voices can read timid; a confident volume carries." />
+          <TextBlock Classes="guide" c:Markup.Text="soft 45–55 · comfy 55–65 · **strong 65 dB+**" />
+          <TextBlock Classes="sub" Text="💗 Support from the breath/belly, not the throat — push more air, not more strain. (Note: depends on mic distance too.)" />
+        </StackPanel></Border>
+
+        <Border Classes="gloss"><StackPanel>
+          <TextBlock Classes="h4" Text="🫧 Clarity (HNR)" />
+          <TextBlock Classes="body" Text="Harmonics-to-noise ratio — how clear vs. breathy/noisy your voice is. Higher = clearer." />
+          <TextBlock Classes="guide" c:Markup.Text="breathy &lt;10 · clear-ish 10–18 · **clear 18 dB+**" />
+          <TextBlock Classes="sub" c:Markup.Text="💗 A _little_ breathiness can read feminine, but too much loses clarity &amp; tires you out. Aim for easy, clear tone." />
+        </StackPanel></Border>
+
+        <Border Classes="gloss"><StackPanel>
+          <TextBlock Classes="h4" Text="🎯 Steadiness (jitter &amp; shimmer)" />
+          <TextBlock Classes="body" Text="Tiny wobbles in pitch (jitter) and loudness (shimmer) cycle-to-cycle. Lower = steadier, more controlled." />
+          <TextBlock Classes="guide" c:Markup.Text="jitter: **steady &lt;1%** · okay 1–2% · rough 2%+  |  shimmer: steady &lt;3.8%" />
+          <TextBlock Classes="sub" Text="💗 Steadiness improves with warm-ups &amp; not straining. If these spike, your voice is probably working too hard." />
+        </StackPanel></Border>
+
+        <Border Classes="gloss"><StackPanel>
+          <TextBlock Classes="h4" Text="🪶 Weight (source spectral tilt, corrected H1*–A3*)" />
+          <TextBlock Classes="body" c:Markup.Text="The _thickness_ of the voice itself — how heavy &amp; pressed vs. light &amp; airy it sounds. Measured as **corrected H1*–A3*** (the Iseli–Alwan source-tilt measure): on voiced frames only, the harmonic near your pitch (H1) minus the harmonic near F3 (A3), each **formant-corrected** so it isolates the **source** (your vocal folds, how they vibrate) from the **filter** (the shape of your throat &amp; mouth). A steeper roll-off — a _smaller_ H1*–A3* — reads lighter &amp; more feminine; a flatter, larger value reads heavier. Gain-independent, so it's truly _comparable take-to-take_ (unlike raw loudness dB)." />
+          <TextBlock Classes="guide" c:Markup.Text="**light &lt;9** · overlap 9–12.5 · heavy 12.5 dB+ (smaller = lighter)" />
+          <TextBlock Classes="sub" Text="💗 To lighten: let the folds come together gently — easy, breath-flowy tone, never pressed or squeezed. Lighter is the reliable direction; there's no magic number." />
+        </StackPanel></Border>
+      </WrapPanel>
+
+      <TextBlock Classes="sub" c:Markup.Text="💗 Honest note: jitter, shimmer &amp; HNR norms come from sustained vowels, so on a full passage like the Rainbow they'll look &quot;worse&quot; than the textbook numbers — that's normal. Use them to spot **your own trend** over time, not as pass/fail. And remember: every metric is a hint, not a verdict. How your voice _feels_ and how listeners _read_ it are the real goals. 💗" />
+    </StackPanel>
+  </Expander>
+</UserControl>

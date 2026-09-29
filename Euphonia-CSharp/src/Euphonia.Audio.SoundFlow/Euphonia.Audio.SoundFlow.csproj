@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- SoundFlow (miniaudio) implementation of Euphonia.Core's audio interfaces.
+       Cross-platform: Windows / macOS / Linux / Android / iOS. -->
+  <PropertyGroup>
+    <RootNamespace>Euphonia.Audio.SoundFlow</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="SoundFlow" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Euphonia.Core\Euphonia.Core.csproj" />
+  </ItemGroup>
+</Project>

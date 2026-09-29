@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Desktop head (Windows today; macOS/Linux use the same code — only the
+       Praat binary in tools/praat differs per OS). -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>Euphonia.Desktop</RootNamespace>
+    <ApplicationIcon>..\Euphonia\Assets\icon.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia.Desktop" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Euphonia\Euphonia.csproj" />
+    <ProjectReference Include="..\Euphonia.Audio.SoundFlow\Euphonia.Audio.SoundFlow.csproj" />
+  </ItemGroup>
+  <!-- Bundle Praat (fetched by scripts/fetch-praat.ps1 into tools/praat, git-ignored)
+       as <app>/praat/, where PraatLocator looks first. Missing = the app still
+       runs and says analysis is unavailable. -->
+  <ItemGroup>
+    <None Include="..\..\tools\praat\**" LinkBase="praat" CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" Condition="Exists('..\..\tools\praat')" />
+  </ItemGroup>
+</Project>
