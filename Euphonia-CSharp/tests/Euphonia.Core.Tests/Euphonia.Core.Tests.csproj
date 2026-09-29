@@ -16,8 +16,10 @@
   </ItemGroup>
   <ItemGroup>
     <!-- Reference clips (VCTK, CC BY 4.0) converted to WAV, plus the output of
-         Euphonia-TypeScript/analyze.py on each — the golden values the Praat
-         port is checked against. -->
+         Euphonia-TypeScript/analyze.py on each — the golden values the C#
+         engine is checked against. -->
     <None Include="Fixtures\**" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Praat script for the optional reference engine (needs tools/praat). -->
+    <None Include="PraatReference\analyze.praat" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

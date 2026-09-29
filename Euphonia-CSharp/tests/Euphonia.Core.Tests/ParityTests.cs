@@ -8,9 +8,10 @@ using Xunit.Abstractions;
 namespace Euphonia.Core.Tests;
 
 /// <summary>
-/// Runs the real Praat binary on the fixture clips and compares every metric
-/// with what Euphonia-TypeScript/analyze.py (parselmouth) produced for the same
-/// WAV. Skipped (passes with a note) when Praat isn't installed.
+/// Runs the app's analysis engine (pure C#, Euphonia.Acoustics) on the fixture
+/// clips and compares every metric with what Euphonia-TypeScript/analyze.py
+/// (parselmouth) produced for the same WAV. Also checks the C# engine against
+/// the Praat-backed reference engine when Praat is installed.
 /// </summary>
 public sealed class ParityTests(ITestOutputHelper output)
 {
@@ -20,16 +21,28 @@ public sealed class ParityTests(ITestOutputHelper output)
 
     [Theory]
     [MemberData(nameof(Clips))]
-    public async Task MatchesPythonAnalyzer(string clip)
+    public async Task CSharpEngineAgreesWithPraatEngine(string clip)
     {
-        var engine = new PraatAnalysisEngine(PraatLocator.Find());
-        if (!engine.IsAvailable)
+        var praat = new PraatReference.PraatAnalysisEngine(PraatReference.PraatLocator.Find());
+        if (!praat.IsAvailable)
         {
-            output.WriteLine("Praat not found — parity test skipped. " + engine.UnavailableReason);
+            output.WriteLine("Praat not found — reference comparison skipped. " + praat.UnavailableReason);
             return;
         }
+        var reference = (await praat.AnalyzeAsync(Fixture(clip + ".wav"))).Metrics;
+        var actual = (await new AcousticsAnalysisEngine().AnalyzeAsync(Fixture(clip + ".wav"))).Metrics;
+        // Same measurements, so after 2-dp rounding everything must be identical.
+        var expectedJson = EuphoniaJson.WriteRecordings([reference]);
+        var actualJson = EuphoniaJson.WriteRecordings([actual]);
+        output.WriteLine(actualJson);
+        Assert.Equal(expectedJson, actualJson);
+    }
 
-        var result = await engine.AnalyzeAsync(Fixture(clip + ".wav"));
+    [Theory]
+    [MemberData(nameof(Clips))]
+    public async Task MatchesPythonAnalyzer(string clip)
+    {
+        var result = await new AcousticsAnalysisEngine().AnalyzeAsync(Fixture(clip + ".wav"));
         var expected = EuphoniaJson.ReadRecordings(File.ReadAllText(Fixture(clip + ".expected.json")))[0];
         var expectedDetail = EuphoniaJson.ReadDetail(File.ReadAllText(Fixture(clip + ".expected-detail.json")))!;
         var actual = result.Metrics;

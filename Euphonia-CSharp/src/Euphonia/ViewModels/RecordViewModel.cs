@@ -13,7 +13,7 @@ public enum RecordState { Idle, Recording, Analyzing, Error }
 
 /// <summary>
 /// RecordButton.tsx: label → record → stop &amp; analyze → saved. The take is
-/// captured as a WAV, analyzed with Praat, then added to the store (the
+/// captured as a WAV, analyzed (Euphonia.Acoustics), then added to the store (the
 /// Electron createRecording IPC flow, minus the base64 round-trip).
 /// </summary>
 public sealed partial class RecordViewModel : ObservableObject
@@ -48,7 +48,7 @@ public sealed partial class RecordViewModel : ObservableObject
     public bool IsError => State == RecordState.Error;
     public string ElapsedText => $"{_elapsed.Elapsed:m\\:ss}";
 
-    /// <summary>Shown under the panel when Praat is missing (recording still works, analysis won't).</summary>
+    /// <summary>Shown under the panel when the analysis engine can't run (recording still works).</summary>
     public string? EngineWarning => _engine.IsAvailable ? null : "⚠️ " + _engine.UnavailableReason;
 
     [RelayCommand]

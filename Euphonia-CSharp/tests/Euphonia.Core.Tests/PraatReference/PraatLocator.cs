@@ -1,6 +1,6 @@
-namespace Euphonia.Core.Analysis;
+namespace Euphonia.Core.Tests.PraatReference;
 
-/// <summary>Finds the Praat executable without any platform-specific API.</summary>
+/// <summary>Finds the Praat executable (dev/test oracle only) without any platform-specific API.</summary>
 public static class PraatLocator
 {
     public const string PraatEnvVar = "EUPHONIA_PRAAT";

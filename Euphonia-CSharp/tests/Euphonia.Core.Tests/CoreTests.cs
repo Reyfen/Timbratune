@@ -139,7 +139,7 @@ public sealed class PostProcessorTests
     {
         // 1500 → 1800 (jump, dropped, prev = 1800) → 1850 (kept: |1850-1800| ≤ 150)
         var rows = new[] { 1500.0, 1800, 1850, 1860, 1870, 1880 }
-            .Select((f2, i) => new PraatOutput.FormantRow(5500, i * 0.01, 500, f2, 2800)).ToList();
+            .Select((f2, i) => new RawAnalysis.FormantRow(5500, i * 0.01, 500, f2, 2800)).ToList();
         var (_, f2Median, _, kept) = AnalysisPostProcessor.VowelFormants(rows);
         Assert.Equal(1860, f2Median); // median of 1500, 1850, 1860, 1870, 1880
         Assert.Equal(5, kept.Count);
@@ -182,9 +182,9 @@ public sealed class PostProcessorTests
 
     [Fact]
     public void PraatUndefinedParsesAsNaN() =>
-        Assert.True(double.IsNaN(PraatOutput.ParseNumber("--undefined--")));
+        Assert.True(double.IsNaN(PraatReference.PraatAnalysisEngine.ParseNumber("--undefined--")));
 
     [Fact]
     public void ParseRequiresEndMarker() =>
-        Assert.Throws<PraatException>(() => PraatOutput.Parse("S\tduration\t1\n"));
+        Assert.Throws<PraatReference.PraatException>(() => PraatReference.PraatAnalysisEngine.Parse("S\tduration\t1\n"));
 }

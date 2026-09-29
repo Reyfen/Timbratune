@@ -23,7 +23,7 @@ internal static class Program
             // which must not be created before the UI thread is initialized.
             App.ServicesFactory = dialogs => new AppServices(
                 Store: new RecordingStore(DataPaths.Default()),
-                Engine: new PraatAnalysisEngine(PraatLocator.Find()),
+                Engine: new AcousticsAnalysisEngine(),
                 Recorder: recorder,
                 Playback: playback = new PlaybackService(audio.CreatePlayer()),
                 Dialogs: dialogs,
@@ -41,7 +41,7 @@ internal static class Program
     /// <c>Euphonia.Desktop --import take.wav [more.wav…] [--label "…"]</c> —
     /// analyzes WAV files and adds them as takes, like
     /// <c>uv run analyze.py clip.wav --label …</c> did for the React app.
-    /// Honors EUPHONIA_DATA_DIR / EUPHONIA_PRAAT.
+    /// Honors EUPHONIA_DATA_DIR.
     /// </summary>
     private static async Task<int> ImportAsync(string[] args)
     {
@@ -58,12 +58,7 @@ internal static class Program
             return 2;
         }
 
-        var engine = new PraatAnalysisEngine(PraatLocator.Find());
-        if (!engine.IsAvailable)
-        {
-            Console.Error.WriteLine(engine.UnavailableReason);
-            return 1;
-        }
+        var engine = new AcousticsAnalysisEngine();
         var store = new RecordingStore(DataPaths.Default());
         foreach (var file in files)
         {

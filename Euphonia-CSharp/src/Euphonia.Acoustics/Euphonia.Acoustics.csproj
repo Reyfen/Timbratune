@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Euphonia.Acoustics — speech-acoustics algorithms in plain C#:
+    pitch (autocorrelation / cross-correlation), harmonicity, glottal pulses,
+    jitter & shimmer, intensity, silence detection, Burg formants, spectrum, LTAS.
+
+    Zero dependencies, no native code, no unsafe code, no I/O: it runs anywhere
+    .NET runs (Windows, macOS, Linux, Android, iOS, WebAssembly) and is trim/AOT
+    safe. Algorithms follow the published literature listed in REFERENCES.md;
+    parameter defaults follow the Praat manual so results line up with Praat.
+    MIT licensed, like the rest of Euphonia.
+  -->
+  <PropertyGroup>
+    <RootNamespace>Euphonia.Acoustics</RootNamespace>
+    <IsTrimmable>true</IsTrimmable>
+    <IsAotCompatible>true</IsAotCompatible>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591;CS1573</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Euphonia.Acoustics.Tests" />
+    <None Include="REFERENCES.md" />
+  </ItemGroup>
+</Project>

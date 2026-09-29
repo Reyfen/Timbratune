@@ -4,7 +4,7 @@ namespace Euphonia.Core.Analysis;
 
 /// <summary>
 /// The statistics half of analyze.py: everything it does with numpy /
-/// statistics on top of the raw Praat values. Kept pure (no I/O) so it can be
+/// statistics on top of the raw measurements. Kept pure (no I/O) so it can be
 /// unit-tested and reused by any future analysis engine.
 /// </summary>
 public static class AnalysisPostProcessor
@@ -13,7 +13,7 @@ public static class AnalysisPostProcessor
     public const double SemitoneRefHz = 100.0;
     private const double FormantCeiling = 5500.0;
 
-    public static AnalysisResult Process(PraatOutput raw, double registerFloorHz = DefaultRegisterFloorHz)
+    public static AnalysisResult Process(RawAnalysis raw, double registerFloorHz = DefaultRegisterFloorHz)
     {
         var minF0 = raw.Get("pitch_min");
         var maxF0 = raw.Get("pitch_max");
@@ -111,12 +111,12 @@ public static class AnalysisPostProcessor
     // vowel_formants(): F2 stability gate + ceiling choice + medians
     // ------------------------------------------------------------------
     /// <returns>Median F1–F3 plus the vowel-core frames they came from (for per-phrase F2).</returns>
-    internal static (double? F1, double? F2, double? F3, List<PraatOutput.FormantRow> Kept) VowelFormants(
-        IReadOnlyList<PraatOutput.FormantRow> rows)
+    internal static (double? F1, double? F2, double? F3, List<RawAnalysis.FormantRow> Kept) VowelFormants(
+        IReadOnlyList<RawAnalysis.FormantRow> rows)
     {
-        List<PraatOutput.FormantRow> Gate(double ceiling)
+        List<RawAnalysis.FormantRow> Gate(double ceiling)
         {
-            var kept = new List<PraatOutput.FormantRow>();
+            var kept = new List<RawAnalysis.FormantRow>();
             double? prevF2 = null;
             foreach (var r in rows)
             {
@@ -134,7 +134,7 @@ public static class AnalysisPostProcessor
             return kept;
         }
 
-        List<PraatOutput.FormantRow>? best = null;
+        List<RawAnalysis.FormantRow>? best = null;
         var bestSpread = double.PositiveInfinity;
         foreach (var ceiling in new[] { FormantCeiling, 5000.0 })
         {
@@ -156,7 +156,7 @@ public static class AnalysisPostProcessor
     // spectral_weight(): Iseli–Alwan corrected H1*–A3*, plus LTAS tilt
     // ------------------------------------------------------------------
     internal static Weight SpectralWeight(
-        IReadOnlyList<PraatOutput.WeightRow> frames,
+        IReadOnlyList<RawAnalysis.WeightRow> frames,
         IReadOnlyList<(double X, double Y)> ltas,
         double fs)
     {
@@ -183,7 +183,7 @@ public static class AnalysisPostProcessor
     }
 
     /// <summary>H1* − A3* for one frame: both harmonics formant-corrected against F1–F3.</summary>
-    internal static double CorrectedH1A3(PraatOutput.WeightRow w, double fs)
+    internal static double CorrectedH1A3(RawAnalysis.WeightRow w, double fs)
     {
         var h1Corr = w.H1;
         var a3Corr = w.A3;

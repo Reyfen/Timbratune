@@ -1,21 +1,18 @@
 # Euphonia (C# / Avalonia)
 
-A C# port of [`../Euphonia-TypeScript`](../Euphonia-TypeScript): record a take, analyze it with Praat, and read your
-pitch, resonance, weight, and register/phrasing metrics on one dashboard. Same metrics, same zones, and the same
-`recordings.json` data format as the Electron app. The look is close but not pixel-identical.
+A C# port of [`../Euphonia-TypeScript`](../Euphonia-TypeScript): record a take and read your pitch, resonance,
+weight, and register/phrasing metrics on one dashboard. Same metrics, same zones, and the same `recordings.json`
+data format as the Electron app. The look is close but not pixel-identical.
+
+The voice analysis is **pure C#** (`Euphonia.Acoustics`). It needs no Praat, Python, ffmpeg or anything else
+installed, so the same code can run on Windows, macOS, Linux, Android and iOS.
 
 ## Quick start (Windows)
 
-Prerequisites: **.NET 10 SDK**. Python, ffmpeg and Node are not needed.
+Prerequisites: **.NET 10 SDK**.
 
 ```powershell
-# 1. fetch Praat (the analysis engine) into tools/praat/ — ~52 MB from github.com/praat/praat
-powershell -ExecutionPolicy Bypass -File scripts\fetch-praat.ps1
-
-# 2. run
 dotnet run --project src/Euphonia.Desktop
-
-# tests (the parity tests run the real Praat against analyze.py's output)
 dotnet test
 ```
 
@@ -23,7 +20,7 @@ To build a folder you can launch without the SDK tools, publish it. The output f
 
 ```powershell
 dotnet publish src/Euphonia.Desktop -c Release -r win-x64 --self-contained false -o publish/Euphonia-win-x64
-# → publish\Euphonia-win-x64\Euphonia.Desktop.exe  (Praat + reference voices included; needs the .NET 10 runtime)
+# → publish\Euphonia-win-x64\Euphonia.Desktop.exe  (reference voices included; needs the .NET 10 runtime)
 ```
 
 Other useful commands:
@@ -32,9 +29,8 @@ Other useful commands:
 # analyze existing WAV files without the UI (like `uv run analyze.py clip.wav --label …`)
 dotnet run --project src/Euphonia.Desktop -- --import take1.wav take2.wav --label "rainbow passage"
 
-# use a throwaway data folder / a different Praat
+# use a throwaway data folder
 $env:EUPHONIA_DATA_DIR = "C:\temp\euphonia-test"
-$env:EUPHONIA_PRAAT    = "C:\Tools\Praat.exe"
 ```
 
 Takes are stored in `%APPDATA%\Euphonia-CSharp\`. This is deliberately separate from the Electron app's
@@ -43,55 +39,65 @@ Takes are stored in `%APPDATA%\Euphonia-CSharp\`. This is deliberately separate 
 ```
 recordings.json         index (sorted by id, pretty JSON — same schema analyze.py writes)
 audio/NNN.wav           44.1 kHz mono PCM16, recorded directly (no ffmpeg step)
-analysis/<id>.json      10 ms pitch contour + phrases for the register section
+analysis/<id>.json      10 ms pitch contour + phrases (+ per-phrase metrics) for the register and trends sections
 ```
 
 ## Solution layout
 
 | Project | What it is | Platform-specific? |
 |---|---|---|
-| `src/Euphonia.Core` | Models, zones and metric registry, JSON, `RecordingStore`, the analysis pipeline (`analyze.praat` + `AnalysisPostProcessor`), WAV writer and waveform peaks | No — plain .NET |
+| `src/Euphonia.Acoustics` | Speech-acoustics algorithms: pitch (autocorrelation / cross-correlation + Viterbi path), harmonicity, glottal pulses, jitter/shimmer, intensity, silence detection, Burg formants, spectrum, LTAS, WAV decoding. No dependencies, no native code, trim/AOT safe; usable on its own in other apps | No |
+| `src/Euphonia.Core` | Models, zones and metric registry, JSON, `RecordingStore`, the analysis pipeline (`AcousticsAnalysisEngine` + `AnalysisPostProcessor`), WAV writer and waveform peaks | No |
 | `src/Euphonia.Audio.SoundFlow` | Microphone capture and playback via [SoundFlow](https://github.com/LSXPrime/SoundFlow) (miniaudio) | No — ships natives for Win/macOS/Linux/Android/iOS |
 | `src/Euphonia` | Avalonia UI: views, view models (CommunityToolkit.Mvvm), custom-drawn charts | No |
-| `src/Euphonia.Desktop` | Desktop head: `Program.cs`, `--import`, and it bundles `tools/praat` as `praat/` | Only the Praat binary differs per OS |
-| `tests/Euphonia.Core.Tests` | xUnit: zones, JSON compatibility, store, statistics, **Praat parity** | — |
+| `src/Euphonia.Desktop` | Desktop head: `Program.cs`, `--import` | No |
+| `tests/Euphonia.Acoustics.Tests` | Synthetic-signal tests, plus a component-by-component comparison with real Praat | — |
+| `tests/Euphonia.Core.Tests` | Zones, JSON compatibility, store, statistics, **parity with analyze.py** | — |
 
 ### Dependencies
 
 - **Avalonia 11.3** (+ Fluent theme, Inter font) is the UI.
 - **CommunityToolkit.Mvvm** provides the MVVM source generators.
 - **SoundFlow** handles recording and playback (WAV + the MP3 reference clips).
-- **Praat 7.x** is an external binary, not a NuGet package, used as the analysis engine.
 - **xUnit** is used for tests.
 
 ## How the analysis works
 
-`analyze.py` (parselmouth) is the reference. Its work is split in two:
+`analyze.py` (parselmouth) is the reference. `AcousticsAnalysisEngine` repeats its measurement steps with
+`Euphonia.Acoustics`, using the same settings:
+- autocorrelation pitch 75–500 Hz
+- Burg formants at 5500 and 5000 Hz ceilings
+- cross-correlation harmonicity
+- pulses for jitter and shimmer
+- intensity and silence-based phrases
+- a Hamming-windowed spectrum per voiced frame for H1/A3
+- a 100 Hz LTAS
 
-1. **`src/Euphonia.Core/Analysis/analyze.praat`** runs every Praat command with the *same parameters*:
-   - `To Pitch 0 75 500`
-   - `To Formant (burg) 0 5 5500|5000 0.025 50`
-   - `To Harmonicity (cc)`
-   - `To PointProcess (periodic, cc)` for jitter and shimmer
-   - `To Intensity`, `To Ltas`, and per-frame spectra for H1/A3
-   - `To TextGrid (silences)`
+`AnalysisPostProcessor` then does the numpy/statistics half: the F2 gate, the ceiling choice, medians, the
+Iseli–Alwan H1*–A3* correction, phrase and register statistics. Independent analyses run in parallel; a 10 s take
+takes about 0.5 s.
 
-   It prints raw values to stdout. Praat 7 sandboxes scripts that write files, so the script only reads the WAV and
-   prints; no `--FULL-TRUST` is needed.
-2. **`AnalysisPostProcessor.cs`** does the numpy/statistics half:
-   - the F2 stability gate and the choice of formant ceiling
-   - medians and standard deviations
-   - the Iseli–Alwan correction for corrected H1*–A3*
-   - the LTAS slope
-   - phrase onset/offset stats, register %, and semitone SDs
+### Verification
 
-**Parity:** `ParityTests` runs Praat on four VCTK clips and compares the results with `analyze.py`'s output for the
-same WAVs, in `tests/…/Fixtures`. Every metric matches to the rounded digit, except **jitter and shimmer**, which are
-within 4%. Parselmouth 0.4.7 bundles Praat 6.1.38 and we ship Praat 7.0, and the periodic point-process picking
-differs slightly between those versions. The gap is far inside the zone widths.
+- **`tests/Euphonia.Core.Tests/ParityTests`** compares every metric with `analyze.py`'s output for four VCTK clips.
+  Everything matches to the rounded digit, except **jitter and shimmer**, which are within 4%. The fixtures were made
+  with parselmouth's bundled Praat 6.1.38, whose pulse picking differs slightly from current Praat 7; the C# code
+  follows Praat 7.
+- **`tests/Euphonia.Acoustics.Tests/OracleTests`** compares each component frame by frame with real Praat 7 when it
+  is installed:
 
-Praat has no Android or iOS build. `IAnalysisEngine` is the seam where a future mobile engine plugs in, and the UI
-doesn't change.
+  | Component | Agreement with Praat 7 |
+  |---|---|
+  | F0 | < 1e-5 Hz, same voicing decisions |
+  | intensity | < 1e-13 dB |
+  | HNR | < 1e-10 dB |
+  | pulses | all identical |
+  | formants | < 0.001 Hz where there is signal |
+  | spectrum / LTAS | machine precision |
+
+  The same run also checks that the final metrics are identical to the Praat-backed engine. Praat is optional and
+  only used by tests: `scripts/fetch-praat.ps1` puts it in `tools/praat/`, or set `EUPHONIA_PRAAT`. Without it these
+  tests are skipped.
 
 ## What's in v1 and what isn't
 
@@ -103,10 +109,9 @@ doesn't change.
 - resonance (F2/F3 gauges)
 - register & phrasing: contour chart, stat tiles, drop-position bars and the tip
 - **trends within the take** (this differs from the React app, whose trend charts plot one point per take across
-  all recordings). The take is split into phrases at the pauses (`To TextGrid (silences)`), and five charts plot one
-  point per phrase: pitch, in-register melody, ending pitch, F2 and weight. The values are stored as
-  `phrase_metrics` in `analysis/<id>.json`. Takes analyzed before this existed are re-analyzed once in the background
-  from their WAV.
+  all recordings). The take is split into phrases at the pauses, and five charts plot one point per phrase: pitch,
+  in-register melody, ending pitch, F2 and weight. The values are stored as `phrase_metrics` in
+  `analysis/<id>.json`. Takes analyzed before this existed are re-analyzed once in the background from their WAV.
 - the recordings list: waveform player, save-a-copy, delete with confirmation
 - the take switcher
 - the cheat sheet
@@ -125,7 +130,10 @@ doesn't change.
 
 ## Licensing
 
-The code is under the MIT License, like the TypeScript repo. **Praat is GPLv3**. Any build that ships Praat next to
-the app is a combined work under GPLv3, which is the same situation as the Electron installer and its bundled
-parselmouth. `fetch-praat.ps1` saves the GPL text alongside the binary. The reference voices come from VCTK
-(CC BY 4.0); see `src/Euphonia/Assets/reference/ATTRIBUTION.md`.
+All code, including `Euphonia.Acoustics`, is under the MIT License, like the TypeScript repo.
+- **How `Euphonia.Acoustics` was written:** its algorithms are implemented from the published literature. Parameter
+  defaults and conventions follow the Praat manual, so the numbers line up with Praat.
+- **No Praat code:** it contains no Praat source code; see `src/Euphonia.Acoustics/REFERENCES.md` for the papers
+  behind each component.
+- **Praat itself (GPLv3):** it is not shipped with the app. It's only an optional test oracle.
+- **Reference voices:** they come from VCTK (CC BY 4.0); see `src/Euphonia/Assets/reference/ATTRIBUTION.md`.

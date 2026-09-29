@@ -11,7 +11,7 @@ public sealed class App : Application
 {
     /// <summary>
     /// Set by the platform head before start-up: builds the services (store,
-    /// Praat engine, audio). Receives the view layer's file dialogs.
+    /// analysis engine, audio). Receives the view layer's file dialogs.
     /// </summary>
     public static Func<IFileDialogs, AppServices>? ServicesFactory { get; set; }
 

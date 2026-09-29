@@ -1,6 +1,6 @@
 namespace Euphonia.Core.Audio;
 
-/// <summary>Microphone capture straight to a mono PCM16 WAV file (what Praat reads natively).</summary>
+/// <summary>Microphone capture straight to a mono PCM16 WAV file (what the analysis engine reads).</summary>
 public interface IAudioRecorder : IDisposable
 {
     bool IsRecording { get; }

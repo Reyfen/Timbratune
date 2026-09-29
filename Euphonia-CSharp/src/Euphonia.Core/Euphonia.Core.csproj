@@ -5,8 +5,7 @@
     <RootNamespace>Euphonia.Core</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <!-- Written to a temp dir at analysis time, so no install-path assumptions. -->
-    <EmbeddedResource Include="Analysis\analyze.praat" LogicalName="Euphonia.Core.Analysis.analyze.praat" />
+    <ProjectReference Include="..\Euphonia.Acoustics\Euphonia.Acoustics.csproj" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Euphonia.Core.Tests" />
