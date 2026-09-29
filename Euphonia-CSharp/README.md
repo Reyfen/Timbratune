@@ -75,7 +75,7 @@ analysis/<id>.json      10 ms pitch contour + phrases (+ per-phrase metrics) for
 
 `AnalysisPostProcessor` then does the numpy/statistics half: the F2 gate, the ceiling choice, medians, the
 Iseli–Alwan H1*–A3* correction, phrase and register statistics. Independent analyses run in parallel; a 10 s take
-takes about 0.5 s.
+takes about 0.2 s (about 1.4 s on a single core).
 
 ### Verification
 

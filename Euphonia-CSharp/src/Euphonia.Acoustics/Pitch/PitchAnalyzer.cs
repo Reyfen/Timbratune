@@ -117,6 +117,13 @@ public static class PitchAnalyzer
         /// <summary>Correlation for lags −lagRange..lagRange; index = lag + lagRange.</summary>
         public readonly double[] R = new double[2 * c.LagRange + 1];
         public readonly double[] LocalMean = new double[c.Sound.ChannelCount];
+        // Cross-correlation mode only (length 1 otherwise).
+        public readonly double[] CrossRe = new double[c.CrossFftLength];
+        public readonly double[] CrossIm = new double[c.CrossFftLength];
+        public readonly double[] SpanRe = new double[c.CrossFftLength];
+        public readonly double[] SpanIm = new double[c.CrossFftLength];
+        public readonly double[] ProductRe = new double[c.CrossFftLength];
+        public readonly double[] ProductIm = new double[c.CrossFftLength];
     }
 
     private sealed class FrameContext(
@@ -128,6 +135,9 @@ public static class PitchAnalyzer
         public int WindowSamples { get; } = windowSamples;
         public int LagRange { get; } = lagRange;
         public int FftLength { get; private set; }
+        /// <summary>FFT length for cross-correlation: holds the window plus the longest span without wrap-around.</summary>
+        public int CrossFftLength { get; } =
+            method == Method.CrossCorrelationAccurate ? Fft.NextPowerOfTwo(2 * windowSamples + maximumLag) : 1;
         private double[] _window = [];
         private double[] _windowAutocorrelation = [];
         private readonly double _dx = sound.Grid.Step;
@@ -282,11 +292,38 @@ public static class PitchAnalyzer
                     sumX2 += x * x;
                 }
             }
+            // Numerators for every lag at once: the cross-correlation of the window with
+            // the whole span (window + lags), computed as IFFT(conj(FFT(window))·FFT(span)).
+            // The transform is long enough (≥ window + span) that no lag wraps around.
+            // O(N log N) per frame instead of O(window × lags).
+            var n = b.CrossRe.Length;
+            Array.Clear(b.ProductRe);
+            Array.Clear(b.ProductIm);
+            for (var ch = 0; ch < Sound.ChannelCount; ch++)
+            {
+                var z = Sound.ChannelArray(ch);
+                var mean = b.LocalMean[ch];
+                Array.Clear(b.CrossRe);
+                Array.Clear(b.CrossIm);
+                Array.Clear(b.SpanRe);
+                Array.Clear(b.SpanIm);
+                for (var j = 0; j < WindowSamples; j++) b.CrossRe[j] = z[offset + j] - mean;
+                for (var j = 0; j < span; j++) b.SpanRe[j] = z[offset + j] - mean;
+                Fft.ForwardInPlace(b.CrossRe, b.CrossIm);
+                Fft.ForwardInPlace(b.SpanRe, b.SpanIm);
+                for (var k = 0; k < n; k++)
+                {
+                    // conj(X)·S
+                    b.ProductRe[k] += b.CrossRe[k] * b.SpanRe[k] + b.CrossIm[k] * b.SpanIm[k];
+                    b.ProductIm[k] += b.CrossRe[k] * b.SpanIm[k] - b.CrossIm[k] * b.SpanRe[k];
+                }
+            }
+            Fft.InverseInPlace(b.ProductRe, b.ProductIm); // ProductRe[lag] = Σ_j x[j]·y[j + lag]
+
             var sumY2 = sumX2;
             r[zero] = 1.0;
             for (var lag = 1; lag <= localMaximumLag; lag++)
             {
-                var product = 0.0;
                 for (var ch = 0; ch < Sound.ChannelCount; ch++)
                 {
                     var z = Sound.ChannelArray(ch);
@@ -294,12 +331,8 @@ public static class PitchAnalyzer
                     var leaving = z[offset + lag - 1] - mean;
                     var entering = z[offset + lag + WindowSamples - 1] - mean;
                     sumY2 += entering * entering - leaving * leaving;
-                    var baseX = offset;
-                    var baseY = offset + lag;
-                    for (var j = 0; j < WindowSamples; j++)
-                        product += (z[baseX + j] - mean) * (z[baseY + j] - mean);
                 }
-                r[zero + lag] = r[zero - lag] = product / Math.Sqrt(sumX2 * sumY2);
+                r[zero + lag] = r[zero - lag] = b.ProductRe[lag] / Math.Sqrt(sumX2 * sumY2);
             }
             // Lags beyond the end of the sound stay at their previous values in the
             // reference; zero them so frames are independent of processing order.

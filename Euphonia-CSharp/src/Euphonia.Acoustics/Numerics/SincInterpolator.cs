@@ -42,15 +42,43 @@ public static class SincInterpolator
             return yl * v + yr * u - u * v * (0.5 * (slopeRight - slopeLeft) + (u - 0.5) * (slopeLeft + slopeRight - 2 * (yr - yl)));
         }
 
+        // Σ y[k]·sin(d)/d·½(1 + cos(d / halfWidth)) with d = π(x − k), walking outwards from
+        // the middle on each side. Only four trig calls per interpolation: stepping k by one
+        // flips the sign of sin(d), and the window cosine advances by a fixed angle, so it is
+        // updated with the angle-addition formulas instead of being recomputed per term.
         var halfWidth = maxDepth + 0.5;
-        var left = midRight - maxDepth;
-        var right = midLeft + maxDepth;
+        var windowStep = Math.PI / halfWidth;
+        var cosStep = Math.Cos(windowStep);
+        var sinStep = Math.Sin(windowStep);
         var sum = 0.0;
-        for (var k = left; k <= right; k++)
+
+        // Left half: k = midLeft, midLeft − 1, …, midLeft − maxDepth + 1; d = π(x − k) > 0 grows by π.
         {
-            var d = Math.PI * (x - k); // never 0: x is not an integer
-            var window = 0.5 + 0.5 * Math.Cos(d / halfWidth);
-            sum += y[k - 1] * Math.Sin(d) / d * window;
+            var d = Math.PI * (x - midLeft);
+            var sinD = Math.Sin(d);
+            var cosW = Math.Cos(d / halfWidth);
+            var sinW = Math.Sin(d / halfWidth);
+            for (var k = midLeft; k >= midRight - maxDepth; k--)
+            {
+                sum += y[k - 1] * (0.5 * sinD / d * (1.0 + cosW));
+                d += Math.PI;
+                sinD = -sinD;
+                (cosW, sinW) = (cosW * cosStep - sinW * sinStep, sinW * cosStep + cosW * sinStep);
+            }
+        }
+        // Right half: k = midRight, …, midLeft + maxDepth; d = π(k − x) > 0 grows by π.
+        {
+            var d = Math.PI * (midRight - x);
+            var sinD = Math.Sin(d);
+            var cosW = Math.Cos(d / halfWidth);
+            var sinW = Math.Sin(d / halfWidth);
+            for (var k = midRight; k <= midLeft + maxDepth; k++)
+            {
+                sum += y[k - 1] * (0.5 * sinD / d * (1.0 + cosW));
+                d += Math.PI;
+                sinD = -sinD;
+                (cosW, sinW) = (cosW * cosStep - sinW * sinStep, sinW * cosStep + cosW * sinStep);
+            }
         }
         return sum;
     }
