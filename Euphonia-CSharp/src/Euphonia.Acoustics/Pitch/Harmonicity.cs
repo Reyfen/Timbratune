@@ -53,10 +53,30 @@ public static class HarmonicityAnalyzer
         var pitch = PitchAnalyzer.Analyze(sound, PitchAnalyzer.Method.CrossCorrelationAccurate, periodsPerWindow, timeStep,
             minimumPitch, 0.5 * sound.SamplingFrequency, settings);
 
+        return FromPitch(pitch);
+    }
+
+    /// <summary>The cross-correlation settings above, for callers that run the frames themselves (live analysis).</summary>
+    internal static PitchFrameAnalyzer CreateFrameAnalyzer(double samplingFrequency, int channelCount, double timeStep = 0.01,
+        double minimumPitch = 75, double silenceThreshold = 0.1, double periodsPerWindow = 1.0) =>
+        new(samplingFrequency, channelCount, PitchAnalyzer.Method.CrossCorrelationAccurate, periodsPerWindow, timeStep,
+            minimumPitch, 0.5 * samplingFrequency, new PitchSettings
+            {
+                MaxCandidates = 15,
+                SilenceThreshold = silenceThreshold,
+                VoicingThreshold = 0,
+                OctaveCost = 0,
+                OctaveJumpCost = 0,
+                VoicedUnvoicedCost = 0,
+            });
+
+    /// <summary>HNR per frame from the chosen cross-correlation peak: 10·log10(r / (1 − r)).</summary>
+    internal static HarmonicityContour FromPitch(PitchContour pitch)
+    {
         var db = new double[pitch.FrameCount];
         for (var i = 0; i < db.Length; i++)
         {
-            var best = pitch.Frames[i].Best;
+            var best = pitch.Best(i);
             if (best.Frequency == 0) db[i] = HarmonicityContour.Unvoiced;
             else
             {

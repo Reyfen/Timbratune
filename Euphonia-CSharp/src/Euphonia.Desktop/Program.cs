@@ -15,7 +15,9 @@ internal static class Program
             return ImportAsync(args[1..]).GetAwaiter().GetResult();
 
         using var audio = new SoundFlowAudio();
-        using var recorder = audio.CreateRecorder();
+        // EUPHONIA_FAKE_MIC=take.wav replays a file as if it were being spoken (developer aid).
+        var fakeMic = Environment.GetEnvironmentVariable(Core.Audio.FileReplayRecorder.EnvVar);
+        using var recorder = string.IsNullOrWhiteSpace(fakeMic) ? audio.CreateRecorder() : new Core.Audio.FileReplayRecorder(fakeMic);
         PlaybackService? playback = null;
         try
         {

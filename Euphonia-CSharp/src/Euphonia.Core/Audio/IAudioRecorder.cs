@@ -1,9 +1,21 @@
 namespace Euphonia.Core.Audio;
 
+/// <summary>Receives captured samples; the span is only valid during the call.</summary>
+public delegate void SamplesCapturedHandler(ReadOnlySpan<float> samples);
+
 /// <summary>Microphone capture straight to a mono PCM16 WAV file (what the analysis engine reads).</summary>
 public interface IAudioRecorder : IDisposable
 {
     bool IsRecording { get; }
+
+    /// <summary>Sample rate of the recording (Hz).</summary>
+    int SampleRate { get; }
+
+    /// <summary>
+    /// Raised on the audio thread for every captured block, right after it was written to
+    /// the WAV — in the same order, so a listener sees exactly the samples being saved.
+    /// </summary>
+    event SamplesCapturedHandler? SamplesCaptured;
 
     /// <summary>Starts capturing from the default input device.</summary>
     void Start();

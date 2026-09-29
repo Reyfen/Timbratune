@@ -5,7 +5,7 @@
              x:Class="Euphonia.Views.FormantGaugeView"
              x:DataType="vm:GaugeViewModel">
   <!-- FormantGauge.tsx -->
-  <Button Classes="card inner" Command="{Binding Open}" ToolTip.Tip="tap to see how you compare to real voices 🔍">
+  <Button Classes="card inner" Command="{Binding Open}" IsEnabled="{Binding Interactive}" ToolTip.Tip="{Binding ToolTip}">
     <StackPanel Spacing="6">
       <Grid ColumnDefinitions="*,Auto">
         <TextBlock VerticalAlignment="Center">
@@ -15,7 +15,8 @@
         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
           <TextBlock VerticalAlignment="Center" FontWeight="Bold" Text="{Binding ValueText}" />
           <c:ZonePill Zone="{Binding Zone}" VerticalAlignment="Center" />
-          <TextBlock VerticalAlignment="Center" Foreground="{DynamicResource InkAccentBrush}" Text="↗" />
+          <TextBlock VerticalAlignment="Center" Foreground="{DynamicResource InkAccentBrush}" Text="↗"
+                     IsVisible="{Binding Interactive}" />
         </StackPanel>
       </Grid>
       <c:ZoneBar Zones="{Binding Zones}" Value="{Binding Value}" Lo="{Binding Lo}" Hi="{Binding Hi}" />

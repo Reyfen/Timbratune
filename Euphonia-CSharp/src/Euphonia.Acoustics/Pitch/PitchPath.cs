@@ -8,30 +8,31 @@ namespace Euphonia.Acoustics.Pitch;
 public static class PitchPath
 {
     /// <summary>
-    /// Reorders every frame's candidates so that the chosen one comes first.
+    /// Index of the chosen candidate in every frame. Frames are not modified.
+    /// Each frame's relative intensity is its local peak over <paramref name="globalPeak"/>.
     /// Costs are scaled to a 10 ms time step.
     /// </summary>
-    public static void Choose(PitchContour pitch, double silenceThreshold, double voicingThreshold, double octaveCost,
-        double octaveJumpCost, double voicedUnvoicedCost, double ceiling)
+    public static int[] ChooseIndices(IReadOnlyList<PitchFrame> frames, double timeStep, double globalPeak,
+        double silenceThreshold, double voicingThreshold, double octaveCost, double octaveJumpCost,
+        double voicedUnvoicedCost, double ceiling)
     {
-        var frames = pitch.Frames;
         var n = frames.Count;
-        if (n == 0) return;
-        var stepCorrection = 0.01 / pitch.Grid.Step;
+        var chosen = new int[n];
+        if (n == 0) return chosen;
+        var stepCorrection = 0.01 / timeStep;
         octaveJumpCost *= stepCorrection;
         voicedUnvoicedCost *= stepCorrection;
 
         // Local scores.
         var delta = new double[n][];
-        var psi = new int[n][];
         for (var f = 0; f < n; f++)
         {
             var frame = frames[f];
-            var unvoicedStrength = silenceThreshold <= 0 ? 0.0 : 2.0 - frame.Intensity / (silenceThreshold / (1.0 + voicingThreshold));
+            var intensity = frame.LocalPeak > globalPeak ? 1.0 : frame.LocalPeak / globalPeak;
+            var unvoicedStrength = silenceThreshold <= 0 ? 0.0 : 2.0 - intensity / (silenceThreshold / (1.0 + voicingThreshold));
             unvoicedStrength = voicingThreshold + Math.Max(0.0, unvoicedStrength);
             var cands = frame.Candidates;
             delta[f] = new double[cands.Count];
-            psi[f] = new int[cands.Count];
             for (var c = 0; c < cands.Count; c++)
             {
                 var freq = cands[c].Frequency;
@@ -41,12 +42,27 @@ public static class PitchPath
             }
         }
 
+        if (octaveJumpCost == 0 && voicedUnvoicedCost == 0)
+            ChooseWithoutTransitionCosts(delta, chosen);
+        else
+            ChooseWithTransitionCosts(frames, delta, chosen, octaveJumpCost, voicedUnvoicedCost, ceiling);
+        return chosen;
+    }
+
+    private static void ChooseWithTransitionCosts(IReadOnlyList<PitchFrame> frames, double[][] delta, int[] chosen,
+        double octaveJumpCost, double voicedUnvoicedCost, double ceiling)
+    {
+        var n = frames.Count;
+        var psi = new int[n][];
+        psi[0] = new int[delta[0].Length];
+
         // Forward pass: best predecessor for every candidate.
         for (var f = 1; f < n; f++)
         {
             var previous = frames[f - 1].Candidates;
             var current = frames[f].Candidates;
             var bestScores = new double[current.Count];
+            psi[f] = new int[current.Count];
             for (var c2 = 0; c2 < current.Count; c2++)
             {
                 var f2 = current[c2].Frequency;
@@ -73,15 +89,59 @@ public static class PitchPath
             delta[f] = bestScores;
         }
 
-        // Best end point, then trace back, moving each winner to slot 0.
+        // Best end point, then trace back.
         var place = 0;
         for (var c = 1; c < delta[n - 1].Length; c++)
             if (delta[n - 1][c] > delta[n - 1][place]) place = c;
         for (var f = n - 1; f >= 0; f--)
         {
-            var cands = frames[f].Candidates;
-            (cands[0], cands[place]) = (cands[place], cands[0]);
+            chosen[f] = place;
             place = psi[f][place];
+        }
+    }
+
+    /// <summary>
+    /// The same search when every transition costs 0 (e.g. harmonicity), in
+    /// O(frames × candidates) instead of O(frames × candidates²). It reproduces
+    /// the general search exactly, rounding included: with zero costs every
+    /// candidate's accumulated score is (previous frame's best accumulated
+    /// score) + (its own score), and the predecessor on the traced path is the
+    /// first previous candidate reaching that same rounded sum.
+    /// </summary>
+    private static void ChooseWithoutTransitionCosts(double[][] local, int[] chosen)
+    {
+        var n = local.Length;
+        var accumulated = new double[n][];
+        accumulated[0] = local[0];
+        for (var f = 1; f < n; f++)
+        {
+            var previousBest = double.NegativeInfinity;
+            foreach (var v in accumulated[f - 1]) previousBest = Math.Max(previousBest, v);
+            var row = new double[local[f].Length];
+            for (var c = 0; c < row.Length; c++) row[c] = previousBest - 0.0 + local[f][c];
+            accumulated[f] = row;
+        }
+
+        var place = 0;
+        for (var c = 1; c < accumulated[n - 1].Length; c++)
+            if (accumulated[n - 1][c] > accumulated[n - 1][place]) place = c;
+        for (var f = n - 1; f >= 0; f--)
+        {
+            chosen[f] = place;
+            if (f == 0) break;
+            // First previous candidate whose sum with this candidate's local score is the maximum.
+            var target = accumulated[f][place];
+            var previous = accumulated[f - 1];
+            var predecessor = 0;
+            for (var c1 = 0; c1 < previous.Length; c1++)
+            {
+                if (previous[c1] - 0.0 + local[f][place] == target)
+                {
+                    predecessor = c1;
+                    break;
+                }
+            }
+            place = predecessor;
         }
     }
 }

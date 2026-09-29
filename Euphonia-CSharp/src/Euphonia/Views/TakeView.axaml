@@ -1,0 +1,172 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Euphonia.ViewModels"
+             xmlns:c="using:Euphonia.Controls"
+             xmlns:v="using:Euphonia.Views"
+             x:Class="Euphonia.Views.TakeView"
+             x:DataType="vm:TakeViewModel">
+  <!-- One take: stat cards, resonance, register & phrasing, per-phrase trends.
+       Used for the take in focus and, while recording, for the live take. -->
+  <StackPanel Spacing="28">
+
+    <!-- 🎀 this take -->
+    <StackPanel Spacing="8">
+      <TextBlock Classes="section" Text="{Binding Title, StringFormat='🎀 {0}'}" />
+      <TextBlock Classes="cap" IsVisible="{Binding !IsLive}" Text="🔍 tap any card with a colored bar to see how you compare to real voices" />
+      <ItemsControl ItemsSource="{Binding StatCards}" Margin="0,6,0,0">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate><WrapPanel ItemWidth="276" /></ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:StatCardViewModel">
+            <Button Classes="card" Margin="0,0,12,12" MinHeight="176" Command="{Binding Open}"
+                    IsEnabled="{Binding IsClickable}" ToolTip.Tip="{Binding ToolTip}">
+              <StackPanel Spacing="6">
+                <Grid ColumnDefinitions="*,Auto">
+                  <TextBlock Classes="label" Text="{Binding Title}" />
+                  <c:ZonePill Grid.Column="1" Zone="{Binding Zone}" />
+                </Grid>
+                <StackPanel Orientation="Horizontal">
+                  <TextBlock Classes="value" Text="{Binding ValueText}" />
+                  <TextBlock Classes="unit" Text="{Binding Unit}" />
+                </StackPanel>
+                <c:ZoneBar IsVisible="{Binding HasZones}" Zones="{Binding Zones}" Value="{Binding Value}"
+                           Lo="{Binding Lo}" Hi="{Binding Hi}" />
+                <TextBlock Classes="sub" c:Markup.Text="{Binding Sub}" />
+                <TextBlock Classes="cap" FontSize="11" Foreground="{DynamicResource InkAccentBrush}"
+                           IsVisible="{Binding IsClickable}" Text="tap to compare ↗" />
+              </StackPanel>
+            </Button>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
+
+    <!-- ✨ resonance (ResonanceCard.tsx) -->
+    <StackPanel Spacing="8">
+      <WrapPanel>
+        <TextBlock Classes="section" Text="✨ Resonance" Margin="0,0,8,0" />
+        <TextBlock Classes="section-sub" Text="· the &quot;size&quot; your voice sounds, separate from pitch" />
+      </WrapPanel>
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <TextBlock Classes="body" c:Markup.Text="Formants are your voice's **brightness / vocal-tract size**. Think of pitch as _which note_ you sing, and resonance as _the size of the room_ it echoes in. Higher = a smaller, brighter, lighter space (reads feminine). Measured as the **median over your vowel nuclei** (the loud, steady cores of syllables) — not every frame — so consonants and glides don't muddy it." />
+          <v:FormantGaugeView DataContext="{Binding F2}" />
+          <v:FormantGaugeView DataContext="{Binding F3}" />
+          <Border Classes="tip">
+            <TextBlock Classes="body" c:Markup.Text="{Binding ResonanceSummary}" />
+          </Border>
+          <TextBlock Classes="sub" c:Markup.Text="{Binding F1Line}" />
+        </StackPanel>
+      </Border>
+    </StackPanel>
+
+    <!-- 🎚️ register & phrasing (RegisterSection.tsx) -->
+    <StackPanel Spacing="8">
+      <WrapPanel>
+        <TextBlock Classes="section" Text="🎚️ Register &amp; phrasing" Margin="0,0,8,0" />
+        <TextBlock Classes="section-sub" Text="· where your voice holds vs. falls out of register" />
+      </WrapPanel>
+      <Border Classes="card" IsVisible="{Binding NoRegister}">
+        <TextBlock Classes="cap" TextAlignment="Center"
+                   Text="no register data for this take yet ✨&#10;re-run the analyzer to generate it" />
+      </Border>
+      <StackPanel Spacing="14" IsVisible="{Binding HasRegister}">
+        <TextBlock Classes="body" c:Markup.Text="{Binding RegisterIntro}" />
+        <Border Classes="card" Padding="10,12" IsVisible="{Binding ShowContour}">
+          <c:ContourChart Detail="{Binding Detail}" />
+        </Border>
+        <UniformGrid Columns="3">
+          <Border Classes="card" Margin="0,0,12,0">
+            <StackPanel Spacing="6">
+              <TextBlock Classes="label" Text="In-register time" />
+              <StackPanel Orientation="Horizontal">
+                <TextBlock Classes="value" Text="{Binding InRegisterText}" />
+                <TextBlock Classes="unit" Text="%" />
+              </StackPanel>
+              <TextBlock Classes="sub" Text="share of voiced time held above the floor · higher = steadier register" />
+            </StackPanel>
+          </Border>
+          <Border Classes="card" Margin="0,0,12,0">
+            <StackPanel Spacing="6">
+              <TextBlock Classes="label" Text="Phrase endings landed" />
+              <StackPanel Orientation="Horizontal">
+                <TextBlock Classes="value" Text="{Binding LandedText}" />
+                <TextBlock Classes="unit" Text="%" />
+              </StackPanel>
+              <TextBlock Classes="sub" c:Markup.Text="{Binding LandedSub}" />
+            </StackPanel>
+          </Border>
+          <Border Classes="card">
+            <StackPanel Spacing="6">
+              <TextBlock Classes="label" Text="True melody" />
+              <StackPanel Orientation="Horizontal">
+                <TextBlock Classes="value" Text="{Binding MelodyText}" />
+                <TextBlock Classes="unit" Text="st" />
+              </StackPanel>
+              <TextBlock Classes="sub" Text="{Binding MelodySub}" />
+            </StackPanel>
+          </Border>
+        </UniformGrid>
+        <Border Classes="card">
+          <StackPanel Spacing="10">
+            <TextBlock Classes="label" Text="Where the register drops happen" />
+            <TextBlock Classes="sub" c:Markup.Text="% of voiced time spent **below the floor**, by position within a phrase. Taller bar = more crashing there." />
+            <ItemsControl ItemsSource="{Binding Positions}" HorizontalAlignment="Center">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="36" /></ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:PositionBar">
+                  <StackPanel Spacing="4" Width="96">
+                    <Border Height="110" Width="44" CornerRadius="12" Background="{DynamicResource Card2Brush}"
+                            HorizontalAlignment="Center" ClipToBounds="True">
+                      <Border VerticalAlignment="Bottom" Height="{Binding BarHeight}" CornerRadius="12">
+                        <Border.Background>
+                          <SolidColorBrush Color="{DynamicResource ZoneMascColor}" />
+                        </Border.Background>
+                      </Border>
+                    </Border>
+                    <TextBlock HorizontalAlignment="Center" FontWeight="Bold" Text="{Binding ValueText}" />
+                    <TextBlock Classes="cap" HorizontalAlignment="Center" TextAlignment="Center" Text="{Binding Label}" />
+                  </StackPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <Border Classes="tip">
+              <TextBlock Classes="body" c:Markup.Text="{Binding RegisterTip}" />
+            </Border>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </StackPanel>
+
+    <!-- 📈 trends within this take: one point per detected phrase -->
+    <StackPanel Spacing="8">
+      <WrapPanel>
+        <TextBlock Classes="section" Text="📈 Trends within this take" Margin="0,0,8,0" />
+        <TextBlock Classes="section-sub" Text="· phrase by phrase, in the order you spoke them" />
+      </WrapPanel>
+      <TextBlock Classes="cap" Text="{Binding PhraseTrendsHint}" />
+      <ItemsControl ItemsSource="{Binding PhraseTrends}" IsVisible="{Binding ShowPhraseTrends}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate><WrapPanel ItemWidth="368" /></ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:TrendViewModel">
+            <Border Classes="card" Margin="0,0,12,12">
+              <StackPanel Spacing="4">
+                <TextBlock Classes="label" Text="{Binding Title}" />
+                <TextBlock Classes="cap" Text="{Binding Caption}" />
+                <c:LineChart Margin="0,6,0,0" Points="{Binding Points}" LineColorKey="{Binding LineColorKey}"
+                             BandFrom="{Binding BandFrom}" BandTo="{Binding BandTo}"
+                             BandColorKey="{Binding BandColorKey}" Bands="{Binding Bands}" />
+                <TextBlock Classes="cap" FontSize="10.5" HorizontalAlignment="Center" Text="phrase →" />
+              </StackPanel>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
+  </StackPanel>
+</UserControl>

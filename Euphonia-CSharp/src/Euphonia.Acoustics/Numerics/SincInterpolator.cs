@@ -22,7 +22,7 @@ public static class SincInterpolator
     public static double Interpolate(ReadOnlySpan<double> y, double x, int maxDepth)
     {
         var n = y.Length;
-        if (n < 1) return double.NaN;
+        if (n < 1 || double.IsNaN(x)) return double.NaN;
         if (x < 1) return y[0];
         if (x > n) return y[n - 1];
         var midLeft = (int)Math.Floor(x);

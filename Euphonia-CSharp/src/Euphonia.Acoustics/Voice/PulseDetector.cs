@@ -15,17 +15,46 @@ public static class PulseDetector
     public static double[] PeriodicCrossCorrelation(Sound sound, PitchContour pitch)
     {
         var points = new SortedSet<double>();
-        var globalPeak = 0.0;
-        for (var ch = 0; ch < sound.ChannelCount; ch++)
-            foreach (var s in sound.Channel(ch)) globalPeak = Math.Max(globalPeak, Math.Abs(s));
-
-        var t = pitch.Grid.XMin;
+        var globalPeak = AbsolutePeak(sound);
         var addedRight = -1e308;
+        foreach (var (tleft, tright) in VoicedStretches(pitch))
+            if (!DetectStretch(sound, pitch, tleft, tright, globalPeak, points, ref addedRight)) break;
+        return [.. points];
+    }
+
+    /// <summary>Largest |sample| over all channels: the reference for the pulse-acceptance levels.</summary>
+    public static double AbsolutePeak(Sound sound)
+    {
+        var peak = 0.0;
+        for (var ch = 0; ch < sound.ChannelCount; ch++)
+            foreach (var s in sound.Channel(ch)) peak = Math.Max(peak, Math.Abs(s));
+        return peak;
+    }
+
+    /// <summary>The voiced stretches in order, each widened by half a frame on both sides.</summary>
+    public static IEnumerable<(double Left, double Right)> VoicedStretches(PitchContour pitch)
+    {
+        var t = pitch.Grid.XMin;
         while (NextVoicedInterval(pitch, t, out var tleft, out var tright))
+        {
+            yield return (tleft, tright);
+            t = tright;
+        }
+    }
+
+    /// <summary>
+    /// Places the pulses of one voiced stretch into <paramref name="points"/>.
+    /// <paramref name="addedRight"/> carries the last pulse added past a stretch's end
+    /// into the next stretch (so a short gap is not filled twice); start with −1e308.
+    /// </summary>
+    /// <returns>False if the stretch has no pitch in its middle (never for a genuine voiced stretch).</returns>
+    public static bool DetectStretch(Sound sound, PitchContour pitch, double tleft, double tright, double globalPeak,
+        SortedSet<double> points, ref double addedRight)
+    {
         {
             var tmiddle = 0.5 * (tleft + tright);
             var f0Middle = pitch.ValueAtTime(tmiddle);
-            if (double.IsNaN(f0Middle)) break; // cannot happen for a voiced stretch; stay safe
+            if (double.IsNaN(f0Middle)) return false; // cannot happen for a voiced stretch; stay safe
             var tmax = FindExtremum(sound, tmiddle - 0.5 / f0Middle, tmiddle + 0.5 / f0Middle);
             points.Add(tmax);
             var tsave = tmax;
@@ -69,9 +98,8 @@ public static class PulseDetector
                     addedRight = tmax;
                 }
             }
-            t = tright;
         }
-        return [.. points];
+        return true;
     }
 
     /// <summary>The first run of voiced frames starting at or after <paramref name="after"/>, widened by half a frame each side.</summary>

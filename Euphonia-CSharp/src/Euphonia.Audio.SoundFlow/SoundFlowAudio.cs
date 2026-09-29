@@ -47,6 +47,10 @@ internal sealed class SoundFlowRecorder(MiniAudioEngine engine) : IAudioRecorder
 
     public bool IsRecording => _device is not null;
 
+    public int SampleRate => SoundFlowAudio.SampleRate;
+
+    public event SamplesCapturedHandler? SamplesCaptured;
+
     public void Start()
     {
         lock (_gate)
@@ -88,7 +92,12 @@ internal sealed class SoundFlowRecorder(MiniAudioEngine engine) : IAudioRecorder
 
     private void OnSamples(Span<float> samples, Capability capability)
     {
-        lock (_gate) _writer?.Write(samples);
+        lock (_gate)
+        {
+            if (_writer is null) return;
+            _writer.Write(samples);
+            SamplesCaptured?.Invoke(samples);
+        }
     }
 
     private void CleanupUnlocked(bool deleteFile)

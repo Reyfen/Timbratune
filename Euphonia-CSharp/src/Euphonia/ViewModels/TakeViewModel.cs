@@ -14,10 +14,14 @@ namespace Euphonia.ViewModels;
 /// </summary>
 public sealed class TakeViewModel
 {
-    public TakeViewModel(Recording r, RecordingDetail? detail, bool isLatest, IRelayCommand<MetricKey> openMetric)
+    /// <param name="liveElapsed">Set while recording: the take so far, shown live (no modal, no saved-take details).</param>
+    public TakeViewModel(Recording r, RecordingDetail? detail, bool isLatest, IRelayCommand<MetricKey> openMetric, double? liveElapsed = null)
     {
         Recording = r;
-        Title = isLatest ? "Latest take" : $"Take #{r.Id}";
+        IsLive = liveElapsed is not null;
+        Title = liveElapsed is { } elapsed ? $"🔴 Live · {TimeSpan.FromSeconds(elapsed):m\\:ss}"
+            : isLatest ? "Latest take" : $"Take #{r.Id}";
+        MetricKey? Card(MetricKey key) => IsLive ? null : key; // live cards don't open the reference modal
         Banner = $"💗 #{r.Id} · {r.Label} · ";
         Date = r.Date;
 
@@ -26,31 +30,31 @@ public sealed class TakeViewModel
         [
             new StatCardViewModel("Pitch (avg)", r.Pitch.MeanHz, "Hz", Zones.Pitch, 100, 260,
                 pz is null ? "" : $"you're in the **{pz.Name}** zone — 165 Hz+ reads feminine to most ears 💕",
-                MetricKey.Pitch, openMetric),
+                Card(MetricKey.Pitch), openMetric),
             new StatCardViewModel("Pitch range", r.Pitch.RangeHz, "Hz", null, 0, 0,
                 $"{Fmt(r.Pitch.MinHz)}–{Fmt(r.Pitch.MaxHz)} Hz · wider = more melodic & expressive",
                 null, openMetric),
             new StatCardViewModel("Loudness", r.Intensity.MeanDb, "dB", Zones.Loudness, 45, 78,
-                "louder = more present & confident 📣", MetricKey.Loudness, openMetric),
+                "louder = more present & confident 📣", Card(MetricKey.Loudness), openMetric),
             new StatCardViewModel("Pitch variability", r.Pitch.SdHz, "Hz", Zones.PitchSd, 0, 60,
-                "how much your melody moves · ~20–40 Hz is lively, natural speech", MetricKey.Sd, openMetric),
+                "how much your melody moves · ~20–40 Hz is lively, natural speech", Card(MetricKey.Sd), openMetric),
             new StatCardViewModel("Clarity (HNR)", r.VoiceQuality.HnrDb, "dB", Zones.Hnr, 0, 30,
                 "higher = clearer, lower = breathier · runs lower on full passages than a held vowel",
-                MetricKey.Hnr, openMetric),
+                Card(MetricKey.Hnr), openMetric),
             new StatCardViewModel("Steadiness (jitter)", r.VoiceQuality.JitterPct, "%", Zones.Jitter, 0, 3,
                 $"lower = steadier · shimmer {Fmt(r.VoiceQuality.ShimmerPct)}% (under ~3.8% is steady)",
-                MetricKey.Jitter, openMetric),
+                Card(MetricKey.Jitter), openMetric),
             new StatCardViewModel("Weight", r.Weight?.H1a3cDb, "dB", Zones.Weight, 0, 20,
                 "source spectral tilt (corrected H1*–A3*) — the _thickness_ of the voice itself (separate from " +
                 "pitch & resonance) · lighter leans feminine. **Heads up:** weight is hard to pin to a gender " +
                 "across people (lots of overlap), so it's most useful as **your own change over time**, not a " +
                 "vs-others verdict.",
-                MetricKey.Weight, openMetric),
+                Card(MetricKey.Weight), openMetric),
         ];
 
         // ---- Resonance (ResonanceCard.tsx) ----
-        F2 = new GaugeViewModel("F2", "main brightness cue", r.Formants.F2Hz, Zones.F2, 1100, 2000, MetricKey.F2, openMetric);
-        F3 = new GaugeViewModel("F3", "supports brightness", r.Formants.F3Hz, Zones.F3, 2100, 3400, MetricKey.F3, openMetric);
+        F2 = new GaugeViewModel("F2", "main brightness cue", r.Formants.F2Hz, Zones.F2, 1100, 2000, MetricKey.F2, openMetric, !IsLive);
+        F3 = new GaugeViewModel("F3", "supports brightness", r.Formants.F3Hz, Zones.F3, 2100, 3400, MetricKey.F3, openMetric, !IsLive);
         var score = new[] { F2.Zone, F3.Zone }.Sum(z => z?.Name == "bright" ? 1 : z?.Name == "deeper" ? -1 : 0);
         ResonanceSummary = score >= 1
             ? "✨ Your resonance **leans bright & light** — this is the cue that makes a voice read feminine beyond pitch. Lovely!"
@@ -125,6 +129,9 @@ public sealed class TakeViewModel
     }
 
     public Recording Recording { get; }
+    public bool IsLive { get; }
+    /// <summary>The register section's contour; live, it's shown above the cards with zone bands instead.</summary>
+    public bool ShowContour => !IsLive;
     public string Title { get; }
     public string Banner { get; }
     public string Date { get; }
@@ -197,8 +204,10 @@ public sealed class StatCardViewModel(
 
 public sealed class GaugeViewModel(
     string name, string description, double? value, IReadOnlyList<Zone> zones, double lo, double hi,
-    MetricKey key, IRelayCommand<MetricKey> openMetric)
+    MetricKey key, IRelayCommand<MetricKey> openMetric, bool interactive = true)
 {
+    public bool Interactive { get; } = interactive;
+    public string? ToolTip => Interactive ? "tap to see how you compare to real voices 🔍" : null;
     public string Name { get; } = name;
     public string Description { get; } = description;
     public double? Value { get; } = value;
@@ -208,7 +217,10 @@ public sealed class GaugeViewModel(
     public double Lo { get; } = lo;
     public double Hi { get; } = hi;
 
-    public void Open() => openMetric.Execute(key);
+    public void Open()
+    {
+        if (Interactive) openMetric.Execute(key);
+    }
 }
 
 /// <summary>One bar of "Where the register drops happen": height = clamp(v·3, 4, 100) % of the track.</summary>

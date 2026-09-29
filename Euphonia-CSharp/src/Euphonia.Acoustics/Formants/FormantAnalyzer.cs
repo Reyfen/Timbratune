@@ -6,8 +6,18 @@ namespace Euphonia.Acoustics.Formants;
 /// <summary>A resonance: centre frequency and −3 dB bandwidth, both in Hz.</summary>
 public readonly record struct FormantValue(double Frequency, double Bandwidth);
 
+/// <summary>Formant values over time, however the frames are laid out.</summary>
+public interface IFormantTrack
+{
+    /// <summary>Frequency of formant <paramref name="number"/> (1 = F1) at time t; NaN where unknown.</summary>
+    double ValueAtTime(int number, double t);
+
+    /// <summary>Bandwidth of formant <paramref name="number"/> at time t; NaN where unknown.</summary>
+    double BandwidthAtTime(int number, double t);
+}
+
 /// <summary>Formant tracks: per frame the resonances found, lowest first.</summary>
-public sealed class FormantContour
+public sealed class FormantContour : IFormantTrack
 {
     internal FormantContour(TimeGrid grid, FormantValue[][] frames)
     {

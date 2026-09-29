@@ -23,6 +23,9 @@ public sealed class WavWriter : IDisposable
     public string Path => _stream.Name;
     public TimeSpan Duration => TimeSpan.FromSeconds((double)_dataBytes / (2 * _channels * _sampleRate));
 
+    /// <summary>The PCM16 value a float sample (−1..1) is stored as.</summary>
+    public static short ToPcm16(float sample) => (short)Math.Round(Math.Clamp(sample, -1f, 1f) * short.MaxValue);
+
     /// <summary>Appends float samples (−1..1, interleaved) as PCM16.</summary>
     public void Write(ReadOnlySpan<float> samples)
     {
@@ -32,14 +35,29 @@ public sealed class WavWriter : IDisposable
         {
             var n = Math.Min(samples.Length - i, buffer.Length / 2);
             for (var k = 0; k < n; k++)
-            {
-                var s = Math.Clamp(samples[i + k], -1f, 1f);
-                BinaryPrimitives.WriteInt16LittleEndian(buffer.Slice(k * 2), (short)Math.Round(s * short.MaxValue));
-            }
+                BinaryPrimitives.WriteInt16LittleEndian(buffer.Slice(k * 2), ToPcm16(samples[i + k]));
             _stream.Write(buffer[..(n * 2)]);
             _dataBytes += n * 2;
             i += n;
         }
+    }
+
+    /// <summary>
+    /// Shortens a finished mono PCM16 file written by this class (44-byte header) to its
+    /// first <paramref name="sampleCount"/> samples, fixing the header sizes.
+    /// </summary>
+    public static void Truncate(string path, int sampleCount)
+    {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.ReadWrite);
+        var dataBytes = Math.Min((long)sampleCount * 2, Math.Max(0, stream.Length - 44));
+        stream.SetLength(44 + dataBytes);
+        Span<byte> size = stackalloc byte[4];
+        stream.Position = 4;
+        BinaryPrimitives.WriteInt32LittleEndian(size, (int)(36 + dataBytes));
+        stream.Write(size);
+        stream.Position = 40;
+        BinaryPrimitives.WriteInt32LittleEndian(size, (int)dataBytes);
+        stream.Write(size);
     }
 
     public void Dispose()

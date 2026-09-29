@@ -22,6 +22,7 @@ public sealed class Sound
 
     public Sound(double[] mono, double samplingFrequency) : this([mono], samplingFrequency) { }
 
+    /// <summary>Wraps existing arrays without copying; they may be longer than <paramref name="grid"/>.Count.</summary>
     internal Sound(double[][] channels, TimeGrid grid)
     {
         _channels = channels;
@@ -34,7 +35,9 @@ public sealed class Sound
     public double SamplingFrequency => 1.0 / Grid.Step;
     public double Duration => Grid.XMax - Grid.XMin;
 
-    public ReadOnlySpan<double> Channel(int channel) => _channels[channel];
+    public ReadOnlySpan<double> Channel(int channel) => _channels[channel].AsSpan(0, SampleCount);
+
+    /// <summary>The backing array; it may be longer than <see cref="SampleCount"/> (live buffers grow in place).</summary>
     internal double[] ChannelArray(int channel) => _channels[channel];
 
     /// <summary>Average of the channels at sample <paramref name="i"/>.</summary>
@@ -49,7 +52,8 @@ public sealed class Sound
     /// <summary>Channel average as one array (the channel itself for mono sounds).</summary>
     public double[] ToMono()
     {
-        if (_channels.Length == 1) return _channels[0];
+        if (_channels.Length == 1)
+            return _channels[0].Length == SampleCount ? _channels[0] : _channels[0].AsSpan(0, SampleCount).ToArray();
         var mono = new double[SampleCount];
         for (var i = 0; i < mono.Length; i++) mono[i] = MonoSample(i);
         return mono;

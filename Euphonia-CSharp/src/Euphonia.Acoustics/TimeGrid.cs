@@ -29,6 +29,28 @@ public readonly record struct TimeGrid(double XMin, double XMax, int Count, doub
     /// Frames for short-term analysis: as many windows of <paramref name="windowDuration"/>
     /// as fit, <paramref name="timeStep"/> apart, centred as a group in this grid's span.
     /// </summary>
+    /// <summary>
+    /// The largest sample count ≤ <paramref name="available"/> (dropping less than one
+    /// <paramref name="timeStep"/>) for which <see cref="ShortTermFrames"/> of the whole
+    /// signal starts its frames where a stream analysis does, at
+    /// windowDuration/2 from the start. With that length, whole-signal and streaming
+    /// analyses use the same frame times.
+    /// </summary>
+    public static int AlignedLength(int available, double samplingFrequency, double windowDuration, double timeStep)
+    {
+        var dx = 1.0 / samplingFrequency;
+        var maxDrop = (int)Math.Ceiling(timeStep * samplingFrequency) + 1;
+        for (var n = available; n >= Math.Max(1, available - maxDrop); n--)
+        {
+            var samples = new TimeGrid(0, n * dx, n, dx, 0.5 * dx);
+            if (n * dx < windowDuration) break;
+            var frames = ShortTermFrames(samples, windowDuration, timeStep);
+            var streamFirst = samples.First - 0.5 * dx + 0.5 * windowDuration;
+            if (Math.Abs(frames.First - streamFirst) < 1e-12) return n;
+        }
+        return available;
+    }
+
     public static TimeGrid ShortTermFrames(TimeGrid signal, double windowDuration, double timeStep)
     {
         var duration = signal.Step * signal.Count;

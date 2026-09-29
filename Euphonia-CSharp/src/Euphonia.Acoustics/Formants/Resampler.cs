@@ -24,7 +24,7 @@ public static class Resampler
         var channels = new double[sound.ChannelCount][];
         for (var ch = 0; ch < channels.Length; ch++)
         {
-            var source = sound.ChannelArray(ch);
+            ReadOnlySpan<double> source = sound.Channel(ch);
             if (ratio < 1) source = LowPass(source, ratio);
             var output = new double[n];
             for (var i = 0; i < n; i++)
@@ -39,13 +39,13 @@ public static class Resampler
     /// padded with 1000 zeros on each side (to the next power of two) so the
     /// circular transform doesn't wrap the edges into each other.
     /// </summary>
-    private static double[] LowPass(double[] samples, double ratio)
+    private static double[] LowPass(ReadOnlySpan<double> samples, double ratio)
     {
         const int padding = 1000;
         var nfft = Fft.NextPowerOfTwo(samples.Length + 2 * padding);
         var re = new double[nfft];
         var im = new double[nfft];
-        samples.AsSpan().CopyTo(re.AsSpan(padding));
+        samples.CopyTo(re.AsSpan(padding));
         Fft.ForwardInPlace(re, im);
 
         // Cut-off expressed in the packed real-FFT layout [DC, Nyquist, Re1, Im1, Re2, Im2, …]

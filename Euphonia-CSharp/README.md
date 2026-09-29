@@ -99,6 +99,45 @@ takes about 0.2 s (about 1.4 s on a single core).
   only used by tests: `scripts/fetch-praat.ps1` puts it in `tools/praat/`, or set `EUPHONIA_PRAAT`. Without it these
   tests are skipped.
 
+## Live analysis while recording
+
+While you speak, the take view fills in and keeps updating. `LiveAnalyzer` (`Euphonia.Core/Analysis`) receives
+microphone samples and processes every newly complete analysis frame (10 ms pitch/HNR frames). The UI refreshes
+about 10× per second. Above the stat cards there are timelines for:
+- pitch, loudness, pitch variability, HNR
+- F2, F3, weight
+- in-register melody and jitter
+
+Each timeline is drawn over its metric's own zone bands, using the same zones and colours as the cards, so the
+current dot shows which zone you're in. The time axis grows in 10 s steps. The "live graphs show" dropdown switches
+it to a sliding window of the last 10, 30, 60 or 120 s. On Stop the live view freezes, the normal full analysis runs,
+and the saved take replaces it.
+
+Each line is smoothed over a window centred on its time: a median, an energy average for loudness, or an SD for
+movement. Near "now" only the past is available, so the newest part of the line is a quick estimate that settles in
+place as more audio arrives. A window never reaches across a pause.
+
+Live and full analysis share the same frame kernels (`Euphonia.Acoustics/Streaming`) and the same assembler
+(`RawAnalysisAssembler`).
+- **Trimming:** the saved WAV is trimmed by up to 10 ms so that its frame grid equals the live grid.
+- **Exact match:** after trimming, the final live snapshot matches the saved analysis exactly for:
+  - pitch statistics, contour, register and melody
+  - phrases and landed endings
+  - jitter and shimmer
+- **Close match:** formants are within 11 Hz, HNR within 0.2 dB, weight within 0.3 dB and loudness within 0.03 dB
+  (see `tests/Euphonia.Core.Tests/LiveAnalysisTests`).
+
+**Delayed or approximate while live:**
+- The last ~0.1–0.3 s of the pitch path can still be revised.
+- Phrases (count, endings, onset/mid/offset) appear only after a pause.
+- Jitter and shimmer appear once a voiced stretch ends.
+- Formants, weight and phrase boundaries are relative to the loudest moment so far, so they can shift when you get
+  louder.
+- LTAS tilt is only computed at Stop.
+
+Developer aid: `$env:EUPHONIA_FAKE_MIC = "take.wav"` makes the recorder replay that file in real time instead of
+using the microphone.
+
 ## What's in v1 and what isn't
 
 **Ported:**

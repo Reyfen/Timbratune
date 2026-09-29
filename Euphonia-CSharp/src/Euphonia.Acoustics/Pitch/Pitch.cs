@@ -5,31 +5,40 @@ namespace Euphonia.Acoustics.Pitch;
 /// <summary>A periodicity candidate: frequency (0 = unvoiced) and normalized correlation strength.</summary>
 public readonly record struct PitchCandidate(double Frequency, double Strength);
 
-/// <summary>One analysis frame: its relative intensity (0..1) and candidates, best first after path finding.</summary>
+/// <summary>
+/// One analysis frame: its local peak amplitude (compared with the whole sound's
+/// peak when the path is chosen) and its candidates; candidate 0 is always "unvoiced".
+/// Frames are immutable, so the same frames can be re-scored as a recording grows.
+/// </summary>
 public sealed class PitchFrame
 {
-    internal PitchFrame(double intensity, List<PitchCandidate> candidates)
+    internal static readonly PitchFrame Silent = new(0, [new PitchCandidate(0, 0)]);
+
+    internal PitchFrame(double localPeak, List<PitchCandidate> candidates)
     {
-        Intensity = intensity;
+        LocalPeak = localPeak;
         Candidates = candidates;
     }
 
-    public double Intensity { get; }
+    /// <summary>Largest |sample| near the frame centre, after removing the local mean.</summary>
+    public double LocalPeak { get; }
     internal List<PitchCandidate> Candidates { get; }
     public IReadOnlyList<PitchCandidate> AllCandidates => Candidates;
-    public PitchCandidate Best => Candidates[0];
 }
 
 /// <summary>
-/// A pitch contour: per frame the chosen candidate. A frame is voiced when its
-/// frequency is above 0 and below <see cref="Ceiling"/>.
+/// A pitch contour: per frame the candidate chosen by the path finder. A frame is
+/// voiced when that frequency is above 0 and below <see cref="Ceiling"/>.
 /// </summary>
 public sealed class PitchContour
 {
-    internal PitchContour(TimeGrid grid, PitchFrame[] frames, double ceiling)
+    private readonly int[] _chosen;
+
+    internal PitchContour(TimeGrid grid, IReadOnlyList<PitchFrame> frames, int[] chosen, double ceiling)
     {
         Grid = grid;
         Frames = frames;
+        _chosen = chosen;
         Ceiling = ceiling;
     }
 
@@ -38,17 +47,20 @@ public sealed class PitchContour
     public double Ceiling { get; }
     public int FrameCount => Frames.Count;
 
-    public bool IsVoiced(int frame) => frame >= 0 && frame < Frames.Count && IsVoicedFrequency(Frames[frame].Best.Frequency, Ceiling);
+    /// <summary>The chosen candidate of a frame.</summary>
+    public PitchCandidate Best(int frame) => Frames[frame].Candidates[_chosen[frame]];
+
+    public bool IsVoiced(int frame) => frame >= 0 && frame < Frames.Count && IsVoicedFrequency(Best(frame).Frequency, Ceiling);
 
     internal static bool IsVoicedFrequency(double f, double ceiling) => f > 0 && f < ceiling;
 
     /// <summary>F0 of a frame in Hz, or NaN when unvoiced / out of range.</summary>
-    public double ValueInFrame(int frame) => IsVoiced(frame) ? Frames[frame].Best.Frequency : double.NaN;
+    public double ValueInFrame(int frame) => IsVoiced(frame) ? Best(frame).Frequency : double.NaN;
 
     public IEnumerable<double> VoicedValues()
     {
         for (var i = 0; i < Frames.Count; i++)
-            if (IsVoiced(i)) yield return Frames[i].Best.Frequency;
+            if (IsVoiced(i)) yield return Best(i).Frequency;
     }
 
     /// <summary>Mean F0 over voiced frames (Hz).</summary>

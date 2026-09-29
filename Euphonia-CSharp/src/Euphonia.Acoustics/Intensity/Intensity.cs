@@ -62,52 +62,80 @@ public static class IntensityAnalyzer
     /// <param name="subtractMean">Remove the DC offset of each window before squaring.</param>
     public static IntensityContour Analyze(Sound sound, double minimumPitch, double timeStep = 0, bool subtractMean = true)
     {
-        if (timeStep <= 0) timeStep = 0.8 / minimumPitch;
-        var halfWindow = 3.2 / minimumPitch;
-        var physicalWindow = 2 * halfWindow;
-        var grid = sound.Grid;
-        var dx = grid.Step;
+        var analyzer = new IntensityFrameAnalyzer(sound.SamplingFrequency, minimumPitch, timeStep, subtractMean);
+        var frames = TimeGrid.ShortTermFrames(sound.Grid, analyzer.FrameWindowDuration, analyzer.TimeStep);
+        var channels = Enumerable.Range(0, sound.ChannelCount).Select(sound.ChannelArray).ToArray();
+        var db = new double[frames.Count];
+        var segment = analyzer.CreateBuffer();
+        for (var f = 0; f < frames.Count; f++) db[f] = analyzer.AnalyzeFrame(channels, sound.Grid, frames.IndexToX(f), segment);
+        return new IntensityContour(frames, db);
+    }
 
-        var halfSamples = (int)Math.Floor(halfWindow / dx);
-        var window = new double[2 * halfSamples + 1];
+    internal const double ReferencePressureSquaredValue = ReferencePressureSquared;
+}
+
+/// <summary>
+/// One intensity frame at a time, shared by the full analysis and the live
+/// (streaming) analysis so both compute identical values from identical samples.
+/// </summary>
+internal sealed class IntensityFrameAnalyzer
+{
+    private readonly double[] _window;
+    private readonly int _halfSamples;
+    private readonly bool _subtractMean;
+
+    public IntensityFrameAnalyzer(double samplingFrequency, double minimumPitch, double timeStep, bool subtractMean)
+    {
+        TimeStep = timeStep > 0 ? timeStep : 0.8 / minimumPitch;
+        var halfWindow = 3.2 / minimumPitch;
+        FrameWindowDuration = 2 * halfWindow;
+        _subtractMean = subtractMean;
+        var dx = 1.0 / samplingFrequency;
+        _halfSamples = (int)Math.Floor(halfWindow / dx);
+        _window = new double[2 * _halfSamples + 1];
         const double beta = 2 * Math.PI * Math.PI + 0.5;
-        for (var k = -halfSamples; k <= halfSamples; k++)
+        for (var k = -_halfSamples; k <= _halfSamples; k++)
         {
             var x = k * dx / halfWindow;
-            window[k + halfSamples] = Windows.BesselI0(beta * Math.Sqrt(Math.Max(0, 1 - x * x)));
+            _window[k + _halfSamples] = Windows.BesselI0(beta * Math.Sqrt(Math.Max(0, 1 - x * x)));
         }
+    }
 
-        var frames = TimeGrid.ShortTermFrames(grid, physicalWindow, timeStep);
-        var db = new double[frames.Count];
-        var segment = new double[window.Length];
-        for (var f = 0; f < frames.Count; f++)
+    public double TimeStep { get; }
+    /// <summary>Physical window length (6.4 periods of the minimum pitch).</summary>
+    public double FrameWindowDuration { get; }
+
+    public double[] CreateBuffer() => new double[_window.Length];
+
+    /// <summary>Highest 0-based sample index the frame at t reads (before clipping).</summary>
+    public int LastSampleNeeded(TimeGrid samples, double t) => Stats.RoundHalfUp(samples.XToIndex(t) + 1) - 1 + _halfSamples;
+
+    /// <summary>Intensity (dB) of the frame centred at t; <paramref name="samples"/> gives the valid part of the channel arrays.</summary>
+    public double AnalyzeFrame(double[][] channels, TimeGrid samples, double t, double[] segment)
+    {
+        var centre = Stats.RoundHalfUp(samples.XToIndex(t) + 1) - 1;
+        var from = Math.Max(0, centre - _halfSamples);
+        var to = Math.Min(samples.Count - 1, centre + _halfSamples);
+        var count = to - from + 1;
+        var weighted = new CompensatedSum();
+        var weights = new CompensatedSum();
+        foreach (var channel in channels)
         {
-            var centre = Stats.RoundHalfUp(grid.XToIndex(frames.IndexToX(f)) + 1) - 1;
-            var from = Math.Max(0, centre - halfSamples);
-            var to = Math.Min(grid.Count - 1, centre + halfSamples);
-            var count = to - from + 1;
-            var weighted = new CompensatedSum();
-            var weights = new CompensatedSum();
-            for (var ch = 0; ch < sound.ChannelCount; ch++)
+            var seg = segment.AsSpan(0, count);
+            channel.AsSpan(from, count).CopyTo(seg);
+            if (_subtractMean)
             {
-                var samples = sound.Channel(ch);
-                var seg = segment.AsSpan(0, count);
-                samples.Slice(from, count).CopyTo(seg);
-                if (subtractMean)
-                {
-                    var mean = Stats.Mean(seg);
-                    for (var i = 0; i < count; i++) seg[i] -= mean;
-                }
-                for (var i = 0; i < count; i++)
-                {
-                    var w = window[from + i - centre + halfSamples];
-                    weighted.Add(seg[i] * seg[i] * w);
-                    weights.Add(w);
-                }
+                var mean = Stats.Mean(seg);
+                for (var i = 0; i < count; i++) seg[i] -= mean;
             }
-            var power = weighted.Value / weights.Value / ReferencePressureSquared;
-            db[f] = power < 1e-30 ? -300 : 10 * Math.Log10(power);
+            for (var i = 0; i < count; i++)
+            {
+                var w = _window[from + i - centre + _halfSamples];
+                weighted.Add(seg[i] * seg[i] * w);
+                weights.Add(w);
+            }
         }
-        return new IntensityContour(frames, db);
+        var power = weighted.Value / weights.Value / IntensityAnalyzer.ReferencePressureSquaredValue;
+        return power < 1e-30 ? -300 : 10 * Math.Log10(power);
     }
 }

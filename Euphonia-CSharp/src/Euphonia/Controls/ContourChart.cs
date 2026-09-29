@@ -21,10 +21,26 @@ public sealed class ContourChart : ThemedControl
     public static readonly StyledProperty<double> FemThresholdProperty =
         AvaloniaProperty.Register<ContourChart, double>(nameof(FemThreshold), Metrics.FemininePitchHz);
 
-    static ContourChart() => RedrawOn<ContourChart>(DetailProperty, FemThresholdProperty);
+    /// <summary>Time axis length (s); 0 = the take's duration. Live views pass 10-second steps.</summary>
+    public static readonly StyledProperty<double> AxisDurationProperty =
+        AvaloniaProperty.Register<ContourChart, double>(nameof(AxisDuration));
+    /// <summary>Time at the left edge (s); live views with a sliding window move it along.</summary>
+    public static readonly StyledProperty<double> AxisStartProperty =
+        AvaloniaProperty.Register<ContourChart, double>(nameof(AxisStart));
+    /// <summary>When set (live view), these zones fill the background and the pitch range is fixed.</summary>
+    public static readonly StyledProperty<IReadOnlyList<Zone>?> ZonesProperty =
+        AvaloniaProperty.Register<ContourChart, IReadOnlyList<Zone>?>(nameof(Zones));
+
+    static ContourChart() => RedrawOn<ContourChart>(DetailProperty, FemThresholdProperty, AxisDurationProperty, AxisStartProperty, ZonesProperty);
 
     public RecordingDetail? Detail { get => GetValue(DetailProperty); set => SetValue(DetailProperty, value); }
     public double FemThreshold { get => GetValue(FemThresholdProperty); set => SetValue(FemThresholdProperty, value); }
+    public double AxisDuration { get => GetValue(AxisDurationProperty); set => SetValue(AxisDurationProperty, value); }
+    public double AxisStart { get => GetValue(AxisStartProperty); set => SetValue(AxisStartProperty, value); }
+    public IReadOnlyList<Zone>? Zones { get => GetValue(ZonesProperty); set => SetValue(ZonesProperty, value); }
+
+    // Fixed live pitch range: wide enough for low male and high female speech, so zone bands never move.
+    private const double LiveMinHz = 70, LiveMaxHz = 330;
 
     private const double H = 240;
     private const double PadL = 40, PadR = 14, PadT = 14, PadB = 40;
@@ -53,37 +69,69 @@ public sealed class ContourChart : ThemedControl
         var floor = d.RegisterFloorHz;
         var t = d.Frames.T;
         var hz = d.Frames.Hz;
-        var dur = d.DurationS > 0 ? d.DurationS : t.Count > 0 && t[^1] > 0 ? t[^1] : 1;
+        var dur = AxisDuration > 0 ? AxisDuration : d.DurationS > 0 ? d.DurationS : t.Count > 0 && t[^1] > 0 ? t[^1] : 1;
         var fem = FemThreshold;
+        var zones = Zones;
 
         var voiced = hz.Where(v => v.HasValue).Select(v => v!.Value).ToList();
-        var maxHz = Math.Max(Math.Max(220, voiced.Count > 0 ? voiced.Max() : 0), fem) * 1.05;
-        var minHz = Math.Min(Math.Min(80, floor - 20), voiced.Count > 0 ? voiced.Min() : double.MaxValue);
+        double maxHz, minHz;
+        if (zones is null)
+        {
+            maxHz = Math.Max(Math.Max(220, voiced.Count > 0 ? voiced.Max() : 0), fem) * 1.05;
+            minHz = Math.Min(Math.Min(80, floor - 20), voiced.Count > 0 ? voiced.Min() : double.MaxValue);
+        }
+        else
+        {
+            maxHz = LiveMaxHz;
+            minHz = LiveMinHz;
+        }
 
-        double X(double time) => PadL + time / dur * iw;
-        double Y(double f) => PadT + (1 - (f - minHz) / (maxHz - minHz)) * ih;
+        var start = AxisStart;
+        double X(double time) => PadL + (time - start) / dur * iw;
+        double Y(double f) => PadT + (1 - (Math.Clamp(f, minHz, maxHz) - minHz) / (maxHz - minHz)) * ih;
 
-        ctx.FillRectangle(new SolidColorBrush(ZoneColor(ZoneColorKey.Fem), 0.12), new Rect(PadL, Y(maxHz), iw, Y(fem) - Y(maxHz)));
-        ctx.FillRectangle(new SolidColorBrush(ZoneColor(ZoneColorKey.Masc), 0.22), new Rect(PadL, Y(floor), iw, Y(minHz) - Y(floor)));
+        if (zones is null)
+        {
+            ctx.FillRectangle(new SolidColorBrush(ZoneColor(ZoneColorKey.Fem), 0.12), new Rect(PadL, Y(maxHz), iw, Y(fem) - Y(maxHz)));
+            ctx.FillRectangle(new SolidColorBrush(ZoneColor(ZoneColorKey.Masc), 0.22), new Rect(PadL, Y(floor), iw, Y(minHz) - Y(floor)));
+        }
+        else
+        {
+            // Zone bands; the first and last extend to the plot edges (values beyond read as that zone).
+            for (var z = 0; z < zones.Count; z++)
+            {
+                var top = z == zones.Count - 1 ? maxHz : zones[z].To;
+                var bottom = z == 0 ? minHz : zones[z].From;
+                ctx.FillRectangle(new SolidColorBrush(ZoneColor(zones[z].Color), 0.3), new Rect(PadL, Y(top), iw, Y(bottom) - Y(top)));
+            }
+        }
 
         var floorPen = new Pen(new SolidColorBrush(Color.Parse("#7c9fd6")), 1.5) { DashStyle = new DashStyle([5 / 1.5, 4 / 1.5], 0) };
         ctx.DrawLine(floorPen, new Point(PadL, Y(floor)), new Point(w - PadR, Y(floor)));
         var floorLabel = Text($"register floor {floor.ToString(CultureInfo.InvariantCulture)} Hz", 11, C("ZoneMascInk"));
         ctx.DrawText(floorLabel, new Point(w - PadR - floorLabel.Width, Y(floor) - 5 - floorLabel.Height));
 
-        var divider = new Pen(B("LineSoft"), 1);
-        foreach (var p in d.Phrases) ctx.DrawLine(divider, new Point(X(p.End), PadT), new Point(X(p.End), PadT + ih));
-
         var soft = C("InkSoft");
-        foreach (var v in new[] { minHz, floor, fem, maxHz }.Distinct().Where(v => v <= maxHz && v >= minHz))
+        var ticks = zones is null
+            ? new[] { minHz, floor, fem, maxHz }
+            : new[] { minHz, maxHz }.Concat(zones.Skip(1).Select(z => z.From)).Append(floor).ToArray();
+        foreach (var v in ticks.Distinct().Where(v => v <= maxHz && v >= minHz))
         {
             var label = Text(Math.Round(v).ToString(CultureInfo.InvariantCulture), 10, soft);
             ctx.DrawText(label, new Point(PadL - 6 - label.Width, Y(v) - label.Height / 2));
         }
 
-        // Contour runs, split on unvoiced gaps and on crossing the floor.
+        // Everything drawn against time stays inside the plot's x range (a sliding window scrolls it).
+        using var clip = ctx.PushClip(new Rect(PadL - 7, 0, iw + 14, H));
+        var divider = new Pen(B("LineSoft"), 1);
+        foreach (var p in d.Phrases.Where(p => p.End >= start)) ctx.DrawLine(divider, new Point(X(p.End), PadT), new Point(X(p.End), PadT + ih));
+
+        // Contour runs, split on unvoiced gaps and on crossing the floor. Over the zone bands
+        // (live) the upper runs use a darker ink so they stay visible on the pink band.
         var belowPen = new Pen(B("ZoneMascInk"), 3, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round);
-        var abovePen = new Pen(new SolidColorBrush(ZoneColor(ZoneColorKey.Fem), 0.9), 2.4, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round);
+        var abovePen = zones is null
+            ? new Pen(new SolidColorBrush(ZoneColor(ZoneColorKey.Fem), 0.9), 2.4, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round)
+            : new Pen(B("AccentEmphasis"), 2.4, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round);
         var run = new List<Point>();
         bool? runBelow = null;
         void Flush()
@@ -93,7 +141,7 @@ public sealed class ContourChart : ThemedControl
         }
         for (var i = 0; i < hz.Count && i < t.Count; i++)
         {
-            if (hz[i] is not { } f)
+            if (hz[i] is not { } f || t[i] < start)
             {
                 Flush();
                 runBelow = null;
@@ -113,10 +161,27 @@ public sealed class ContourChart : ThemedControl
         for (var k = 0; k < d.Phrases.Count; k++)
         {
             var p = d.Phrases[k];
+            if (p.End < start) continue;
             var at = new Point(X(p.End), PadT + ih + 14);
             ctx.DrawEllipse(new SolidColorBrush(ZoneColor(p.EndedInRegister ? ZoneColorKey.Fem : ZoneColorKey.Masc)), card, at, 4.5, 4.5);
             _dots.Add((at, $"phrase {k + 1}: ended {p.OffsetHz.ToString(CultureInfo.InvariantCulture)} Hz — " +
                            (p.EndedInRegister ? "landed in register 💕" : "fell out of register")));
+        }
+
+        if (zones is not null)
+        {
+            // The current point: the latest voiced frame.
+            for (var i = Math.Min(hz.Count, t.Count) - 1; i >= 0; i--)
+            {
+                if (hz[i] is not { } f) continue;
+                var at = new Point(X(t[i]), Y(f));
+                ctx.DrawEllipse(B("Card"), new Pen(B("InkStrong"), 2.5), at, 6, 6);
+                break;
+            }
+            var end = Text(TimelineChart.Seconds(start + dur), 11, soft);
+            ctx.DrawText(Text(TimelineChart.Seconds(start), 11, soft), new Point(PadL, H - 18));
+            ctx.DrawText(end, new Point(w - PadR - end.Width, H - 18));
+            return;
         }
 
         ctx.DrawText(Text("time →", 11, soft), new Point(PadL, H - 18));
