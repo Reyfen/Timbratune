@@ -117,6 +117,16 @@ Each line is smoothed over a window centred on its time: a median, an energy ave
 movement. Near "now" only the past is available, so the newest part of the line is a quick estimate that settles in
 place as more audio arrives. A window never reaches across a pause.
 
+Most to least certain, there are four layers:
+1. **Full analysis** after Stop: the saved take.
+2. **Live frame analysis:** the points.
+3. **Smoothed live line:** its unsettled tail uses windows that are still missing future data.
+4. **Prediction:** the tail leans toward 50% of the settled line's recent trend and carries the line to "now", so the
+   current point is always shown. Loudness is the exception: it changes with every syllable and can't be predicted,
+   so its newest value is simply held.
+
+On top of that, the chart eases each redraw over 0.25 s. This affects only the display.
+
 Live and full analysis share the same frame kernels (`Euphonia.Acoustics/Streaming`) and the same assembler
 (`RawAnalysisAssembler`).
 - **Trimming:** the saved WAV is trimmed by up to 10 ms so that its frame grid equals the live grid.

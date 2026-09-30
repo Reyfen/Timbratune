@@ -58,7 +58,15 @@ public sealed class LiveAnalyzer
     private readonly double _registerFloorHz;
     private readonly object _updateGate = new();
 
-    public LiveAnalyzer(double samplingFrequency = 44100, double registerFloorHz = AnalysisPostProcessor.DefaultRegisterFloorHz)
+    /// <summary>
+    /// How much new audio (s) the formant trackers wait for before analyzing the next block.
+    /// Small blocks let resonance and weight arrive steadily and soon (latency ≈ block +
+    /// the 0.25 s edge margin); each block re-analyzes its margins, so it costs a bit more.
+    /// </summary>
+    public const double DefaultFormantBlockSeconds = 0.5;
+
+    public LiveAnalyzer(double samplingFrequency = 44100, double registerFloorHz = AnalysisPostProcessor.DefaultRegisterFloorHz,
+        double formantBlockSeconds = DefaultFormantBlockSeconds)
     {
         SamplingFrequency = samplingFrequency;
         _registerFloorHz = registerFloorHz;
@@ -66,8 +74,8 @@ public sealed class LiveAnalyzer
         _pitch = LivePitchTracker.Autocorrelation(samplingFrequency, 0, AcousticsAnalysisEngine.PitchFloor, AcousticsAnalysisEngine.PitchCeiling);
         _harmonicity = LivePitchTracker.Harmonicity(samplingFrequency, 0.01, AcousticsAnalysisEngine.PitchFloor, 0.1, 1.0);
         _intensity = new LiveIntensityTracker(samplingFrequency, AcousticsAnalysisEngine.PitchFloor);
-        _formants5500 = new LiveFormantTracker(RawAnalysisAssembler.FormantCeiling, 5, 0.025, 50);
-        _formants5000 = new LiveFormantTracker(5000, 5, 0.025, 50);
+        _formants5500 = new LiveFormantTracker(RawAnalysisAssembler.FormantCeiling, 5, 0.025, 50, formantBlockSeconds);
+        _formants5000 = new LiveFormantTracker(5000, 5, 0.025, 50, formantBlockSeconds);
     }
 
     public double SamplingFrequency { get; }

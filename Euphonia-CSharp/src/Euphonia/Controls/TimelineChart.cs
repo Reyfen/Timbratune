@@ -1,5 +1,7 @@
+using System.Diagnostics;
 using System.Globalization;
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Media;
 using Euphonia.Core.Analysis;
 using Euphonia.Core.Domain;
@@ -12,6 +14,9 @@ namespace Euphonia.Controls;
 /// current point as a dot at its end. NaN values break the line. The y scale is
 /// fixed to the card's scale so the bands never move; the time axis shows
 /// <see cref="AxisStart"/> … <see cref="AxisStart"/> + <see cref="AxisDuration"/>.
+/// A new <see cref="Line"/> is not drawn at once: the drawn line glides from what was
+/// on screen to the new values over <see cref="EaseSeconds"/> (display only), so values
+/// that arrive in bursts or get corrected move smoothly instead of jumping.
 /// </summary>
 public sealed class TimelineChart : ThemedControl
 {
@@ -39,6 +44,81 @@ public sealed class TimelineChart : ThemedControl
     public double AxisStart { get => GetValue(AxisStartProperty); set => SetValue(AxisStartProperty, value); }
 
     private const double H = 130, PadL = 36, PadR = 12, PadT = 8, PadB = 20;
+
+    /// <summary>How long the drawn line takes to reach newly arrived values.</summary>
+    public const double EaseSeconds = 0.25;
+    /// <summary>A newly appended tail grows out of the old line's end when it starts within this (s).</summary>
+    private const double ContinueSeconds = 0.5;
+
+    private IReadOnlyList<TimedValue>? _easeFrom;
+    private long _easeStart;
+    private bool _frameRequested;
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property != LineProperty) return;
+        var old = change.OldValue as IReadOnlyList<TimedValue>;
+        // Start from what is on screen now (possibly mid-glide), not from the old target.
+        _easeFrom = old is null ? null : Blend(_easeFrom, old, Progress());
+        _easeStart = Stopwatch.GetTimestamp();
+        RequestFrame();
+    }
+
+    private double Progress() =>
+        _easeFrom is null ? 1 : Math.Clamp(Stopwatch.GetElapsedTime(_easeStart).TotalSeconds / EaseSeconds, 0, 1);
+
+    private void RequestFrame()
+    {
+        if (_frameRequested || TopLevel.GetTopLevel(this) is not { } top) return;
+        _frameRequested = true;
+        top.RequestAnimationFrame(_ =>
+        {
+            _frameRequested = false;
+            InvalidateVisual();
+            if (Progress() < 1) RequestFrame();
+            else _easeFrom = null;
+        });
+    }
+
+    /// <summary>The line <paramref name="to"/>, with each value moved <paramref name="p"/> of the way from <paramref name="from"/>'s value at that time.</summary>
+    private static IReadOnlyList<TimedValue> Blend(IReadOnlyList<TimedValue>? from, IReadOnlyList<TimedValue> to, double p)
+    {
+        if (from is not { Count: > 0 } || p >= 1) return to;
+        var e = 1 - Math.Pow(1 - p, 3); // ease-out
+        var result = new TimedValue[to.Count];
+        for (var i = 0; i < to.Count; i++)
+        {
+            var v = to[i].Value;
+            if (!double.IsNaN(v) && ValueAt(from, to[i].T) is { } old) v = old + (v - old) * e;
+            result[i] = new TimedValue(to[i].T, v);
+        }
+        return result;
+    }
+
+    /// <summary>The drawn value at time t: interpolated inside a stretch, or the stretch's end value just after it.</summary>
+    private static double? ValueAt(IReadOnlyList<TimedValue> line, double t)
+    {
+        int lo = 0, hi = line.Count;
+        while (lo < hi)
+        {
+            var mid = (lo + hi) / 2;
+            if (line[mid].T < t) lo = mid + 1;
+            else hi = mid;
+        }
+        // lo = first index with T >= t
+        if (lo < line.Count && line[lo].T == t) return double.IsNaN(line[lo].Value) ? null : line[lo].Value;
+        var left = lo - 1;
+        if (left < 0 || double.IsNaN(line[left].Value)) return null;
+        if (lo < line.Count && !double.IsNaN(line[lo].Value))
+        {
+            var a = line[left];
+            var b = line[lo];
+            return a.Value + (b.Value - a.Value) * (t - a.T) / (b.T - a.T);
+        }
+        // Past the end of a stretch: new data continuing it grows out of its last value.
+        return lo == line.Count && t - line[left].T <= ContinueSeconds ? line[left].Value : null;
+    }
 
     protected override Size MeasureOverride(Size availableSize) =>
         new(double.IsInfinity(availableSize.Width) ? 360 : availableSize.Width, H);
@@ -75,7 +155,7 @@ public sealed class TimelineChart : ThemedControl
         var end = Text(Seconds(start + duration), 10, soft);
         ctx.DrawText(end, new Point(w - PadR - end.Width, H - PadB + 4));
 
-        var line = Line;
+        var line = Line is { } target ? Blend(_easeFrom, target, Progress()) : null;
         DrawLine(ctx, line, new Pen(B("InkStrong"), 3, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round), X, Y, start);
         // The current point: the latest settled-enough value (it stays put through a pause).
         var lastIndex = line is null ? -1 : FindLastValue(line);

@@ -79,8 +79,8 @@ public sealed partial class RecordViewModel : ObservableObject
     // Redraw straight away with the new window instead of waiting for the next audio.
     partial void OnLiveWindowChanged(LiveWindowOption value)
     {
-        if (_lastSnapshot is { } snapshot && LiveTimelines is not null)
-            LiveTimelines = new LiveTimelinesViewModel(snapshot, value?.Seconds);
+        if (_lastSnapshot is { } snapshot && LiveTimelines is { } timelines)
+            timelines.Apply(LiveTimelinesViewModel.Compute(snapshot, value?.Seconds));
     }
 
     [RelayCommand]
@@ -94,7 +94,8 @@ public sealed partial class RecordViewModel : ObservableObject
             _elapsed.Restart();
             _clock.Start();
             _lastSnapshot = null;
-            LiveTimelines = new LiveTimelinesViewModel(LiveSnapshot.Empty, LiveWindow?.Seconds);
+            LiveTimelines = new LiveTimelinesViewModel();
+            LiveTimelines.Apply(LiveTimelinesViewModel.Compute(LiveSnapshot.Empty, LiveWindow?.Seconds));
             _liveTimer.Start();
             State = RecordState.Recording;
         }
@@ -117,7 +118,7 @@ public sealed partial class RecordViewModel : ObservableObject
             var (snapshot, timelines) = await Task.Run(() =>
             {
                 var s = live.Update();
-                return (s, new LiveTimelinesViewModel(s, window));
+                return (s, LiveTimelinesViewModel.Compute(s, window));
             });
             if (State == RecordState.Recording) Show(snapshot, timelines);
         }
@@ -131,10 +132,10 @@ public sealed partial class RecordViewModel : ObservableObject
         }
     }
 
-    private void Show(LiveSnapshot snapshot, LiveTimelinesViewModel? timelines = null)
+    private void Show(LiveSnapshot snapshot, LiveTimelinesViewModel.Frame? frame = null)
     {
         _lastSnapshot = snapshot;
-        LiveTimelines = timelines ?? new LiveTimelinesViewModel(snapshot, LiveWindow?.Seconds);
+        LiveTimelines?.Apply(frame ?? LiveTimelinesViewModel.Compute(snapshot, LiveWindow?.Seconds));
         if (snapshot.Result is { } result)
             LiveTake = new TakeViewModel(result.Metrics, result.Detail, isLatest: true, NoModal, liveElapsed: snapshot.Elapsed);
     }

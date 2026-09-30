@@ -39,9 +39,9 @@
               <TextBox Classes="label-input" Margin="0,0,10,6" Text="{Binding Label}"
                        Watermark="what are you trying this take? ✨" />
               <Button Classes="primary" Margin="0,0,10,6" Content="🎙️ record" Command="{Binding StartCommand}" />
-              <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,0,6">
+              <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,6" VerticalAlignment="Center">
                 <TextBlock Classes="cap" VerticalAlignment="Center" Text="live graphs show:" />
-                <ComboBox ItemsSource="{Binding WindowOptions}" SelectedItem="{Binding LiveWindow}" MinWidth="130" />
+                <ComboBox Classes="pill" ItemsSource="{Binding WindowOptions}" SelectedItem="{Binding LiveWindow}" MinWidth="150" />
               </StackPanel>
             </WrapPanel>
             <StackPanel Orientation="Horizontal" Spacing="12" IsVisible="{Binding IsRecording}">
@@ -50,8 +50,7 @@
                 <Run Text="● recording" />
                 <Run Text="{Binding ElapsedText}" />
               </TextBlock>
-              <ComboBox ItemsSource="{Binding WindowOptions}" SelectedItem="{Binding LiveWindow}" MinWidth="130"
-                        VerticalAlignment="Center" />
+              <ComboBox Classes="pill" ItemsSource="{Binding WindowOptions}" SelectedItem="{Binding LiveWindow}" MinWidth="150" />
             </StackPanel>
             <StackPanel Orientation="Horizontal" Spacing="12" IsVisible="{Binding IsAnalyzing}">
               <ProgressBar IsIndeterminate="True" Width="140" VerticalAlignment="Center" />

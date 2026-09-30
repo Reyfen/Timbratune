@@ -20,6 +20,15 @@ public enum WindowStatistic
 /// as more audio arrives the window fills in and those values are corrected in place.
 /// Lines break where the data has a gap (a <see cref="double.NaN"/> value), and a
 /// window never reaches across one.
+/// <para>
+/// Layers, most to least certain: the saved full analysis (after Stop); the live frame
+/// analysis (the points); a window with enough data on both sides ("settled"); a window
+/// missing part of its future (the newest ~half window); and a prediction. The unsettled
+/// tail is blended toward a damped trend of the settled line (<see cref="TrendDamping"/>
+/// of its recent slope) — the less future its window has, the more it leans on that
+/// prediction — and the ongoing stretch is extended to "now" by the same prediction, so
+/// the current point is always shown and moves steadily, still leaning the right way.
+/// </para>
 /// </summary>
 public sealed record SmoothingSpec(
     WindowStatistic Statistic,
@@ -30,6 +39,18 @@ public sealed record SmoothingSpec(
 {
     /// <summary>Radius (grid steps) of the light mean applied after the window statistic.</summary>
     public int PolishRadius { get; init; } = 2;
+
+    /// <summary>Fraction of the settled line's recent slope the prediction follows (0 = flat, 1 = full trend).</summary>
+    public double TrendDamping { get; init; } = 0.5;
+
+    /// <summary>Weight kept by an unsettled window's own value at the very end (the rest is the prediction).</summary>
+    public double MinimumTrust { get; init; } = 0.15;
+
+    /// <summary>How much settled line (s) the trend's slope is fitted over.</summary>
+    public double TrendSeconds { get; init; } = 1.0;
+
+    /// <summary>How much of its future half-width a window needs to count as settled (1 = all of it).</summary>
+    public double SettledCoverage { get; init; } = 0.5;
 }
 
 public static class RecentWindow
@@ -40,8 +61,10 @@ public static class RecentWindow
     /// stretch is smoothed on its own (a window never reaches across a pause) on the grid
     /// k·step, plus its first and last point's times so the line reaches "now". Stretches
     /// are separated by a NaN, and grid times before <paramref name="from"/> are skipped.
+    /// When <paramref name="now"/> is given and the last stretch is still going (its last
+    /// point is at most MaxGap before now), the line is extended to now by prediction.
     /// </summary>
-    public static List<TimedValue> Smooth(IReadOnlyList<TimedValue> points, SmoothingSpec spec, double from = 0)
+    public static List<TimedValue> Smooth(IReadOnlyList<TimedValue> points, SmoothingSpec spec, double from = 0, double? now = null)
     {
         var raw = new List<TimedValue>();
         var scratch = new double[16];
@@ -54,7 +77,11 @@ public static class RecentWindow
             {
                 if (raw.Count > 0) raw.Add(new TimedValue(points[first].T, double.NaN));
                 if (scratch.Length < last - first + 1) scratch = new double[last - first + 1];
-                SmoothStretch(points, first, last, spec, from, raw, scratch);
+                var stretch = new List<TimedValue>();
+                SmoothStretch(points, first, last, spec, from, stretch, scratch);
+                var ongoing = last == points.Count - 1 && now is { } n && n - points[last].T <= spec.MaxGap ? now : null;
+                Predict(stretch, points[last].T, spec, ongoing);
+                raw.AddRange(stretch);
             }
             first = last + 1;
         }
@@ -79,6 +106,75 @@ public static class RecentWindow
             var n = hi - lo;
             output.Add(new TimedValue(g, n < spec.MinimumCount ? double.NaN : Statistic(points, lo, n, spec.Statistic, scratch)));
         }
+    }
+
+    /// <summary>
+    /// Blends the stretch's unsettled tail (windows missing future data) toward a damped
+    /// trend of its settled part, and extends it to <paramref name="now"/> when given.
+    /// </summary>
+    private static void Predict(List<TimedValue> line, double end, SmoothingSpec spec, double? now)
+    {
+        // The last settled value: its window saw a full half-width of future.
+        var settled = -1;
+        for (var i = line.Count - 1; i >= 0; i--)
+        {
+            if (line[i].T <= end - spec.SettledCoverage * spec.HalfWidth + 1e-9 && !double.IsNaN(line[i].Value))
+            {
+                settled = i;
+                break;
+            }
+        }
+        if (settled < 0)
+        {
+            // Too short to have settled yet: hold the newest value until it has.
+            if (now is { } t && FindLast(line) is { } newest && t > line[^1].T) line.Add(new TimedValue(t, newest.Value));
+            return;
+        }
+
+        var anchor = line[settled];
+        var slope = Slope(line, settled, spec.TrendSeconds);
+        double Prediction(double t) => anchor.Value + spec.TrendDamping * slope * (t - anchor.T);
+
+        for (var i = settled + 1; i < line.Count; i++)
+        {
+            var g = line[i].T;
+            var coverage = Math.Clamp((end - g) / (spec.SettledCoverage * spec.HalfWidth), 0, 1);
+            var trust = spec.MinimumTrust + (1 - spec.MinimumTrust) * coverage;
+            var own = line[i].Value;
+            line[i] = new TimedValue(g, double.IsNaN(own) ? Prediction(g) : trust * own + (1 - trust) * Prediction(g));
+        }
+        if (now is { } current && current > line[^1].T)
+        {
+            // The newest window's own estimate carries its minimum trust into "now" as well.
+            var own = line[^1].Value;
+            line.Add(new TimedValue(current, spec.MinimumTrust * own + (1 - spec.MinimumTrust) * Prediction(current)));
+        }
+    }
+
+    /// <summary>Least-squares slope of the line over the <paramref name="seconds"/> up to index <paramref name="at"/>.</summary>
+    private static double Slope(List<TimedValue> line, int at, double seconds)
+    {
+        double st = 0, sv = 0, stt = 0, stv = 0;
+        var n = 0;
+        for (var i = at; i >= 0 && line[i].T >= line[at].T - seconds; i--)
+        {
+            if (double.IsNaN(line[i].Value)) break;
+            var t = line[i].T - line[at].T;
+            st += t;
+            sv += line[i].Value;
+            stt += t * t;
+            stv += t * line[i].Value;
+            n++;
+        }
+        var denominator = n * stt - st * st;
+        return n < 3 || denominator <= 0 ? 0 : (n * stv - st * sv) / denominator;
+    }
+
+    private static TimedValue? FindLast(List<TimedValue> line)
+    {
+        for (var i = line.Count - 1; i >= 0; i--)
+            if (!double.IsNaN(line[i].Value)) return line[i];
+        return null;
     }
 
     private static double Statistic(IReadOnlyList<TimedValue> points, int lo, int n, WindowStatistic statistic, double[] scratch)
