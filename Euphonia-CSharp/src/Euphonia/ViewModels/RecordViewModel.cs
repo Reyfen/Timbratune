@@ -33,8 +33,16 @@ public sealed partial class RecordViewModel : ObservableObject
     private LiveAnalyzer? _live;
     private bool _liveBusy;
 
-    public RecordViewModel(IAudioRecorder recorder, IAnalysisEngine engine, RecordingStore store, Func<Task> onRecorded)
+    private readonly Func<Task<bool>>? _requestMicrophone;
+
+    /// <param name="requestMicrophone">
+    /// Platforms that ask for microphone access at run time (Android) pass this: it asks if
+    /// needed and returns whether recording is allowed. Desktop platforms pass null.
+    /// </param>
+    public RecordViewModel(IAudioRecorder recorder, IAnalysisEngine engine, RecordingStore store, Func<Task> onRecorded,
+        Func<Task<bool>>? requestMicrophone = null)
     {
+        _requestMicrophone = requestMicrophone;
         _recorder = recorder;
         _engine = engine;
         _store = store;
@@ -84,10 +92,16 @@ public sealed partial class RecordViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void Start()
+    private async Task StartAsync()
     {
         try
         {
+            if (_requestMicrophone is not null && !await _requestMicrophone())
+            {
+                ErrorDetail = "Euphonia needs microphone access to record 🎙️ — allow it when asked, or in the system settings.";
+                State = RecordState.Error;
+                return;
+            }
             _live = new LiveAnalyzer(_recorder.SampleRate);
             _recorder.SamplesCaptured += OnSamplesCaptured;
             _recorder.Start();

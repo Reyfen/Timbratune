@@ -3,6 +3,7 @@
              xmlns:vm="using:Euphonia.ViewModels"
              xmlns:c="using:Euphonia.Controls"
              xmlns:v="using:Euphonia.Views"
+             xmlns:e="using:Euphonia"
              x:Class="Euphonia.Views.TakeView"
              x:DataType="vm:TakeViewModel">
   <!-- One take: stat cards, resonance, register & phrasing, per-phrase trends.
@@ -12,14 +13,14 @@
     <!-- 🎀 this take -->
     <StackPanel Spacing="8">
       <TextBlock Classes="section" Text="{Binding Title, StringFormat='🎀 {0}'}" />
-      <TextBlock Classes="cap" IsVisible="{Binding !IsLive}" Text="🔍 tap any card with a colored bar to see how you compare to real voices" />
+      <TextBlock Classes="cap" IsVisible="{Binding !IsLive}" Text="{x:Static e:Features.CompareHint}" />
       <ItemsControl ItemsSource="{Binding StatCards}" Margin="0,6,0,0">
         <ItemsControl.ItemsPanel>
-          <ItemsPanelTemplate><WrapPanel ItemWidth="276" /></ItemsPanelTemplate>
+          <ItemsPanelTemplate><c:CardGrid MinItemWidth="250" /></ItemsPanelTemplate>
         </ItemsControl.ItemsPanel>
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="vm:StatCardViewModel">
-            <Button Classes="card" Margin="0,0,12,12" MinHeight="176" Command="{Binding Open}"
+            <Button Classes="card" MinHeight="176" Command="{Binding Open}"
                     IsEnabled="{Binding IsClickable}" ToolTip.Tip="{Binding ToolTip}">
               <StackPanel Spacing="6">
                 <Grid ColumnDefinitions="*,Auto">
@@ -76,8 +77,8 @@
         <Border Classes="card" Padding="10,12" IsVisible="{Binding ShowContour}">
           <c:ContourChart Detail="{Binding Detail}" />
         </Border>
-        <UniformGrid Columns="3">
-          <Border Classes="card" Margin="0,0,12,0">
+        <c:CardGrid MinItemWidth="240">
+          <Border Classes="card">
             <StackPanel Spacing="6">
               <TextBlock Classes="label" Text="In-register time" />
               <StackPanel Orientation="Horizontal">
@@ -87,7 +88,7 @@
               <TextBlock Classes="sub" Text="share of voiced time held above the floor · higher = steadier register" />
             </StackPanel>
           </Border>
-          <Border Classes="card" Margin="0,0,12,0">
+          <Border Classes="card">
             <StackPanel Spacing="6">
               <TextBlock Classes="label" Text="Phrase endings landed" />
               <StackPanel Orientation="Horizontal">
@@ -107,18 +108,18 @@
               <TextBlock Classes="sub" Text="{Binding MelodySub}" />
             </StackPanel>
           </Border>
-        </UniformGrid>
+        </c:CardGrid>
         <Border Classes="card">
           <StackPanel Spacing="10">
             <TextBlock Classes="label" Text="Where the register drops happen" />
             <TextBlock Classes="sub" c:Markup.Text="% of voiced time spent **below the floor**, by position within a phrase. Taller bar = more crashing there." />
-            <ItemsControl ItemsSource="{Binding Positions}" HorizontalAlignment="Center">
+            <ItemsControl ItemsSource="{Binding Positions}" MaxWidth="420">
               <ItemsControl.ItemsPanel>
-                <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="36" /></ItemsPanelTemplate>
+                <ItemsPanelTemplate><UniformGrid Columns="3" /></ItemsPanelTemplate>
               </ItemsControl.ItemsPanel>
               <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="vm:PositionBar">
-                  <StackPanel Spacing="4" Width="96">
+                  <StackPanel Spacing="4">
                     <Border Height="110" Width="44" CornerRadius="12" Background="{DynamicResource Card2Brush}"
                             HorizontalAlignment="Center" ClipToBounds="True">
                       <Border VerticalAlignment="Bottom" Height="{Binding BarHeight}" CornerRadius="12">
@@ -150,11 +151,11 @@
       <TextBlock Classes="cap" Text="{Binding PhraseTrendsHint}" />
       <ItemsControl ItemsSource="{Binding PhraseTrends}" IsVisible="{Binding ShowPhraseTrends}">
         <ItemsControl.ItemsPanel>
-          <ItemsPanelTemplate><WrapPanel ItemWidth="368" /></ItemsPanelTemplate>
+          <ItemsPanelTemplate><c:CardGrid MinItemWidth="340" /></ItemsPanelTemplate>
         </ItemsControl.ItemsPanel>
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="vm:TrendViewModel">
-            <Border Classes="card" Margin="0,0,12,12">
+            <Border Classes="card">
               <StackPanel Spacing="4">
                 <TextBlock Classes="label" Text="{Binding Title}" />
                 <TextBlock Classes="cap" Text="{Binding Caption}" />

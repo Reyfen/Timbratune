@@ -1,0 +1,2 @@
+# Shell scripts run inside Linux/WSL straight from the Windows checkout: keep them LF.
+*.sh text eol=lf

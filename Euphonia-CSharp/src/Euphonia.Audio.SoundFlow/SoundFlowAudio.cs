@@ -38,10 +38,17 @@ public sealed class SoundFlowAudio : IDisposable
     };
 }
 
-/// <summary>Captures the default microphone as mono float and streams it into a PCM16 WAV.</summary>
+/// <summary>
+/// Captures the default microphone as mono float and streams it into a PCM16 WAV.
+/// Locking: <c>_gate</c> serializes Start/Stop; the audio callback only ever takes the small
+/// <c>_write</c> lock. The device is started and stopped without holding <c>_write</c>, because
+/// miniaudio's start/stop waits for the audio thread (on Android/AAudio it would otherwise
+/// deadlock with a callback waiting for the same lock, freezing the UI thread).
+/// </summary>
 internal sealed class SoundFlowRecorder(MiniAudioEngine engine) : IAudioRecorder
 {
     private readonly object _gate = new();
+    private readonly object _write = new();
     private AudioCaptureDevice? _device;
     private WavWriter? _writer;
 
@@ -57,7 +64,8 @@ internal sealed class SoundFlowRecorder(MiniAudioEngine engine) : IAudioRecorder
         {
             if (_device is not null) return;
             var path = Path.Combine(Path.GetTempPath(), $"euphonia-take-{Guid.NewGuid():N}.wav");
-            _writer = new WavWriter(path, SoundFlowAudio.SampleRate, channels: 1);
+            var writer = new WavWriter(path, SoundFlowAudio.SampleRate, channels: 1);
+            lock (_write) _writer = writer;
             try
             {
                 _device = engine.InitializeCaptureDevice(null, SoundFlowAudio.Format(1));
@@ -66,7 +74,7 @@ internal sealed class SoundFlowRecorder(MiniAudioEngine engine) : IAudioRecorder
             }
             catch
             {
-                CleanupUnlocked(deleteFile: true);
+                Cleanup(deleteFile: true);
                 throw;
             }
         }
@@ -76,23 +84,23 @@ internal sealed class SoundFlowRecorder(MiniAudioEngine engine) : IAudioRecorder
     {
         lock (_gate)
         {
-            if (_writer is null) throw new InvalidOperationException("Not recording.");
-            var path = _writer.Path;
-            CleanupUnlocked(deleteFile: false);
+            var path = _writer?.Path ?? throw new InvalidOperationException("Not recording.");
+            Cleanup(deleteFile: false);
             return Task.FromResult(path);
         }
     }
 
     public void Cancel()
     {
-        lock (_gate) CleanupUnlocked(deleteFile: true);
+        lock (_gate) Cleanup(deleteFile: true);
     }
 
     public void Dispose() => Cancel();
 
+    // Audio thread.
     private void OnSamples(Span<float> samples, Capability capability)
     {
-        lock (_gate)
+        lock (_write)
         {
             if (_writer is null) return;
             _writer.Write(samples);
@@ -100,22 +108,26 @@ internal sealed class SoundFlowRecorder(MiniAudioEngine engine) : IAudioRecorder
         }
     }
 
-    private void CleanupUnlocked(bool deleteFile)
+    /// <summary>Caller holds <c>_gate</c> (never <c>_write</c>): stop the device first, then close the file.</summary>
+    private void Cleanup(bool deleteFile)
     {
-        if (_device is not null)
+        if (_device is { } device)
         {
-            _device.OnAudioProcessed -= OnSamples;
-            try { _device.Stop(); } catch (Exception) { /* device may already be gone */ }
-            _device.Dispose();
             _device = null;
+            device.OnAudioProcessed -= OnSamples;
+            try { device.Stop(); } catch (Exception) { /* device may already be gone */ }
+            device.Dispose();
         }
-        if (_writer is not null)
+        WavWriter? writer;
+        lock (_write)
         {
-            var path = _writer.Path;
-            _writer.Dispose();
+            writer = _writer;
             _writer = null;
-            if (deleteFile) try { File.Delete(path); } catch (IOException) { }
         }
+        if (writer is null) return;
+        var path = writer.Path;
+        writer.Dispose();
+        if (deleteFile) try { File.Delete(path); } catch (IOException) { }
     }
 }
 

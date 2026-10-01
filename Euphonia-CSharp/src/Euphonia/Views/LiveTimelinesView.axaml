@@ -16,17 +16,17 @@
     <Border Classes="card" Padding="10,12">
       <StackPanel Spacing="4">
         <TextBlock Classes="label" Text="Pitch" Margin="8,0,0,0" />
-        <c:ContourChart Detail="{Binding Detail}" Zones="{Binding PitchZones}" AxisStart="{Binding AxisStart}" AxisDuration="{Binding AxisDuration}" />
+        <c:ContourChart Detail="{Binding Detail}" LiveLine="{Binding PitchLine}" Zones="{Binding PitchZones}" AxisStart="{Binding AxisStart}" AxisDuration="{Binding AxisDuration}" />
       </StackPanel>
     </Border>
 
     <ItemsControl ItemsSource="{Binding Timelines}">
       <ItemsControl.ItemsPanel>
-        <ItemsPanelTemplate><WrapPanel ItemWidth="368" /></ItemsPanelTemplate>
+        <ItemsPanelTemplate><c:CardGrid MinItemWidth="340" /></ItemsPanelTemplate>
       </ItemsControl.ItemsPanel>
       <ItemsControl.ItemTemplate>
         <DataTemplate x:DataType="vm:TimelineViewModel">
-          <Border Classes="card" Margin="0,0,12,12" Padding="14,12">
+          <Border Classes="card" Padding="14,12">
             <StackPanel Spacing="2">
               <TextBlock Classes="label" Text="{Binding Title}" />
               <TextBlock Classes="cap" FontSize="11" Text="{Binding Caption}" />

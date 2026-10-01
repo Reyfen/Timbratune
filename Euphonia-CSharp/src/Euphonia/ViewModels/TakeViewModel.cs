@@ -194,7 +194,7 @@ public sealed class StatCardViewModel(
     public double Hi { get; } = hi;
     public string Sub { get; } = sub;
     public bool IsClickable => metricKey is not null;
-    public string? ToolTip => IsClickable ? "tap to see how you compare to real voices 🔍" : null;
+    public string? ToolTip => IsClickable ? Features.CompareHint : null;
 
     public void Open()
     {
@@ -207,7 +207,7 @@ public sealed class GaugeViewModel(
     MetricKey key, IRelayCommand<MetricKey> openMetric, bool interactive = true)
 {
     public bool Interactive { get; } = interactive;
-    public string? ToolTip => Interactive ? "tap to see how you compare to real voices 🔍" : null;
+    public string? ToolTip => Interactive ? Features.CompareHint : null;
     public string Name { get; } = name;
     public string Description { get; } = description;
     public double? Value { get; } = value;

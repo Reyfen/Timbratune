@@ -28,7 +28,7 @@
 
   <Expander Header="tap to open your gentle cheat sheet 💗" Padding="14">
     <StackPanel Spacing="4">
-      <WrapPanel ItemWidth="350">
+      <c:CardGrid MinItemWidth="320">
         <Border Classes="gloss"><StackPanel>
           <TextBlock Classes="h4" Text="🎵 Pitch (avg F0)" />
           <TextBlock Classes="body" Text="The average highness of your voice — the single biggest cue people hear." />
@@ -77,7 +77,7 @@
           <TextBlock Classes="guide" c:Markup.Text="**light &lt;9** · overlap 9–12.5 · heavy 12.5 dB+ (smaller = lighter)" />
           <TextBlock Classes="sub" Text="💗 To lighten: let the folds come together gently — easy, breath-flowy tone, never pressed or squeezed. Lighter is the reliable direction; there's no magic number." />
         </StackPanel></Border>
-      </WrapPanel>
+      </c:CardGrid>
 
       <TextBlock Classes="sub" c:Markup.Text="💗 Honest note: jitter, shimmer &amp; HNR norms come from sustained vowels, so on a full passage like the Rainbow they'll look &quot;worse&quot; than the textbook numbers — that's normal. Use them to spot **your own trend** over time, not as pass/fail. And remember: every metric is a hint, not a verdict. How your voice _feels_ and how listeners _read_ it are the real goals. 💗" />
     </StackPanel>

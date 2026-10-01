@@ -29,7 +29,7 @@ internal static class Program
                 Recorder: recorder,
                 Playback: playback = new PlaybackService(audio.CreatePlayer()),
                 Dialogs: dialogs,
-                ReferenceDir: Path.Combine(AppContext.BaseDirectory, "reference"));
+                ReferenceDir: Features.ReferenceVoices ? Path.Combine(AppContext.BaseDirectory, "reference") : null);
 
             return BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
         }

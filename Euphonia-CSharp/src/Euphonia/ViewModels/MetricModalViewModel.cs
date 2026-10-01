@@ -76,8 +76,8 @@ public sealed partial class MetricModalViewModel : ObservableObject, IDisposable
     public double Hi { get; }
     public IReadOnlyList<ScaleTick> Takes { get; }
     public IReadOnlyList<ScaleTick> Refs { get; }
-    public bool ShowRefs => Metric.ShowRefs;
-    public bool HideRefs => !Metric.ShowRefs;
+    public bool ShowRefs => Features.ReferenceVoices && Metric.ShowRefs;
+    public bool HideRefs => Features.ReferenceVoices && !Metric.ShowRefs;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasSelection))]

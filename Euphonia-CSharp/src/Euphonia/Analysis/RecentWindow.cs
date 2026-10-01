@@ -51,6 +51,12 @@ public sealed record SmoothingSpec(
 
     /// <summary>How much of its future half-width a window needs to count as settled (1 = all of it).</summary>
     public double SettledCoverage { get; init; } = 0.5;
+
+    /// <summary>
+    /// When set, the line breaks where one grid step jumps by more than this ratio (e.g. an
+    /// octave slip in pitch), instead of drawing a near-vertical connection. Positive values only.
+    /// </summary>
+    public double? MaxStepRatio { get; init; }
 }
 
 public static class RecentWindow
@@ -79,6 +85,7 @@ public static class RecentWindow
                 if (scratch.Length < last - first + 1) scratch = new double[last - first + 1];
                 var stretch = new List<TimedValue>();
                 SmoothStretch(points, first, last, spec, from, stretch, scratch);
+                if (spec.MaxStepRatio is { } ratio) stretch = BreakJumps(stretch, ratio);
                 var ongoing = last == points.Count - 1 && now is { } n && n - points[last].T <= spec.MaxGap ? now : null;
                 Predict(stretch, points[last].T, spec, ongoing);
                 raw.AddRange(stretch);
@@ -106,6 +113,19 @@ public static class RecentWindow
             var n = hi - lo;
             output.Add(new TimedValue(g, n < spec.MinimumCount ? double.NaN : Statistic(points, lo, n, spec.Statistic, scratch)));
         }
+    }
+
+    private static List<TimedValue> BreakJumps(List<TimedValue> line, double ratio)
+    {
+        var result = new List<TimedValue>(line.Count);
+        for (var i = 0; i < line.Count; i++)
+        {
+            if (i > 0 && line[i - 1].Value is var a && line[i].Value is var b && !double.IsNaN(a) && !double.IsNaN(b)
+                && a > 0 && b > 0 && Math.Max(a, b) / Math.Min(a, b) > ratio)
+                result.Add(new TimedValue(0.5 * (line[i - 1].T + line[i].T), double.NaN));
+            result.Add(line[i]);
+        }
+        return result;
     }
 
     /// <summary>

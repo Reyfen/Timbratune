@@ -20,9 +20,10 @@ public sealed partial class MainViewModel : ObservableObject
     public MainViewModel(AppServices services)
     {
         _services = services;
-        Record = new RecordViewModel(services.Recorder, services.Engine, services.Store, () => ReloadAsync(selectLatest: true));
+        Record = new RecordViewModel(services.Recorder, services.Engine, services.Store, () => ReloadAsync(selectLatest: true),
+            services.RequestMicrophone);
         OpenMetricCommand = new RelayCommand<MetricKey>(OpenMetric);
-        _references = LoadReferences(services.ReferenceDir);
+        if (Features.ReferenceVoices && services.ReferenceDir is { } referenceDir) _references = LoadReferences(referenceDir);
     }
 
     public RecordViewModel Record { get; }
@@ -158,7 +159,7 @@ public sealed partial class MainViewModel : ObservableObject
         Modal?.Dispose();
         Modal = new MetricModalViewModel(Metrics.All[key], _recordings, _references, Active?.Recording.Id,
             r => Existing(_services.Store.Paths.Resolve(r.Audio)),
-            v => v.Audio is { } a ? Existing(Path.Combine(_services.ReferenceDir, a)) : null,
+            v => v.Audio is { } a && _services.ReferenceDir is { } dir ? Existing(Path.Combine(dir, a)) : null,
             _services.Playback,
             () =>
             {

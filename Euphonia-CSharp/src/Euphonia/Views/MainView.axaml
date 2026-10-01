@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Euphonia.ViewModels"
              xmlns:c="using:Euphonia.Controls"
+             xmlns:e="using:Euphonia"
              xmlns:v="using:Euphonia.Views"
              x:Class="Euphonia.Views.MainView"
              x:DataType="vm:MainViewModel"
@@ -44,14 +45,14 @@
                 <ComboBox Classes="pill" ItemsSource="{Binding WindowOptions}" SelectedItem="{Binding LiveWindow}" MinWidth="150" />
               </StackPanel>
             </WrapPanel>
-            <StackPanel Orientation="Horizontal" Spacing="12" IsVisible="{Binding IsRecording}">
-              <Button Classes="live" Content="⏹️ stop &amp; analyze" Command="{Binding StopCommand}" />
-              <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Foreground="{DynamicResource LiveBrush}">
+            <WrapPanel IsVisible="{Binding IsRecording}">
+              <Button Classes="live" Margin="0,0,12,6" Content="⏹️ stop &amp; analyze" Command="{Binding StopCommand}" />
+              <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Foreground="{DynamicResource LiveBrush}" Margin="0,0,12,6">
                 <Run Text="● recording" />
                 <Run Text="{Binding ElapsedText}" />
               </TextBlock>
-              <ComboBox Classes="pill" ItemsSource="{Binding WindowOptions}" SelectedItem="{Binding LiveWindow}" MinWidth="150" />
-            </StackPanel>
+              <ComboBox Classes="pill" ItemsSource="{Binding WindowOptions}" SelectedItem="{Binding LiveWindow}" MinWidth="150" Margin="0,0,0,6" />
+            </WrapPanel>
             <StackPanel Orientation="Horizontal" Spacing="12" IsVisible="{Binding IsAnalyzing}">
               <ProgressBar IsIndeterminate="True" Width="140" VerticalAlignment="Center" />
               <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Text="analyzing… 💗" />
@@ -112,11 +113,11 @@
           </Border>
           <ItemsControl ItemsSource="{Binding Items}">
             <ItemsControl.ItemsPanel>
-              <ItemsPanelTemplate><WrapPanel ItemWidth="372" /></ItemsPanelTemplate>
+              <ItemsPanelTemplate><c:CardGrid MinItemWidth="340" /></ItemsPanelTemplate>
             </ItemsControl.ItemsPanel>
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="vm:RecordingItemViewModel">
-                <v:RecordingCardView Margin="0,0,12,12" />
+                <v:RecordingCardView />
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>
@@ -132,6 +133,8 @@
                    Text="made with 💗 · numbers are a compass, not a judge · your ears matter most" />
         <TextBlock Classes="cap" FontSize="11" HorizontalAlignment="Center" TextAlignment="Center"
                    Foreground="{DynamicResource InkFaintBrush}" Text="{Binding DataFolder, StringFormat='your takes live in {0}'}" />
+        <TextBlock Classes="cap" FontSize="11" HorizontalAlignment="Center" TextAlignment="Center"
+                   Foreground="{DynamicResource InkFaintBrush}" Text="{x:Static e:Features.VersionText}" />
       </StackPanel>
     </ScrollViewer>
 

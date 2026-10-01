@@ -7,21 +7,83 @@ data format as the Electron app. The look is close but not pixel-identical.
 The voice analysis is **pure C#** (`Euphonia.Acoustics`). It needs no Praat, Python, ffmpeg or anything else
 installed, so the same code can run on Windows, macOS, Linux, Android and iOS.
 
-## Quick start (Windows)
+## Quick start
 
-Prerequisites: **.NET 10 SDK**.
+Prerequisites: **.NET 10 SDK**. Windows and Linux use the same code; Android adds a workload (see below).
 
 ```powershell
 dotnet run --project src/Euphonia.Desktop
 dotnet test
 ```
 
-To build a folder you can launch without the SDK tools, publish it. The output folder is named per platform:
+To build something you can run without the SDK, publish it. Each platform gets **one self-contained
+executable**, with no .NET install needed on the target. The output folder is named per platform:
 
 ```powershell
-dotnet publish src/Euphonia.Desktop -c Release -r win-x64 --self-contained false -o publish/Euphonia-win-x64
-# → publish\Euphonia-win-x64\Euphonia.Desktop.exe  (reference voices included; needs the .NET 10 runtime)
+dotnet publish src/Euphonia.Desktop -p:PublishProfile=win-x64     # → publish\Euphonia-win-x64\Euphonia-Desktop-v0.1.0-win-x64.exe  (~47 MB)
+dotnet publish src/Euphonia.Desktop -p:PublishProfile=linux-x64   # → publish/Euphonia-linux-x64/Euphonia-Desktop-v0.1.0-linux-x64     (~47 MB)
 ```
+
+Every published file is named `<app>-v<version>-<platform>`, with the version taken from `<Version>` in
+`Directory.Build.props`. The app shows the same version in its footer.
+
+```text
+```
+
+On Linux, package that binary for users. Run this on Linux or in WSL; it needs `dpkg-deb`, ImageMagick and
+`appimagetool`:
+
+```bash
+scripts/package-linux.sh      # → …-v0.1.0-linux-x64.deb and …-v0.1.0-linux-x64.AppImage.tar.gz (replaces the binary)
+```
+
+- **`.deb` (~41 MB), for Mint, Ubuntu and Debian:** double-click it, then Install. Euphonia then appears in the app
+  menu with its icon, and `euphonia` works in a terminal. There's no permission step.
+- **`.AppImage.tar.gz` (~42 MB), for any distribution:** double-click it and choose Extract, then double-click the
+  AppImage. It runs from a terminal too. The AppImage ships inside an archive because downloads and Windows drives drop
+  a bare file's "run as program" flag; the archive keeps it.
+
+The profiles are in `src/Euphonia.Desktop/Properties/PublishProfiles/`. The Linux build can be made from Windows.
+
+- **What's bundled:** the native libraries (Skia, HarfBuzz, miniaudio) are inside the file. They are unpacked once
+  to the .NET bundle cache on first start.
+- **Linux needs:** an X11 or XWayland session, `libx11-6 libice6 libsm6 libfontconfig1`, PulseAudio or ALSA, and a
+  colour-emoji font such as `fonts-noto-color-emoji`. These are standard on desktop distributions.
+
+### Android
+
+Prerequisites, once:
+1. `dotnet workload install android` (admin).
+2. Install the SDK and a JDK into user folders, which also accepts Google's SDK licences:
+
+```powershell
+dotnet build src/Euphonia.Android -t:InstallAndroidDependencies -f net10.0-android `
+  "-p:AndroidSdkDirectory=$env:LOCALAPPDATA\Android\Sdk" "-p:JavaSdkDirectory=$env:LOCALAPPDATA\Android\jdk" `
+  -p:AcceptAndroidSDKLicenses=True
+```
+
+Build an APK. The Release build is sideloadable and signed with the local debug key; a store release needs its own
+keystore:
+
+```powershell
+dotnet publish src/Euphonia.Android -c Release -f net10.0-android -o publish/Euphonia-android `
+  "-p:AndroidSdkDirectory=$env:LOCALAPPDATA\Android\Sdk" "-p:JavaSdkDirectory=$env:LOCALAPPDATA\Android\jdk"
+# → publish\Euphonia-android\Euphonia-v0.1.0-android.apk  (~32 MB, arm64 + x86_64; Android 8.0+)
+adb install -r publish\Euphonia-android\Euphonia-v0.1.0-android.apk
+```
+
+- **Solution:** `Euphonia.Android` is not in `Euphonia.slnx`, so the desktop solution and its tests build without
+  the workload.
+- **Microphone:** Android asks for microphone access the first time you press Record.
+- **Takes:** they live in the app's private folder.
+- **Emulator:** created with `avdmanager create avd -n EuphoniaPixel -k "system-images;android-35;google_apis;x86_64"
+  -d pixel_7`. It uses the Windows Hypervisor Platform. Its virtual microphone plays a steady 100 Hz tone, which
+  Euphonia measures as 100.0 Hz.
+- **Fake mic on Android** (Debug builds only): copy a WAV to `files/fake-mic.wav` in the app's private folder:
+  `adb push take.wav /data/local/tmp/` then `adb shell run-as app.euphonia cp /data/local/tmp/take.wav
+  files/fake-mic.wav`.
+- **Emoji:** the app carries a 54 KB subset of Noto Color Emoji (OFL), built by `scripts/make-emoji-font.py`. Android's
+  own emoji font is COLRv1, which this Skia can't draw. Re-run the script after adding emoji to the UI.
 
 Other useful commands:
 
@@ -31,6 +93,9 @@ dotnet run --project src/Euphonia.Desktop -- --import take1.wav take2.wav --labe
 
 # use a throwaway data folder
 $env:EUPHONIA_DATA_DIR = "C:\temp\euphonia-test"
+
+# turn the real reference voices (VCTK clips) back on in the metric comparison; off by default (Features.cs)
+dotnet build -p:EuphoniaReferenceVoices=true
 ```
 
 Takes are stored in `%APPDATA%\Euphonia-CSharp\`. This is deliberately separate from the Electron app's
@@ -50,7 +115,8 @@ analysis/<id>.json      10 ms pitch contour + phrases (+ per-phrase metrics) for
 | `src/Euphonia.Core` | Models, zones and metric registry, JSON, `RecordingStore`, the analysis pipeline (`AcousticsAnalysisEngine` + `AnalysisPostProcessor`), WAV writer and waveform peaks | No |
 | `src/Euphonia.Audio.SoundFlow` | Microphone capture and playback via [SoundFlow](https://github.com/LSXPrime/SoundFlow) (miniaudio) | No — ships natives for Win/macOS/Linux/Android/iOS |
 | `src/Euphonia` | Avalonia UI: views, view models (CommunityToolkit.Mvvm), custom-drawn charts | No |
-| `src/Euphonia.Desktop` | Desktop head: `Program.cs`, `--import` | No |
+| `src/Euphonia.Desktop` | Desktop head (Windows, Linux, macOS): `Program.cs`, `--import`, single-file publish profiles | No |
+| `src/Euphonia.Android` | Android head: `MainActivity` (services, microphone permission, emoji font) | Android only |
 | `tests/Euphonia.Acoustics.Tests` | Synthetic-signal tests, plus a component-by-component comparison with real Praat | — |
 | `tests/Euphonia.Core.Tests` | Zones, JSON compatibility, store, statistics, **parity with analyze.py** | — |
 
@@ -58,7 +124,7 @@ analysis/<id>.json      10 ms pitch contour + phrases (+ per-phrase metrics) for
 
 - **Avalonia 11.3** (+ Fluent theme, Inter font) is the UI.
 - **CommunityToolkit.Mvvm** provides the MVVM source generators.
-- **SoundFlow** handles recording and playback (WAV + the MP3 reference clips).
+- **SoundFlow** handles recording and playback.
 - **xUnit** is used for tests.
 
 ## How the analysis works
@@ -127,6 +193,15 @@ Most to least certain, there are four layers:
 
 On top of that, the chart eases each redraw over 0.25 s. This affects only the display.
 
+The live pitch graph uses the same pipeline:
+- **Smoothing:** a short median (about 0.2 s) removes single-frame octave slips and softens path revisions. The line
+  breaks at unvoiced gaps over 60 ms and at jumps over 3 semitones in 20 ms.
+- **No trend prediction:** like loudness, intonation turns too fast for a trend to help, so the newest value is held.
+- **Easing:** the same 0.25 s glide as the other charts.
+
+Saved takes still draw the exact 10 ms contour. `tools/live-steadiness` measures all of this on any WAV
+(`scripts/make-long-wav.ps1` builds a 27.6 s test take from the fixtures).
+
 Live and full analysis share the same frame kernels (`Euphonia.Acoustics/Streaming`) and the same assembler
 (`RawAnalysisAssembler`).
 - **Trimming:** the saved WAV is trimmed by up to 10 ms so that its frame grid equals the live grid.
@@ -154,7 +229,7 @@ using the microphone.
 - recording, with an optional label
 - analysis
 - the seven stat cards with zone bars
-- the metric reference modal: take dots in lanes, VCTK reference ticks, and click-to-play
+- the metric reference modal: take dots in lanes and click-to-play. The VCTK reference-voice ticks are switched off by default (`Features.ReferenceVoices`; build with `-p:EuphoniaReferenceVoices=true` to include them and their clips)
 - resonance (F2/F3 gauges)
 - register & phrasing: contour chart, stat tiles, drop-position bars and the tip
 - **trends within the take** (this differs from the React app, whose trend charts plot one point per take across
@@ -165,6 +240,14 @@ using the microphone.
 - the take switcher
 - the cheat sheet
 - light (blossom) and dark (dusk-plum) themes that follow the OS, with a toggle
+
+**Platforms, verified 2026-10-01:**
+
+| Platform | Where it ran | What was checked |
+|---|---|---|
+| Windows 10 x64 | single-file exe | starts; records with fake and real mic; live graphs; saves |
+| Linux | Ubuntu 24.04 in WSL 2 (WSLg) | same as Windows; results identical to Windows to every digit |
+| Android 15 | Pixel 7 emulator (x86_64) | Debug and Release; the microphone permission prompt; real AAudio capture (the virtual mic's 100 Hz tone measured 100.01 Hz); phone layout |
 
 **Not yet ported:**
 - template and Gemini insights

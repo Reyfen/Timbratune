@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
+using Euphonia.Core.Analysis;
 using Euphonia.Core.Domain;
 using Euphonia.Core.Models;
 
@@ -27,17 +28,34 @@ public sealed class ContourChart : ThemedControl
     /// <summary>Time at the left edge (s); live views with a sliding window move it along.</summary>
     public static readonly StyledProperty<double> AxisStartProperty =
         AvaloniaProperty.Register<ContourChart, double>(nameof(AxisStart));
+    /// <summary>
+    /// Live view: the smoothed pitch line (NaN = unvoiced) drawn in place of the raw
+    /// frames, eased in like the other live lines (<see cref="LineEasing"/>).
+    /// </summary>
+    public static readonly StyledProperty<IReadOnlyList<TimedValue>?> LiveLineProperty =
+        AvaloniaProperty.Register<ContourChart, IReadOnlyList<TimedValue>?>(nameof(LiveLine));
     /// <summary>When set (live view), these zones fill the background and the pitch range is fixed.</summary>
     public static readonly StyledProperty<IReadOnlyList<Zone>?> ZonesProperty =
         AvaloniaProperty.Register<ContourChart, IReadOnlyList<Zone>?>(nameof(Zones));
 
-    static ContourChart() => RedrawOn<ContourChart>(DetailProperty, FemThresholdProperty, AxisDurationProperty, AxisStartProperty, ZonesProperty);
+    static ContourChart() => RedrawOn<ContourChart>(DetailProperty, FemThresholdProperty, AxisDurationProperty, AxisStartProperty, ZonesProperty, LiveLineProperty);
 
     public RecordingDetail? Detail { get => GetValue(DetailProperty); set => SetValue(DetailProperty, value); }
     public double FemThreshold { get => GetValue(FemThresholdProperty); set => SetValue(FemThresholdProperty, value); }
     public double AxisDuration { get => GetValue(AxisDurationProperty); set => SetValue(AxisDurationProperty, value); }
     public double AxisStart { get => GetValue(AxisStartProperty); set => SetValue(AxisStartProperty, value); }
     public IReadOnlyList<Zone>? Zones { get => GetValue(ZonesProperty); set => SetValue(ZonesProperty, value); }
+    public IReadOnlyList<TimedValue>? LiveLine { get => GetValue(LiveLineProperty); set => SetValue(LiveLineProperty, value); }
+
+    private readonly LineEasing _easing;
+
+    public ContourChart() => _easing = new LineEasing(this);
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property == LiveLineProperty) _easing.Retarget(change.OldValue as IReadOnlyList<TimedValue>);
+    }
 
     // Fixed live pitch range: wide enough for low male and high female speech, so zone bands never move.
     private const double LiveMinHz = 70, LiveMaxHz = 330;
@@ -67,8 +85,20 @@ public sealed class ContourChart : ThemedControl
         var ih = H - PadT - PadB;
         var iw = w - PadL - PadR;
         var floor = d.RegisterFloorHz;
-        var t = d.Frames.T;
-        var hz = d.Frames.Hz;
+        // The contour to draw: the live smoothed line when given, otherwise the 10 ms frames.
+        IReadOnlyList<double> t;
+        IReadOnlyList<double?> hz;
+        if (LiveLine is { } live)
+        {
+            var eased = _easing.Current(live);
+            t = eased.Select(p => p.T).ToList();
+            hz = eased.Select(p => double.IsNaN(p.Value) ? (double?)null : p.Value).ToList();
+        }
+        else
+        {
+            t = d.Frames.T;
+            hz = d.Frames.Hz;
+        }
         var dur = AxisDuration > 0 ? AxisDuration : d.DurationS > 0 ? d.DurationS : t.Count > 0 && t[^1] > 0 ? t[^1] : 1;
         var fem = FemThreshold;
         var zones = Zones;

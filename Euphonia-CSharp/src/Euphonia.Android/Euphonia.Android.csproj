@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Android head: the same shared UI (Euphonia) and audio (SoundFlow/miniaudio) as the
+       desktop. Not in Euphonia.slnx, so the desktop solution builds without the Android
+       workload; build it directly:
+         dotnet build src/Euphonia.Android -c Release        (signed APK in bin/Release/…) -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-android</TargetFramework>
+    <SupportedOSPlatformVersion>26</SupportedOSPlatformVersion>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Euphonia.Android</RootNamespace>
+    <ApplicationId>app.euphonia</ApplicationId>
+    <ApplicationTitle>Euphonia</ApplicationTitle>
+    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationDisplayVersion>$(Version)</ApplicationDisplayVersion>
+    <AndroidPackageFormat>apk</AndroidPackageFormat>
+    <RuntimeIdentifiers>android-arm64;android-x64</RuntimeIdentifiers>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia.Android" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Emoji subset of Noto Color Emoji (SIL OFL 1.1, licence alongside): see MainActivity. -->
+    <AvaloniaResource Include="Assets\Fonts\EuphoniaEmoji.ttf" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Euphonia\Euphonia.csproj" />
+    <ProjectReference Include="..\Euphonia.Audio.SoundFlow\Euphonia.Audio.SoundFlow.csproj" />
+  </ItemGroup>
+  <!-- Publish output: just the signed APK, named Euphonia-v0.1.0-android.apk. -->
+  <Target Name="NameApkForRelease" AfterTargets="Publish">
+    <PropertyGroup>
+      <_EuphoniaApk>$(PublishDir)$(ApplicationId)-Signed.apk</_EuphoniaApk>
+    </PropertyGroup>
+    <ItemGroup>
+      <_EuphoniaExtra Include="$(PublishDir)$(ApplicationId).apk;$(PublishDir)*.dll" />
+    </ItemGroup>
+    <Move SourceFiles="$(_EuphoniaApk)" DestinationFiles="$(PublishDir)Euphonia-v$(Version)-android.apk" Condition="Exists('$(_EuphoniaApk)')" />
+    <Delete Files="@(_EuphoniaExtra)" />
+  </Target>
+</Project>

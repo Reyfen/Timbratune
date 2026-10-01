@@ -55,15 +55,24 @@ public sealed partial class LiveTimelinesViewModel : ObservableObject
     // Loudness follows syllables (several rises and falls a second), which a trend can't
     // anticipate: measured, predicting it made the dot both jumpier and less accurate, so
     // its newest value is simply held until "now".
-    private static readonly SmoothingSpec LoudnessSmoothing = new(WindowStatistic.EnergyMean, 0.5, 5, 0.3)
+    public static readonly SmoothingSpec LoudnessSmoothing = new(WindowStatistic.EnergyMean, 0.5, 5, 0.3)
         { TrendDamping = 0, MinimumTrust = 1 };
-    private static readonly SmoothingSpec FrameSmoothing = new(WindowStatistic.Median, 0.5, 5, 0.4);
-    private static readonly SmoothingSpec VowelSmoothing = new(WindowStatistic.Median, 1.0, 6, 0.8) { PolishRadius = 4 };
-    private static readonly SmoothingSpec MovementSmoothing = new(WindowStatistic.StandardDeviation, 1.0, 10, 0.4);
-    private static readonly SmoothingSpec JitterSmoothing = new(WindowStatistic.Median, 1.5, 1, 3.0) { PolishRadius = 4 };
+    public static readonly SmoothingSpec FrameSmoothing = new(WindowStatistic.Median, 0.5, 5, 0.4);
+    public static readonly SmoothingSpec VowelSmoothing = new(WindowStatistic.Median, 1.0, 6, 0.8) { PolishRadius = 4 };
+    public static readonly SmoothingSpec MovementSmoothing = new(WindowStatistic.StandardDeviation, 1.0, 10, 0.4);
+    // Pitch keeps its intonation: a short median (about 0.2 s) removes single-frame octave
+    // slips and softens path revisions; unvoiced gaps over 60 ms stay gaps, and so do
+    // jumps no voice makes in 20 ms (octave slips flip the median between octaves). Like
+    // loudness, intonation turns too quickly for a trend: measured, holding the newest
+    // value moved the dot less and stayed closer to the saved contour than predicting.
+    public static readonly SmoothingSpec PitchSmoothing = new(WindowStatistic.Median, 0.1, 5, 0.06, Step: 0.02)
+        { PolishRadius = 1, TrendDamping = 0, MaxStepRatio = Math.Pow(2, 3.0 / 12) }; // > 3 semitones in 20 ms = a slip
+
+    public static readonly SmoothingSpec JitterSmoothing = new(WindowStatistic.Median, 1.5, 1, 3.0) { PolishRadius = 4 };
 
     /// <summary>What one refresh shows: the visible range, the pitch detail and every line (in <see cref="Timelines"/> order).</summary>
-    public sealed record Frame(double Elapsed, double AxisStart, double AxisDuration, RecordingDetail? Detail, IReadOnlyList<TimedValue>[] Lines);
+    public sealed record Frame(double Elapsed, double AxisStart, double AxisDuration, RecordingDetail? Detail,
+        IReadOnlyList<TimedValue> PitchLine, IReadOnlyList<TimedValue>[] Lines);
 
     public LiveTimelinesViewModel()
     {
@@ -89,6 +98,7 @@ public sealed partial class LiveTimelinesViewModel : ObservableObject
     [ObservableProperty] private double _axisStart;
     [ObservableProperty] private double _axisDuration = 10;
     [ObservableProperty] private RecordingDetail? _detail;
+    [ObservableProperty] private IReadOnlyList<TimedValue> _pitchLine = [];
 
     public IReadOnlyList<Zone> PitchZones => Zones.Pitch;
     public IReadOnlyList<TimelineViewModel> Timelines { get; }
@@ -119,7 +129,7 @@ public sealed partial class LiveTimelinesViewModel : ObservableObject
         var pitch = Voiced(detail);
         var floor = detail?.RegisterFloorHz ?? AnalysisPostProcessor.DefaultRegisterFloorHz;
         var melody = pitch.Where(p => p.Value >= floor).Select(p => new TimedValue(p.T, Semitones(p.Value))).ToList();
-        return new Frame(now, start, duration, detail,
+        return new Frame(now, start, duration, detail, Smooth(pitch, PitchSmoothing),
         [
             Smooth(s.Loudness, LoudnessSmoothing),
             Smooth(pitch, MovementSmoothing),
@@ -139,6 +149,7 @@ public sealed partial class LiveTimelinesViewModel : ObservableObject
         AxisStart = frame.AxisStart;
         AxisDuration = frame.AxisDuration;
         Detail = frame.Detail;
+        PitchLine = frame.PitchLine;
         for (var i = 0; i < Timelines.Count; i++)
         {
             var t = Timelines[i];

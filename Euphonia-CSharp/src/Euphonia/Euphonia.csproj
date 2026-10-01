@@ -4,6 +4,9 @@
   <PropertyGroup>
     <RootNamespace>Euphonia</RootNamespace>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <!-- Feature switch (see Features.cs): real reference voices in the metric comparison. -->
+    <EuphoniaReferenceVoices Condition="'$(EuphoniaReferenceVoices)' == ''">false</EuphoniaReferenceVoices>
+    <DefineConstants Condition="'$(EuphoniaReferenceVoices)' == 'true'">$(DefineConstants);REFERENCE_VOICES</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia" />
@@ -16,6 +19,8 @@
   </ItemGroup>
   <ItemGroup>
     <AvaloniaResource Include="Assets\icon.ico" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(EuphoniaReferenceVoices)' == 'true'">
     <!-- Reference voices (VCTK Corpus, CC BY 4.0 — see Assets/reference/ATTRIBUTION.md).
          Copied next to the app so the audio player can open them as files. -->
     <Content Include="Assets\reference\**" Link="reference\%(RecursiveDir)%(Filename)%(Extension)"
