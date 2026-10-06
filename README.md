@@ -6,7 +6,7 @@ live while you speak. Runs on Windows, Linux and Android from one C#/Avalonia co
 **Timbratune is a fork of [Euphonia](https://github.com/Yuuzulight/Euphonia)** (Electron/React with a Python and
 Praat analysis). It started as a C# port with the same metrics, zones and `recordings.json` data format, and has grown
 from there: live analysis, a native analysis engine and more platforms. The original is available as an optional
-submodule in [`../Euphonia-TypeScript`](../Euphonia-TypeScript) (see [Optional submodules](#optional-submodules)).
+submodule in [`Euphonia-TypeScript`](Euphonia-TypeScript) (see [Optional submodules](#optional-submodules)).
 
 The voice analysis is **pure C#** (`Reyfen.Timbratune.Acoustics`). It needs no Praat, Python, ffmpeg or anything else
 installed. Its algorithms are **inspired by [Praat](https://github.com/praat/praat.github.io)**. They are written
@@ -274,8 +274,8 @@ means a plain clone or `git submodule update --init` skips them. Nothing in the 
 
 | Path | What | Fetch it with |
 |---|---|---|
-| `../Euphonia-TypeScript` | the original [Euphonia](https://github.com/Yuuzulight/Euphonia) app (Timbratune's fork origin) | `git submodule update --init --checkout Euphonia-TypeScript` |
-| `../Praat` | [Praat](https://github.com/praat/praat.github.io)'s source (GPLv3, ~380 MB), for reading only | `git submodule update --init --checkout --depth 1 Praat` |
+| `Euphonia-TypeScript` | the original [Euphonia](https://github.com/Yuuzulight/Euphonia) app (Timbratune's fork origin) | `git submodule update --init --checkout Euphonia-TypeScript` |
+| `Praat` | [Praat](https://github.com/praat/praat.github.io)'s source (GPLv3, ~380 MB), for reading only | `git submodule update --init --checkout --depth 1 Praat` |
 
 ## Licensing and credits
 

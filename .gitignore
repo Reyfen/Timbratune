@@ -1,3 +1,17 @@
+bin/
+obj/
+.vs/
+.idea/
+*.user
+*.suo
+TestResults/
+
+# Praat binary — fetched by scripts/fetch-praat.ps1 (GPLv3, not committed)
+tools/praat/
+
+# dotnet publish output
+publish/
+
 # stray empty lockfile from running npm at the root
 /package-lock.json
 

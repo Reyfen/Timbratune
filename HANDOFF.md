@@ -5,7 +5,7 @@ This file brings a new engineer or agent up to date on everything done so far: w
 Last updated 2026-10-02.
 
 **Name:** the project is **Timbratune — Gender Voice Analysis Tool**, by **Reyfen**.
-- **Before 2026-10-02 it was called Euphonia**, and it is a fork of [Euphonia](https://github.com/Yuuzulight/Euphonia). Older parts of this file and of the transcript say "Euphonia" and "Euphonia-CSharp"; read those as Timbratune and `Timbratune/`.
+- **Before 2026-10-02 it was called Euphonia**, and it is a fork of [Euphonia](https://github.com/Yuuzulight/Euphonia). Older parts of this file and of the transcript say "Euphonia" and "Euphonia-CSharp"; read those as Timbratune and the repo root (the code moved from `Timbratune/` to the root on 2026-10-06).
 - See §8b for the rename itself.
 
 The full conversation transcript, if you need exact wording, is at `C:\Users\mihai\.claude\projects\C--Projects-TEDinc-Euphonia\e751b8bb-a930-433a-b573-0bbfba026197.jsonl`. It is JSON Lines and very large; grep it rather than reading it whole.
@@ -19,7 +19,7 @@ The full conversation transcript, if you need exact wording, is at `C:\Users\mih
 
   > "Read the algorithms of Praat only as inspiration, as any human programmer would do. Do not copy it directly. Also, keep the papers based on it. I don't want to carry the GPL v3 license because there is no way for me to deeply integrate it and stuff like this. I take all the responsibility on myself."
 
-  Praat's source lives in `/Praat/` (gitignored, reference only). `Praat.exe` is used **by tests only** (the oracle), fetched with `Timbratune/scripts/fetch-praat.ps1`.
+  Praat's source lives in the optional `Praat` submodule (reference only). `Praat.exe` is used **by tests only** (the oracle), fetched with `scripts/fetch-praat.ps1`.
 - **Cross-platform.** Windows comes first, but macOS, Linux, Android and iOS must stay possible, so **no Windows-only dependencies**.
 - **Don't touch the user's running app.** The user often has the published build open from `publish/Timbratune-win-x64`. It locks the folder, so `dotnet publish` fails. Check with `Get-Process Reyfen.Timbratune.Desktop` (the `Path` column tells you which build it is) and ask before closing it. Never kill it without asking.
 - **Measure before claiming.** Changes aimed at "steadier" or "faster" were verified with numbers. Some ideas measured worse and were dropped or limited (see §6). Keep doing this.
@@ -36,12 +36,12 @@ Timbratune, originally Euphonia, is a voice-training feedback app. You record a 
 Each metric is placed in zones (masculine / neutral / feminine, and others).
 
 - `Euphonia-TypeScript/` is the original Electron/React app. It used Python and parselmouth (`analyze.py`), which calls Praat.
-- `Timbratune/` is the port. It is the active codebase.
+- The repo root is the port. It is the active codebase.
 
 ## 3. History of requests, in order
 
 1. Run the TypeScript app locally.
-2. Port it to C#/Avalonia in `Timbratune/`: .NET 10, core dashboard, same metrics, same zones, same `recordings.json` format.
+2. Port it to C#/Avalonia (now the repo root): .NET 10, core dashboard, same metrics, same zones, same `recordings.json` format.
 3. Trends are per phrase within a single take, not across takes. The publish folder carries a platform suffix: `publish/Timbratune-win-x64`.
 4. Set up the git repo with `dev` as the main branch, and commit only when asked.
 5. Replace Praat.exe with a pure C# module, `Reyfen.Timbratune.Acoustics`: MIT, zero dependencies, trim/AOT safe. Praat is kept for tests only.
@@ -66,7 +66,7 @@ Each metric is placed in zones (masculine / neutral / feminine, and others).
 
     Also: **disable the reference voices** behind a feature flag ("maybe we will use it later").
 
-## 4. Codebase map (`Timbratune/`)
+## 4. Codebase map (repo root)
 
 | Project | Role |
 |---|---|
@@ -236,7 +236,7 @@ F2's large "error" is real phonetics: F2 differs by about 700 Hz between /i/ and
 ## 7. Developer workflow
 
 ```powershell
-cd C:\Projects\Reyfen\Timbratune\Timbratune
+cd C:\Projects\Reyfen\Timbratune
 dotnet build Timbratune.slnx
 dotnet test Timbratune.slnx                     # 86 tests; the Praat oracle tests skip without Praat
 dotnet run --project src/Reyfen.Timbratune.Desktop
@@ -379,7 +379,7 @@ Shell gotchas on this machine:
 
 | What | Before | After |
 |---|---|---|
-| Folder | `Euphonia-CSharp/` | `Timbratune/` |
+| Folder | `Euphonia-CSharp/` | `Timbratune/`, then the repo root (2026-10-06) |
 | Solution | `Euphonia.slnx` | `Timbratune.slnx` |
 | Projects, assemblies and namespaces | `Euphonia.*` | `Reyfen.Timbratune.*`; folders `src/Reyfen.Timbratune.*`, `tests/Reyfen.Timbratune.*.Tests` |
 | JSON helper | `EuphoniaJson` | `TimbratuneJson` |
@@ -410,7 +410,7 @@ Shell gotchas on this machine:
 
 **Backups:** the previous local folders, including `.venv`, `node_modules` and the 381 MB Praat source, were moved to `C:\Projects\TEDinc\_backup-before-submodules\`. The user can delete them.
 
-**Location:** on 2026-10-02 the user moved the repo to `C:\Projects\Reyfen\Timbratune`; the app is in its `Timbratune/` subfolder. The old copy at `C:\Projects\TEDinc\Euphonia` is left for the user to delete. Claude's project memory for the new path is in `C:\Users\mihai\.claude\projects\C--Projects-Reyfen-Timbratune\memory\`. The older transcripts stay under `...\C--Projects-TEDinc-Euphonia\`.
+**Location:** on 2026-10-02 the user moved the repo to `C:\Projects\Reyfen\Timbratune`; on 2026-10-06 the app moved from its `Timbratune/` subfolder to the repo root. The old copy at `C:\Projects\TEDinc\Euphonia` is left for the user to delete. Claude's project memory for the new path is in `C:\Users\mihai\.claude\projects\C--Projects-Reyfen-Timbratune\memory\`. The older transcripts stay under `...\C--Projects-TEDinc-Euphonia\`.
 
 ## 8. Current state, at the time of writing
 
