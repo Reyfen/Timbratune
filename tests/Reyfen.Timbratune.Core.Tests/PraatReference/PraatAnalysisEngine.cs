@@ -23,7 +23,7 @@ public sealed class PraatAnalysisEngine(string? praatPath) : IAnalysisEngine
         : $"Praat wasn't found. Run scripts/fetch-praat.ps1, or set {PraatLocator.PraatEnvVar} to the Praat executable.";
 
     public async Task<AnalysisResult> AnalyzeAsync(string wavPath, double registerFloorHz = AnalysisPostProcessor.DefaultRegisterFloorHz,
-        CancellationToken cancellationToken = default) =>
+        CancellationToken cancellationToken = default, IProgress<double>? progress = null) =>
         AnalysisPostProcessor.Process(await RunAsync(wavPath, cancellationToken), registerFloorHz);
 
     public async Task<RawAnalysis> RunAsync(string wavPath, CancellationToken cancellationToken = default)

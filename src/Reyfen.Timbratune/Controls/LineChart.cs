@@ -133,7 +133,9 @@ public sealed class LineChart : ThemedControl
             _dots.Add((at, p));
 
             // Value label above the dot (below it when the dot hugs the top), kept inside the plot.
-            var label = Text(Math.Round(p.Y!.Value, 1).ToString(CultureInfo.InvariantCulture), 10, ink, FontWeight.SemiBold);
+            // Whole numbers from 100 up (Hz): a decimal there only crowds the neighbouring labels.
+            var digits = Math.Abs(p.Y!.Value) >= 100 ? 0 : 1;
+            var label = Text(Math.Round(p.Y!.Value, digits).ToString(CultureInfo.InvariantCulture), 10, ink, FontWeight.SemiBold);
             var lx = Math.Clamp(at.X - label.Width / 2, PadL, w - PadR - label.Width);
             var ly = at.Y - 8 - label.Height < 0 ? at.Y + 7 : at.Y - 7 - label.Height;
             ctx.DrawText(label, new Point(lx, ly));

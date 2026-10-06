@@ -29,6 +29,10 @@ public sealed record FrameTracks
     public required Func<double, double, RawAnalysis.WeightRow?> WeightRow { get; init; }
     public required IReadOnlyList<(double X, double Y)> Ltas { get; init; }
     public required IReadOnlyList<(double Start, double End)> Sounding { get; init; }
+    /// <summary>The harmonicity track, for the per-slice HNR of the trends (optional).</summary>
+    public HarmonicityContour? Harmonicity { get; init; }
+    /// <summary>Glottal pulse times, for the per-slice jitter of the trends (optional).</summary>
+    public IReadOnlyList<double> Pulses { get; init; } = [];
 }
 
 /// <summary>
@@ -79,7 +83,19 @@ public static class RawAnalysisAssembler
             Ltas = t.Ltas,
             Contour = contour,
             Sounding = t.Sounding,
+            HnrFrames = HnrFrames(t.Harmonicity),
+            Pulses = t.Pulses,
         };
+    }
+
+    /// <summary>(time, dB) of the voiced harmonicity frames.</summary>
+    public static List<(double T, double Db)> HnrFrames(HarmonicityContour? harmonicity)
+    {
+        var frames = new List<(double, double)>();
+        if (harmonicity is null) return frames;
+        for (var i = 0; i < harmonicity.Db.Count; i++)
+            if (harmonicity.Db[i] != HarmonicityContour.Unvoiced) frames.Add((harmonicity.Grid.IndexToX(i), harmonicity.Db[i]));
+        return frames;
     }
 
     /// <summary>Sounding stretches of speech (silence detection on the intensity contour).</summary>

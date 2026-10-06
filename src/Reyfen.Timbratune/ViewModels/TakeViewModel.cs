@@ -92,39 +92,45 @@ public sealed class TakeViewModel
                           "trail down into chest voice.";
         }
 
-        // ---- Trends within this take: one point per detected phrase ----
+        // ---- Trends within this take: ~10 slices of whole seconds ----
         if (detail is not null)
         {
-            // Takes analyzed before the per-phrase breakdown existed only have the
-            // contour: pitch-based trends are rebuilt here, and MainViewModel
-            // re-analyzes the audio in the background to fill in F2/weight.
-            var phrases = detail.PhraseMetrics ?? AnalysisPostProcessor.PhraseBreakdown(detail);
-            PhraseCount = phrases.Count;
-            PhraseTrends = BuildPhraseTrends(phrases, detail.RegisterFloorHz, detail.PhraseMetrics is null);
+            // Takes analyzed before the time trends existed only have the contour:
+            // pitch-based trends are rebuilt here, and MainViewModel re-analyzes
+            // the audio in the background to fill in the rest.
+            var trends = detail.Trends ?? AnalysisPostProcessor.TimeTrends(detail);
+            TrendStep = trends.StepS;
+            TrendPointCount = trends.Points.Count;
+            PhraseTrends = BuildTrends(trends.Points, detail.RegisterFloorHz, detail.Trends is null);
         }
     }
 
-    private static IReadOnlyList<TrendViewModel> BuildPhraseTrends(List<PhraseMetrics> phrases, double floor, bool legacy)
+    private static IReadOnlyList<TrendViewModel> BuildTrends(List<TrendSlice> slices, double floor, bool legacy)
     {
-        IReadOnlyList<TrendPoint> Mk(Func<PhraseMetrics, double?> sel, string unit) => phrases
-            .Select((p, i) => new TrendPoint($"{i + 1}", sel(p),
-                $"phrase {i + 1} ({p.Start:0.0}–{p.End:0.0} s): {Fmt(sel(p), unit)}"))
+        IReadOnlyList<TrendPoint> Mk(Func<TrendSlice, double?> sel, string unit) => slices
+            .Select(s => new TrendPoint($"{s.T:0}", sel(s), $"{s.T:0} s ({s.Start:0.0}–{s.End:0.0} s): {Fmt(sel(s), unit)}"))
             .ToList();
         var reanalyze = legacy ? " · measuring…" : "";
 
         return
         [
-            new("Pitch (avg)", "pink band = feminine zone (165 Hz+)", Mk(p => p.MeanHz, " Hz"), "Chart1",
+            new("Pitch (avg)", "pink band = feminine zone (165 Hz+)", Mk(s => s.MeanHz, " Hz"), "Chart1",
                 bandFrom: Metrics.FemininePitchHz, bandTo: 260, bandColorKey: "ZoneFem"),
-            new("In-register melody", "true expressiveness per phrase, crashes removed (st)",
-                Mk(p => p.MelodySt, " st"), "Chart2", bands: Zones.Melody),
-            new("Phrase endings", $"ending pitch · blue = below the register floor ({Fmt(floor)} Hz)",
-                Mk(p => p.OffsetHz, " Hz"), "Chart3",
+            new("In-register melody", "true expressiveness, crashes removed (st)",
+                Mk(s => s.MelodySt, " st"), "Chart2", bands: Zones.Melody),
+            new("Phrase endings", $"pitch of the phrases ending here · blue = below the register floor ({Fmt(floor)} Hz)",
+                Mk(s => s.OffsetHz, " Hz"), "Chart3",
                 bands: [new Zone(floor - 50, floor, ZoneColorKey.Masc, "below"), new Zone(floor, 260, ZoneColorKey.Fem, "in register")]),
-            new("Resonance (F2)", "brightness / vocal-tract size cue" + reanalyze, Mk(p => p.F2Hz, " Hz"), "Chart4",
+            new("Resonance (F2)", "brightness / vocal-tract size cue" + reanalyze, Mk(s => s.F2Hz, " Hz"), "Chart4",
                 bands: Zones.F2),
-            new("Weight", "spectral tilt · lower = lighter / more feminine" + reanalyze, Mk(p => p.WeightDb, " dB"),
+            new("Resonance (F3)", "supports brightness" + reanalyze, Mk(s => s.F3Hz, " Hz"), "Chart6",
+                bands: Zones.F3),
+            new("Weight", "spectral tilt · lower = lighter / more feminine" + reanalyze, Mk(s => s.WeightDb, " dB"),
                 "Chart5", bands: Zones.Weight),
+            new("Clarity (HNR)", "higher = clearer, lower = breathier" + reanalyze, Mk(s => s.HnrDb, " dB"),
+                "Chart7", bands: Zones.Hnr),
+            new("Steadiness (jitter)", "lower = steadier" + reanalyze, Mk(s => s.JitterPct, "%"),
+                "Chart8", bands: Zones.Jitter),
         ];
     }
 
@@ -154,14 +160,15 @@ public sealed class TakeViewModel
     public IReadOnlyList<PositionBar> Positions { get; } = [];
     public string RegisterTip { get; } = "";
 
-    public int PhraseCount { get; }
+    public double TrendStep { get; }
+    public int TrendPointCount { get; }
     public IReadOnlyList<TrendViewModel> PhraseTrends { get; } = [];
-    public bool ShowPhraseTrends => PhraseCount >= 2;
-    public string PhraseTrendsHint => PhraseCount switch
+    public bool ShowPhraseTrends => TrendPointCount >= 2;
+    public string PhraseTrendsHint => TrendPointCount switch
     {
-        0 => "no phrases detected in this take yet ✨",
-        1 => "this take is one long phrase — trends need at least two ✨",
-        _ => $"{PhraseCount} phrases, split at the pauses · hover a dot for its time range",
+        0 => "this take is too short for trends yet ✨",
+        1 => "this take is too short for trends — they need at least two points ✨",
+        _ => $"a point every {TrendStep:0} s · each covers the {TrendStep:0} s around it · hover a dot for its time range",
     };
 }
 

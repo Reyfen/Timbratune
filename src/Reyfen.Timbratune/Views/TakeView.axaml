@@ -142,11 +142,11 @@
       </StackPanel>
     </StackPanel>
 
-    <!-- 📈 trends within this take: one point per detected phrase -->
+    <!-- 📈 trends within this take: ~10 slices of whole seconds -->
     <StackPanel Spacing="8">
       <WrapPanel>
         <TextBlock Classes="section" Text="📈 Trends within this take" Margin="0,0,8,0" />
-        <TextBlock Classes="section-sub" Text="· phrase by phrase, in the order you spoke them" />
+        <TextBlock Classes="section-sub" Text="· how each measure moves through the take" />
       </WrapPanel>
       <TextBlock Classes="cap" Text="{Binding PhraseTrendsHint}" />
       <ItemsControl ItemsSource="{Binding PhraseTrends}" IsVisible="{Binding ShowPhraseTrends}">
@@ -162,7 +162,7 @@
                 <c:LineChart Margin="0,6,0,0" Points="{Binding Points}" LineColorKey="{Binding LineColorKey}"
                              BandFrom="{Binding BandFrom}" BandTo="{Binding BandTo}"
                              BandColorKey="{Binding BandColorKey}" Bands="{Binding Bands}" />
-                <TextBlock Classes="cap" FontSize="10.5" HorizontalAlignment="Center" Text="phrase →" />
+                <TextBlock Classes="cap" FontSize="10.5" HorizontalAlignment="Center" Text="seconds →" />
               </StackPanel>
             </Border>
           </DataTemplate>

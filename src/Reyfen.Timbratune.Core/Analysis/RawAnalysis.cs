@@ -19,6 +19,10 @@ public sealed class RawAnalysis
     /// <summary>10 ms pitch track; Hz &lt;= 0 means unvoiced.</summary>
     public required IReadOnlyList<(double T, double Hz)> Contour { get; init; }
     public required IReadOnlyList<(double Start, double End)> Sounding { get; init; }
+    /// <summary>Voiced harmonicity frames (time, dB), for the trends; empty when not measured.</summary>
+    public IReadOnlyList<(double T, double Db)> HnrFrames { get; init; } = [];
+    /// <summary>Glottal pulse times, for the trends' jitter; empty when not measured.</summary>
+    public IReadOnlyList<double> Pulses { get; init; } = [];
 
     public double Get(string key) => Summary.TryGetValue(key, out var v) ? v : double.NaN;
 

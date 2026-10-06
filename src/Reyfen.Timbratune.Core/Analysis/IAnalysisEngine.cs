@@ -13,6 +13,7 @@ public interface IAnalysisEngine
     /// <summary>Human-readable reason when <see cref="IsAvailable"/> is false.</summary>
     string? UnavailableReason { get; }
 
+    /// <param name="progress">Receives the fraction done (0–1) while the analysis runs, when the engine can tell.</param>
     Task<AnalysisResult> AnalyzeAsync(string wavPath, double registerFloorHz = AnalysisPostProcessor.DefaultRegisterFloorHz,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default, IProgress<double>? progress = null);
 }

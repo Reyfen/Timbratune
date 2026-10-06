@@ -19,12 +19,14 @@ public static class Fft
     public static bool IsPowerOfTwo(int n) => n > 0 && (n & (n - 1)) == 0;
 
     /// <summary>In-place complex forward DFT: X[k] = Σ x[j]·e^(−2πijk/N).</summary>
-    public static void ForwardInPlace(double[] re, double[] im) => Transform(re, im, inverse: false);
+    /// <param name="passDone">Called after each of the log2(N) butterfly passes (all equally costly).</param>
+    public static void ForwardInPlace(double[] re, double[] im, Action? passDone = null) => Transform(re, im, false, passDone);
 
     /// <summary>In-place complex inverse DFT including the 1/N factor.</summary>
-    public static void InverseInPlace(double[] re, double[] im)
+    /// <param name="passDone">Called after each of the log2(N) butterfly passes (all equally costly).</param>
+    public static void InverseInPlace(double[] re, double[] im, Action? passDone = null)
     {
-        Transform(re, im, inverse: true);
+        Transform(re, im, true, passDone);
         var scale = 1.0 / re.Length;
         for (var i = 0; i < re.Length; i++)
         {
@@ -53,7 +55,10 @@ public static class Fft
         return (outRe, outIm);
     }
 
-    private static void Transform(double[] re, double[] im, bool inverse)
+    /// <summary>Number of butterfly passes of a length-<paramref name="n"/> transform (log2 n).</summary>
+    public static int PassCount(int n) => System.Numerics.BitOperations.Log2((uint)n);
+
+    private static void Transform(double[] re, double[] im, bool inverse, Action? passDone)
     {
         var n = re.Length;
         if (n != im.Length) throw new ArgumentException("Real and imaginary parts differ in length.");
@@ -95,6 +100,7 @@ public static class Fft
                     im[a] += ti;
                 }
             }
+            passDone?.Invoke();
         }
     }
 

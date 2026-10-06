@@ -38,8 +38,9 @@ public static class HarmonicityAnalyzer
     /// <param name="minimumPitch">Lowest periodicity searched for (Hz), e.g. 75.</param>
     /// <param name="silenceThreshold">Frames quieter than this fraction of the global peak count as silent, e.g. 0.1.</param>
     /// <param name="periodsPerWindow">Window length in periods of the minimum pitch, e.g. 1.0.</param>
+    /// <param name="progress">Called with the fraction of frames analyzed so far (0–1), from any thread.</param>
     public static HarmonicityContour CrossCorrelation(Sound sound, double timeStep = 0.01, double minimumPitch = 75,
-        double silenceThreshold = 0.1, double periodsPerWindow = 1.0)
+        double silenceThreshold = 0.1, double periodsPerWindow = 1.0, Action<double>? progress = null)
     {
         var settings = new PitchSettings
         {
@@ -51,7 +52,7 @@ public static class HarmonicityAnalyzer
             VoicedUnvoicedCost = 0,
         };
         var pitch = PitchAnalyzer.Analyze(sound, PitchAnalyzer.Method.CrossCorrelationAccurate, periodsPerWindow, timeStep,
-            minimumPitch, 0.5 * sound.SamplingFrequency, settings);
+            minimumPitch, 0.5 * sound.SamplingFrequency, settings, progress);
 
         return FromPitch(pitch);
     }

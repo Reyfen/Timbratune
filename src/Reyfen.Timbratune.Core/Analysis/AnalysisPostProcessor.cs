@@ -1,3 +1,4 @@
+using Reyfen.Timbratune.Acoustics.Voice;
 using Reyfen.Timbratune.Core.Models;
 
 namespace Reyfen.Timbratune.Core.Analysis;
@@ -60,7 +61,91 @@ public static class AnalysisPostProcessor
         detail.PhraseMetrics = PhraseBreakdown(detail,
             formants.Kept.Select(r => (r.T, r.F2)).ToList(),
             raw.WeightFrames.Select(w => (w.T, CorrectedH1A3(w, fs))).Where(p => double.IsFinite(p.Item2)).ToList());
+        detail.Trends = TimeTrends(detail,
+            formants.Kept.Select(r => (r.T, r.F2, r.F3)).ToList(),
+            raw.WeightFrames.Select(w => (w.T, CorrectedH1A3(w, fs))).Where(p => double.IsFinite(p.Item2)).ToList(),
+            raw.HnrFrames, raw.Pulses);
         return new AnalysisResult(metrics, detail);
+    }
+
+    // ------------------------------------------------------------------
+    // trends within the take (C#-port addition): ~10 slices of whole seconds
+    // ------------------------------------------------------------------
+
+    /// <summary>How many points the trend charts aim for, at most.</summary>
+    public const int TrendPointTarget = 10;
+
+    /// <summary>Slice lengths (s) the trends may use: each a "round" number of seconds.</summary>
+    private static readonly int[] TrendSteps = [1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 30, 40, 45, 60, 90, 120, 180, 240, 300, 600, 900, 1200, 1800, 3600];
+
+    /// <summary>
+    /// The shortest round slice length that cuts the take into at most
+    /// <see cref="TrendPointTarget"/> points (27.6 s → 3 s → 3, 6, … 27).
+    /// </summary>
+    public static int TrendStep(double duration)
+    {
+        foreach (var step in TrendSteps)
+            if (Math.Floor(duration / step) <= TrendPointTarget) return step;
+        return (int)Math.Ceiling(duration / TrendPointTarget);
+    }
+
+    /// <summary>
+    /// The take cut into slices of <see cref="TrendStep"/> seconds, one point per slice at
+    /// Step, 2·Step, … ≤ duration. Each slice is centred on its point; the first starts at
+    /// 0 and the last runs to the end, so every frame counts exactly once. Pitch values
+    /// come from the 10 ms contour, the rest from the frames given (null = not measured,
+    /// e.g. rebuilding an older take from its contour only).
+    /// </summary>
+    public static TakeTrends TimeTrends(
+        RecordingDetail detail,
+        IReadOnlyList<(double T, double F2, double F3)>? formantFrames = null,
+        IReadOnlyList<(double T, double H1A3c)>? weightFrames = null,
+        IReadOnlyList<(double T, double Db)>? hnrFrames = null,
+        IReadOnlyList<double>? pulses = null)
+    {
+        var duration = detail.DurationS;
+        var step = TrendStep(duration);
+        var count = (int)Math.Floor(duration / step + 1e-9);
+        var floor = detail.RegisterFloorHz;
+        var voiced = detail.Frames.T.Zip(detail.Frames.Hz)
+            .Where(p => p.Second is > 0)
+            .Select(p => (T: p.First, Hz: p.Second!.Value))
+            .ToList();
+        var hasPulses = pulses is { Count: > 0 };
+        var hasHnr = hnrFrames is { Count: > 0 };
+
+        var trends = new TakeTrends { StepS = step };
+        for (var k = 1; k <= count; k++)
+        {
+            var t = k * step;
+            var start = k == 1 ? 0 : t - step / 2.0;
+            var end = k == count ? duration : t + step / 2.0;
+            bool Inside(double x) => start <= x && (x < end || k == count && x <= end);
+
+            var hz = voiced.Where(v => Inside(v.T)).Select(v => v.Hz).ToList();
+            var inReg = hz.Where(h => h >= floor).Select(HzToSt).ToList();
+            var endings = detail.Phrases.Where(p => Inside(p.End)).Select(p => p.OffsetHz).ToList();
+            var formants = formantFrames?.Where(f => Inside(f.T)).ToList();
+            var weight = weightFrames?.Where(w => Inside(w.T)).Select(w => w.H1A3c).ToList();
+            var hnr = hasHnr ? hnrFrames!.Where(h => Inside(h.T)).Select(h => h.Db).ToList() : null;
+            var jitter = hasPulses ? VoiceReport.JitterLocal(pulses!.Where(Inside).ToList(), 0.0001, 0.02, 1.3) : double.NaN;
+
+            trends.Points.Add(new TrendSlice
+            {
+                T = t,
+                Start = Round(start, 3),
+                End = Round(end, 3),
+                MeanHz = hz.Count > 0 ? Round(hz.Average(), 1) : null,
+                MelodySt = Clean(SampleSd(inReg)),
+                OffsetHz = endings.Count > 0 ? Round(endings.Average(), 1) : null,
+                F2Hz = formants is { Count: > 0 } ? Clean(Median(formants.Select(f => f.F2).ToList())) : null,
+                F3Hz = formants is { Count: > 0 } ? Clean(Median(formants.Select(f => f.F3).ToList())) : null,
+                WeightDb = weight is { Count: > 0 } ? Clean(weight.Average()) : null,
+                HnrDb = hnr is { Count: > 0 } ? Clean(hnr.Average()) : null,
+                JitterPct = Clean(jitter * 100),
+            });
+        }
+        return trends;
     }
 
     // ------------------------------------------------------------------

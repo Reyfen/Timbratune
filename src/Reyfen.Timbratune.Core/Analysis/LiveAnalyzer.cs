@@ -163,6 +163,8 @@ public sealed class LiveAnalyzer
                 // The spectral tilt needs the whole-take spectrum: only at the end.
                 Ltas = final ? RawAnalysisAssembler.LtasPoints(Ltas.FromSound(sound, 100)) : [],
                 Sounding = RawAnalysisAssembler.SoundingIntervals(intensity),
+                Harmonicity = harmonicity,
+                Pulses = pulses,
             };
             var result = AnalysisPostProcessor.Process(RawAnalysisAssembler.Assemble(tracks), _registerFloorHz);
             return new LiveSnapshot(view.Duration, result, BuildSeries(tracks, harmonicity, WeightRow), final);

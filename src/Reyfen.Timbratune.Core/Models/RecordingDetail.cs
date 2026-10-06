@@ -19,6 +19,47 @@ public sealed class RecordingDetail
     /// recomputed from <see cref="Frames"/>; F2 and weight can't).
     /// </summary>
     public List<PhraseMetrics>? PhraseMetrics { get; set; }
+
+    /// <summary>
+    /// The "trends within this take" charts: the take cut into equal slices of
+    /// whole seconds (about 10 of them). C#-port addition — absent in older
+    /// files; the pitch-based values can then be rebuilt from <see cref="Frames"/>.
+    /// </summary>
+    public TakeTrends? Trends { get; set; }
+}
+
+public sealed class TakeTrends
+{
+    /// <summary>Slice length in whole seconds; the points sit at Step, 2·Step, 3·Step, …</summary>
+    public double StepS { get; set; }
+    public List<TrendSlice> Points { get; set; } = [];
+}
+
+/// <summary>
+/// One trend point: the metrics of the slice around <see cref="T"/>
+/// ([T − Step/2, T + Step/2], the first and last stretched to the take's edges).
+/// Null = not measurable in that slice.
+/// </summary>
+public sealed class TrendSlice
+{
+    public double T { get; set; }
+    public double Start { get; set; }
+    public double End { get; set; }
+    /// <summary>Mean F0 over the voiced frames.</summary>
+    public double? MeanHz { get; set; }
+    /// <summary>Semitone SD over the in-register frames ("true melody").</summary>
+    public double? MelodySt { get; set; }
+    /// <summary>Mean ending pitch of the phrases that end in the slice.</summary>
+    public double? OffsetHz { get; set; }
+    /// <summary>Median F2 / F3 of the gated vowel-core frames.</summary>
+    public double? F2Hz { get; set; }
+    public double? F3Hz { get; set; }
+    /// <summary>Mean corrected H1*–A3* of the weight frames.</summary>
+    public double? WeightDb { get; set; }
+    /// <summary>Mean HNR over the voiced harmonicity frames.</summary>
+    public double? HnrDb { get; set; }
+    /// <summary>Local jitter (%) of the glottal pulses in the slice.</summary>
+    public double? JitterPct { get; set; }
 }
 
 public sealed class PhraseMetrics

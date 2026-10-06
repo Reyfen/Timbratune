@@ -123,15 +123,15 @@ public sealed partial class MainViewModel : ObservableObject
         }
         var detail = _services.Store.LoadDetail(active);
         Active = new TakeViewModel(active, detail, active.Id == latest?.Id, OpenMetricCommand);
-        if (detail is { PhraseMetrics: null }) _ = BackfillPhraseMetricsAsync(active);
+        if (detail is { Trends: null }) _ = BackfillTrendsAsync(active);
     }
 
     /// <summary>
-    /// Takes analyzed before the per-phrase breakdown existed have no F2 /
-    /// weight per phrase. Re-run the analysis on the stored WAV once, save the
+    /// Takes analyzed before the time trends existed have only the pitch-based
+    /// trends (rebuilt from the contour). Re-run the analysis on the stored WAV once, save the
     /// fuller detail file, and refresh the view if that take is still shown.
     /// </summary>
-    private async Task BackfillPhraseMetricsAsync(Recording take)
+    private async Task BackfillTrendsAsync(Recording take)
     {
         var audio = _services.Store.Paths.Resolve(take.Audio);
         if (!_services.Engine.IsAvailable || audio is null || !File.Exists(audio) || !_backfilling.Add(take.Id)) return;
@@ -144,7 +144,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
         catch (Exception)
         {
-            // Non-essential: the pitch-based per-phrase trends are already shown.
+            // Non-essential: the pitch-based trends are already shown.
         }
         finally
         {

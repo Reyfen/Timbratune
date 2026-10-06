@@ -35,15 +35,16 @@ public static class PitchAnalyzer
     /// "very accurate" off, i.e. 3 periods per Hanning window).
     /// </summary>
     /// <param name="timeStep">0 = 0.75 / pitchFloor.</param>
+    /// <param name="progress">Called with the fraction of frames analyzed so far (0–1), from any thread.</param>
     public static PitchContour Autocorrelation(Sound sound, double timeStep, double pitchFloor, double pitchCeiling,
-        PitchSettings? settings = null)
+        PitchSettings? settings = null, Action<double>? progress = null)
     {
         settings ??= new PitchSettings();
-        return Analyze(sound, Method.AutocorrelationHanning, 3.0, timeStep, pitchFloor, pitchCeiling, settings);
+        return Analyze(sound, Method.AutocorrelationHanning, 3.0, timeStep, pitchFloor, pitchCeiling, settings, progress);
     }
 
     internal static PitchContour Analyze(Sound sound, Method method, double periodsPerWindow, double timeStep,
-        double pitchFloor, double pitchCeiling, PitchSettings settings)
+        double pitchFloor, double pitchCeiling, PitchSettings settings, Action<double>? progress = null)
     {
         var grid = sound.Grid;
         var duration = grid.Step * grid.Count;
@@ -63,15 +64,19 @@ public static class PitchAnalyzer
         }
         else
         {
+            var counter = new FrameProgress(frames.Count, progress);
             Parallel.For(0, frames.Count, analyzer.CreateBuffers,
                 (i, _, buffers) =>
                 {
                     result[i] = analyzer.AnalyzeFrame(channels, grid, frames.IndexToX(i), buffers);
+                    counter.Done();
                     return buffers;
                 },
                 _ => { });
         }
-        return analyzer.ChoosePath(frames, result, globalPeak);
+        var contour = analyzer.ChoosePath(frames, result, globalPeak);
+        progress?.Invoke(1);
+        return contour;
     }
 }
 

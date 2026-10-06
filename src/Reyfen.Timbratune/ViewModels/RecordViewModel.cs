@@ -57,6 +57,30 @@ public sealed partial class RecordViewModel : ObservableObject
     private RecordState _state = RecordState.Idle;
 
     [ObservableProperty] private string _label = "";
+
+    /// <summary>How far the work after Stop has got (0–100): finishing the live analysis, the full analysis, saving.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(AnalyzingText))]
+    private double _analysisProgress;
+
+    private readonly Stopwatch _analysisClock = new();
+
+    /// <summary>"analyzing… 42% · about 3 s left" (the estimate once there is enough to go on).</summary>
+    public string AnalyzingText
+    {
+        get
+        {
+            var text = $"analyzing… {AnalysisProgress:0}%";
+            var fraction = AnalysisProgress / 100;
+            var elapsed = _analysisClock.Elapsed.TotalSeconds;
+            if (fraction is >= 0.15 and < 1 && elapsed >= 0.5)
+            {
+                var left = elapsed / fraction * (1 - fraction);
+                text += left < 1.5 ? " · almost done" : $" · about {Math.Round(left):0} s left";
+            }
+            return text + " 💗";
+        }
+    }
     [ObservableProperty] private string? _errorDetail;
 
     /// <summary>The take so far, while recording (and frozen while the saved take is analyzed).</summary>
@@ -160,7 +184,11 @@ public sealed partial class RecordViewModel : ObservableObject
         _liveTimer.Stop();
         _clock.Stop();
         _elapsed.Stop();
+        AnalysisProgress = 0;
+        _analysisClock.Restart();
         State = RecordState.Analyzing;
+        // Shares of the time after Stop, measured on a 27.6 s take: the last live update, the analysis, saving.
+        const double liveShare = 0.15, analysisShare = 0.80;
         string? wav = null;
         try
         {
@@ -178,8 +206,12 @@ public sealed partial class RecordViewModel : ObservableObject
                 WavWriter.Truncate(wav, length);
                 Show(await Task.Run(() => live.Update(final: true, length: length)));
             }
+            AnalysisProgress = 100 * liveShare;
 
-            var result = await _engine.AnalyzeAsync(wav);
+            var result = await _engine.AnalyzeAsync(wav,
+                // Max: a late-arriving report must not move the bar back.
+                progress: new ThrottledProgress(f => AnalysisProgress = Math.Max(AnalysisProgress, 100 * (liveShare + analysisShare * f))));
+            AnalysisProgress = 100 * (liveShare + analysisShare);
             var entry = result.Metrics;
             entry.Label = string.IsNullOrWhiteSpace(Label) ? "untitled take" : Label.Trim();
             entry.Note = "";
@@ -187,6 +219,7 @@ public sealed partial class RecordViewModel : ObservableObject
             entry.SourceFile = Path.GetFileName(wav);
             var sourceWav = wav;
             await Task.Run(() => _store.Add(entry, result.Detail, sourceWav));
+            AnalysisProgress = 100;
 
             Label = "";
             State = RecordState.Idle;
@@ -227,5 +260,29 @@ public sealed partial class RecordViewModel : ObservableObject
         ClearLive();
         ErrorDetail = $"{what} 🌧️ — {ex.Message}";
         State = RecordState.Error;
+    }
+}
+
+/// <summary>
+/// Progress that reaches the UI thread at most every half percent: the analysis
+/// reports hundreds of times a second, from worker threads.
+/// </summary>
+internal sealed class ThrottledProgress : IProgress<double>
+{
+    private readonly Action<double> _apply;
+    private readonly Lock _gate = new();
+    private double _sent = -1;
+
+    /// <summary>Create on the UI thread: <paramref name="apply"/> runs there.</summary>
+    public ThrottledProgress(Action<double> apply) => _apply = apply;
+
+    public void Report(double value)
+    {
+        lock (_gate)
+        {
+            if (value < 1 && value - _sent < 0.005) return;
+            _sent = value;
+        }
+        Dispatcher.UIThread.Post(() => _apply(value));
     }
 }

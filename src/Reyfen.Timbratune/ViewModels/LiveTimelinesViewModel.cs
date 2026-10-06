@@ -7,19 +7,23 @@ using Reyfen.Timbratune.Core.Models;
 namespace Reyfen.Timbratune.ViewModels;
 
 /// <summary>
-/// One live metric chart: fixed title, zones and scale, plus the smoothed line and visible
-/// time range, which update in place so the chart (and its easing) survives each refresh.
+/// One live metric chart: fixed title, zones and scale, plus the smoothed line, its current
+/// value and the visible time range, which update in place so the chart (and its easing)
+/// survives each refresh.
 /// </summary>
-public sealed partial class TimelineViewModel(string title, string caption, IReadOnlyList<Zone> zones, double lo, double hi)
+public sealed partial class TimelineViewModel(string title, string caption, string unit, IReadOnlyList<Zone> zones, double lo, double hi)
     : ObservableObject
 {
     public string Title { get; } = title;
     public string Caption { get; } = caption;
+    public string Unit { get; } = unit;
     public IReadOnlyList<Zone> Zones { get; } = zones;
     public double Lo { get; } = lo;
     public double Hi { get; } = hi;
 
     [ObservableProperty] private IReadOnlyList<TimedValue> _line = [];
+    /// <summary>The current point's value (the dot), e.g. "182 Hz"; "—" before there is one.</summary>
+    [ObservableProperty] private string _valueText = "—";
     [ObservableProperty] private double _axisStart;
     [ObservableProperty] private double _axisDuration = 10;
 }
@@ -79,7 +83,7 @@ public sealed partial class LiveTimelinesViewModel : ObservableObject
         TimelineViewModel Metric(MetricKey key, string caption)
         {
             var m = Metrics.All[key];
-            return new TimelineViewModel(m.Title, caption, m.Zones, m.Lo, m.Hi);
+            return new TimelineViewModel(m.Title, caption, m.Unit, m.Zones, m.Lo, m.Hi);
         }
         Timelines =
         [
@@ -89,7 +93,7 @@ public sealed partial class LiveTimelinesViewModel : ObservableObject
             Metric(MetricKey.F2, "on loud vowels, median over about 2 s"),
             Metric(MetricKey.F3, "on loud vowels, median over about 2 s"),
             Metric(MetricKey.Weight, "median over about 2 s"),
-            new TimelineViewModel("In-register melody", "in-register pitch movement over about 2 s (st)", Zones.Melody, 0, 7),
+            new TimelineViewModel("In-register melody", "in-register pitch movement over about 2 s", "st", Zones.Melody, 0, 7),
             Metric(MetricKey.Jitter, "median of finished voiced stretches over about 3 s"),
         ];
     }
@@ -99,6 +103,8 @@ public sealed partial class LiveTimelinesViewModel : ObservableObject
     [ObservableProperty] private double _axisDuration = 10;
     [ObservableProperty] private RecordingDetail? _detail;
     [ObservableProperty] private IReadOnlyList<TimedValue> _pitchLine = [];
+    /// <summary>The live pitch now (the contour's dot), e.g. "182 Hz".</summary>
+    [ObservableProperty] private string _pitchText = "—";
 
     public IReadOnlyList<Zone> PitchZones => Zones.Pitch;
     public IReadOnlyList<TimelineViewModel> Timelines { get; }
@@ -150,13 +156,31 @@ public sealed partial class LiveTimelinesViewModel : ObservableObject
         AxisDuration = frame.AxisDuration;
         Detail = frame.Detail;
         PitchLine = frame.PitchLine;
+        PitchText = ValueText(frame.PitchLine, "Hz");
         for (var i = 0; i < Timelines.Count; i++)
         {
             var t = Timelines[i];
             t.AxisStart = frame.AxisStart;
             t.AxisDuration = frame.AxisDuration;
             t.Line = frame.Lines[i];
+            t.ValueText = ValueText(frame.Lines[i], t.Unit);
         }
+    }
+
+    /// <summary>
+    /// The line's newest value — where the chart puts its dot — with as many decimals as
+    /// the unit needs to move visibly: "182 Hz", "64.3 dB", "2.4 st", "0.81 %".
+    /// </summary>
+    public static string ValueText(IReadOnlyList<TimedValue> line, string unit)
+    {
+        for (var i = line.Count - 1; i >= 0; i--)
+        {
+            var v = line[i].Value;
+            if (double.IsNaN(v)) continue;
+            var format = unit switch { "Hz" => "0", "%" => "0.00", _ => "0.0" };
+            return $"{v.ToString(format, System.Globalization.CultureInfo.InvariantCulture)} {unit}";
+        }
+        return "—";
     }
 
     private static List<TimedValue> Voiced(RecordingDetail? detail)

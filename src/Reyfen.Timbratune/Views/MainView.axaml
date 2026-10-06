@@ -54,8 +54,8 @@
               <ComboBox Classes="pill" ItemsSource="{Binding WindowOptions}" SelectedItem="{Binding LiveWindow}" MinWidth="150" Margin="0,0,0,6" />
             </WrapPanel>
             <StackPanel Orientation="Horizontal" Spacing="12" IsVisible="{Binding IsAnalyzing}">
-              <ProgressBar IsIndeterminate="True" Width="140" VerticalAlignment="Center" />
-              <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Text="analyzing… 💗" />
+              <ProgressBar Minimum="0" Maximum="100" Value="{Binding AnalysisProgress}" Width="140" VerticalAlignment="Center" />
+              <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Text="{Binding AnalyzingText}" />
             </StackPanel>
             <StackPanel Spacing="6" IsVisible="{Binding IsError}">
               <TextBlock Foreground="{DynamicResource DangerBrush}" FontWeight="SemiBold" Text="{Binding ErrorDetail}" />

@@ -412,6 +412,23 @@ Shell gotchas on this machine:
 
 **Location:** on 2026-10-02 the user moved the repo to `C:\Projects\Reyfen\Timbratune`; on 2026-10-06 the app moved from its `Timbratune/` subfolder to the repo root. The old copy at `C:\Projects\TEDinc\Euphonia` is left for the user to delete. Claude's project memory for the new path is in `C:\Users\mihai\.claude\projects\C--Projects-Reyfen-Timbratune\memory\`. The older transcripts stay under `...\C--Projects-TEDinc-Euphonia\`.
 
+## 8c. Live numbers, time trends, real progress (2026-10-06)
+
+- **Live numbers:** each live graph's card shows its current value (the dot's value) beside the title, e.g. "186 Hz" (`LiveTimelinesViewModel.ValueText`, style `TextBlock.live-value`).
+- **Trends within this take** are now time slices instead of one point per phrase:
+  - `AnalysisPostProcessor.TrendStep` picks the shortest round step from 1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 30 … s that gives at most 10 points (27.6 s → 3 s → 3, 6, … 27).
+  - `TimeTrends` stores them in `RecordingDetail.Trends`. Each slice covers the step around its point; the first starts at 0 and the last runs to the end.
+  - The charts are pitch, melody, phrase endings, F2, **F3**, weight, **clarity (HNR)** and **steadiness (jitter)**. HNR and jitter per slice come from the new optional `FrameTracks.Harmonicity` / `Pulses`, carried through as `RawAnalysis.HnrFrames` / `Pulses`.
+  - Older takes rebuild the pitch trends from the contour and are re-analyzed once in the background (`MainViewModel.BackfillTrendsAsync`).
+  - `PhraseMetrics` is still computed and saved but no longer shown.
+- **Analysis progress bar:**
+  - The analyzers take an optional `Action<double>` progress callback: `PitchAnalyzer`, `HarmonicityAnalyzer`, `FormantAnalyzer.Burg`, `Resampler.Resample`, and `Fft` (per butterfly pass).
+  - `StageProgress` weights the stages by measured CPU time. The formant low-pass FFT (2²¹ points) is the critical path.
+  - Measured: reported progress tracks wall time to within about 10 points.
+  - After Stop, the bar covers: last live update 15%, analysis 80%, save 5%. The text adds "about N s left" from 15% on.
+- **Resampler:** the sinc interpolation now runs in parallel chunks. Results are identical (all tests pass); the median full analysis of the 27.6 s take went from 715 to 645 ms.
+- Tests: 101 (`TrendTests` added).
+
 ## 8. Current state, at the time of writing
 
 **Commits:** the user's commits run up to `6fe66f2 Add graph stability`.

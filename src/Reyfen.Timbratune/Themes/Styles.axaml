@@ -38,6 +38,14 @@
     <Setter Property="FontWeight" Value="Bold" />
     <Setter Property="Foreground" Value="{DynamicResource InkHeadingBrush}" />
   </Style>
+  <!-- the current value beside a live graph's title -->
+  <Style Selector="TextBlock.live-value">
+    <Setter Property="FontSize" Value="20" />
+    <Setter Property="FontWeight" Value="Bold" />
+    <Setter Property="Foreground" Value="{DynamicResource InkHeadingBrush}" />
+    <Setter Property="FontFeatures" Value="+tnum" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
   <Style Selector="TextBlock.unit">
     <Setter Property="FontSize" Value="14" />
     <Setter Property="Foreground" Value="{DynamicResource InkSoftBrush}" />

@@ -15,7 +15,10 @@
 
     <Border Classes="card" Padding="10,12">
       <StackPanel Spacing="4">
-        <TextBlock Classes="label" Text="Pitch" Margin="8,0,0,0" />
+        <Grid ColumnDefinitions="*,Auto" Margin="8,0,8,0">
+          <TextBlock Classes="label" Text="Pitch" VerticalAlignment="Center" />
+          <TextBlock Grid.Column="1" Classes="live-value" Text="{Binding PitchText}" />
+        </Grid>
         <c:ContourChart Detail="{Binding Detail}" LiveLine="{Binding PitchLine}" Zones="{Binding PitchZones}" AxisStart="{Binding AxisStart}" AxisDuration="{Binding AxisDuration}" />
       </StackPanel>
     </Border>
@@ -28,7 +31,10 @@
         <DataTemplate x:DataType="vm:TimelineViewModel">
           <Border Classes="card" Padding="14,12">
             <StackPanel Spacing="2">
-              <TextBlock Classes="label" Text="{Binding Title}" />
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Classes="label" Text="{Binding Title}" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" Classes="live-value" Text="{Binding ValueText}" />
+              </Grid>
               <TextBlock Classes="cap" FontSize="11" Text="{Binding Caption}" />
               <c:TimelineChart Margin="0,6,0,0" Line="{Binding Line}" Zones="{Binding Zones}"
                                Lo="{Binding Lo}" Hi="{Binding Hi}" AxisStart="{Binding AxisStart}" AxisDuration="{Binding AxisDuration}" />

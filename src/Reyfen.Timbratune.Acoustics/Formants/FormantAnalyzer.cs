@@ -85,8 +85,9 @@ public static class FormantAnalyzer
     /// <param name="formantCeiling">Highest formant frequency (Hz), e.g. 5500 for most female voices.</param>
     /// <param name="windowLength">Effective window length in seconds; the Gaussian window is twice this long.</param>
     /// <param name="preEmphasisFrom">Frequency (Hz) above which a +6 dB/octave pre-emphasis applies.</param>
+    /// <param name="progress">Called with the fraction of frames analyzed so far (0–1), from any thread.</param>
     public static FormantContour Burg(Sound sound, double timeStep, double maxFormants, double formantCeiling,
-        double windowLength, double preEmphasisFrom)
+        double windowLength, double preEmphasisFrom, Action<double>? progress = null)
     {
         var halfWindow = windowLength;
         var dt = timeStep > 0 ? timeStep : halfWindow / 4.0;
@@ -95,7 +96,11 @@ public static class FormantAnalyzer
         // Everything below is linear, so averaging the channels first is equivalent to analysing their mean.
         var mono = new Sound([sound.ToMono()], sound.Grid);
         var nyquist = 0.5 * sound.SamplingFrequency;
-        var resampled = Math.Abs(formantCeiling / nyquist - 1) < 1e-12 ? mono : Resampler.Resample(mono, 2 * formantCeiling, 50);
+        // Resampling is most of the work (~85% on a 27.6 s take at 44.1 kHz), the frames the rest.
+        const double resampleShare = 0.85;
+        var resampled = Math.Abs(formantCeiling / nyquist - 1) < 1e-12 ? mono
+            : Resampler.Resample(mono, 2 * formantCeiling, 50, progress is null ? null : f => progress(resampleShare * f));
+        var frameProgress = progress is null ? null : (Action<double>)(f => progress(resampleShare + (1 - resampleShare) * f));
         var grid = resampled.Grid;
         var dx = grid.Step;
         var samples = resampled.Channel(0).ToArray();
@@ -118,6 +123,7 @@ public static class FormantAnalyzer
         var newNyquist = 0.5 / dx;
 
         var frames = new FormantValue[frameCount][];
+        var counter = new FrameProgress(frameCount, frameProgress);
         Parallel.For(0, frameCount, f =>
         {
             var t = first + f * dt;
@@ -134,7 +140,9 @@ public static class FormantAnalyzer
                 frame[j] = s * window[j];
             }
             frames[f] = peak == 0 ? [] : FrameFormants(frame, poles, newNyquist);
+            counter.Done();
         });
+        progress?.Invoke(1);
         return new FormantContour(new TimeGrid(sound.Grid.XMin, sound.Grid.XMax, frameCount, dt, first), frames);
     }
 
