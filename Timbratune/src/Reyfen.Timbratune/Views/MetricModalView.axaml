@@ -1,0 +1,64 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Reyfen.Timbratune.ViewModels"
+             xmlns:c="using:Reyfen.Timbratune.Controls"
+             x:Class="Reyfen.Timbratune.Views.MetricModalView"
+             x:DataType="vm:MetricModalViewModel">
+  <!-- MetricModal.tsx: scrim + card. Click the scrim, ✕ or press Esc to close. -->
+  <Grid>
+    <Border Background="{DynamicResource ScrimBrush}" PointerPressed="OnScrimPressed" />
+    <Border Classes="card" MaxWidth="820" Margin="24" Padding="24,20" VerticalAlignment="Center"
+            BoxShadow="0 18 48 0 #55000000">
+      <StackPanel Spacing="14">
+        <Grid ColumnDefinitions="*,Auto">
+          <StackPanel Spacing="4">
+            <TextBlock Classes="section" Text="{Binding Heading}" />
+            <TextBlock Classes="cap" Text="{Binding Metric.Blurb}" />
+          </StackPanel>
+          <Button Grid.Column="1" Classes="ghost" VerticalAlignment="Top" Content="✕" ToolTip.Tip="close"
+                  Command="{Binding CloseCommand}" />
+        </Grid>
+
+        <c:MetricScale Zones="{Binding Metric.Zones}" Lo="{Binding Lo}" Hi="{Binding Hi}" Unit="{Binding Metric.Unit}"
+                       Takes="{Binding Takes}" Refs="{Binding Refs}" SelectedKey="{Binding SelectedKey}"
+                       TickCommand="{Binding TickCommand}" />
+
+        <Border Classes="inset" IsVisible="{Binding HasSelection}">
+          <StackPanel Spacing="8">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock FontWeight="SemiBold" VerticalAlignment="Center" Text="{Binding PlayerTitle}" />
+              <Button Grid.Column="1" Classes="ghost" Content="✕" ToolTip.Tip="close player" Command="{Binding ClosePlayerCommand}" />
+            </Grid>
+            <Grid ColumnDefinitions="Auto,*">
+              <Button Classes="round" Content="{Binding PlayGlyph}" Command="{Binding PlayPauseCommand}" />
+              <c:WaveformView Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center"
+                              Progress="{Binding Progress}" SeekCommand="{Binding SeekCommand}" />
+            </Grid>
+          </StackPanel>
+        </Border>
+
+        <TextBlock Classes="cap" c:Markup.Text="🔊 click any **dot** or **tick** to hear that voice" />
+
+        <WrapPanel>
+          <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,16,0">
+            <Ellipse Width="12" Height="12" Fill="{DynamicResource AccentBrush}" />
+            <TextBlock Classes="cap" Text="your takes" />
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,16,0" IsVisible="{Binding ShowRefs}">
+            <Rectangle Width="4" Height="14" Fill="{DynamicResource ZoneFemBrush}" />
+            <TextBlock Classes="cap" Text="women's voices" />
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,16,0" IsVisible="{Binding ShowRefs}">
+            <Rectangle Width="4" Height="14">
+              <Rectangle.Fill><SolidColorBrush Color="{DynamicResource ZoneMascColor}" /></Rectangle.Fill>
+            </Rectangle>
+            <TextBlock Classes="cap" Text="men's voices" />
+          </StackPanel>
+          <!-- MetricModal.tsx says "(Pitch, Weight)"; F2 and F3 show references too. -->
+          <TextBlock Classes="cap" FontStyle="Italic" IsVisible="{Binding HideRefs}"
+                     Text="reference voices shown on gendered metrics (pitch, weight, F2, F3)" />
+        </WrapPanel>
+      </StackPanel>
+    </Border>
+  </Grid>
+</UserControl>

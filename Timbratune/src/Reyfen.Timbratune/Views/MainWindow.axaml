@@ -1,0 +1,13 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Reyfen.Timbratune.ViewModels"
+        xmlns:v="using:Reyfen.Timbratune.Views"
+        x:Class="Reyfen.Timbratune.Views.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Title="Timbratune — Gender Voice Analysis Tool"
+        Icon="avares://Reyfen.Timbratune/Assets/icon.ico"
+        Width="1200" Height="900" MinWidth="420" MinHeight="480"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource BgBrush}">
+  <v:MainView />
+</Window>

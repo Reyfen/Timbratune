@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Android head: the same shared UI (Reyfen.Timbratune) and audio (SoundFlow/miniaudio) as the
+       desktop. Not in Timbratune.slnx, so the desktop solution builds without the Android
+       workload; build it directly:
+         dotnet build src/Reyfen.Timbratune.Android -c Release        (signed APK in bin/Release/…) -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-android</TargetFramework>
+    <SupportedOSPlatformVersion>26</SupportedOSPlatformVersion>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Reyfen.Timbratune.Android</RootNamespace>
+    <ApplicationId>com.reyfen.timbratune</ApplicationId>
+    <ApplicationTitle>Timbratune</ApplicationTitle>
+    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationDisplayVersion>$(Version)</ApplicationDisplayVersion>
+    <AndroidPackageFormat>apk</AndroidPackageFormat>
+    <RuntimeIdentifiers>android-arm64;android-x64</RuntimeIdentifiers>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia.Android" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Emoji subset of Noto Color Emoji (SIL OFL 1.1, licence alongside): see MainActivity. -->
+    <AvaloniaResource Include="Assets\Fonts\TimbratuneEmoji.ttf" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Reyfen.Timbratune\Reyfen.Timbratune.csproj" />
+    <ProjectReference Include="..\Reyfen.Timbratune.Audio.SoundFlow\Reyfen.Timbratune.Audio.SoundFlow.csproj" />
+  </ItemGroup>
+  <!-- Publish output: just the signed APK, named Timbratune-v0.1.0-android.apk. -->
+  <Target Name="NameApkForRelease" AfterTargets="Publish">
+    <PropertyGroup>
+      <_TimbratuneApk>$(PublishDir)$(ApplicationId)-Signed.apk</_TimbratuneApk>
+    </PropertyGroup>
+    <ItemGroup>
+      <_TimbratuneExtra Include="$(PublishDir)$(ApplicationId).apk;$(PublishDir)*.dll" />
+    </ItemGroup>
+    <Move SourceFiles="$(_TimbratuneApk)" DestinationFiles="$(PublishDir)Timbratune-v$(Version)-android.apk" Condition="Exists('$(_TimbratuneApk)')" />
+    <Delete Files="@(_TimbratuneExtra)" />
+  </Target>
+</Project>

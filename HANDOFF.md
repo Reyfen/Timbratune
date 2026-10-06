@@ -1,8 +1,12 @@
-# Euphonia: handoff notes
+# Timbratune: handoff notes
 
 This file brings a new engineer or agent up to date on everything done so far: what the user asked for, what was decided and why, how the code is organised, what was measured, and what is still open.
 
-Last updated 2026-10-01.
+Last updated 2026-10-02.
+
+**Name:** the project is **Timbratune — Gender Voice Analysis Tool**, by **Reyfen**.
+- **Before 2026-10-02 it was called Euphonia**, and it is a fork of [Euphonia](https://github.com/Yuuzulight/Euphonia). Older parts of this file and of the transcript say "Euphonia" and "Euphonia-CSharp"; read those as Timbratune and `Timbratune/`.
+- See §8b for the rename itself.
 
 The full conversation transcript, if you need exact wording, is at `C:\Users\mihai\.claude\projects\C--Projects-TEDinc-Euphonia\e751b8bb-a930-433a-b573-0bbfba026197.jsonl`. It is JSON Lines and very large; grep it rather than reading it whole.
 
@@ -15,14 +19,14 @@ The full conversation transcript, if you need exact wording, is at `C:\Users\mih
 
   > "Read the algorithms of Praat only as inspiration, as any human programmer would do. Do not copy it directly. Also, keep the papers based on it. I don't want to carry the GPL v3 license because there is no way for me to deeply integrate it and stuff like this. I take all the responsibility on myself."
 
-  Praat's source lives in `/Praat/` (gitignored, reference only). `Praat.exe` is used **by tests only** (the oracle), fetched with `Euphonia-CSharp/scripts/fetch-praat.ps1`.
+  Praat's source lives in `/Praat/` (gitignored, reference only). `Praat.exe` is used **by tests only** (the oracle), fetched with `Timbratune/scripts/fetch-praat.ps1`.
 - **Cross-platform.** Windows comes first, but macOS, Linux, Android and iOS must stay possible, so **no Windows-only dependencies**.
-- **Don't touch the user's running app.** The user often has the published build open from `publish/Euphonia-win-x64`. It locks the folder, so `dotnet publish` fails. Check with `Get-Process Euphonia.Desktop` (the `Path` column tells you which build it is) and ask before closing it. Never kill it without asking.
+- **Don't touch the user's running app.** The user often has the published build open from `publish/Timbratune-win-x64`. It locks the folder, so `dotnet publish` fails. Check with `Get-Process Reyfen.Timbratune.Desktop` (the `Path` column tells you which build it is) and ask before closing it. Never kill it without asking.
 - **Measure before claiming.** Changes aimed at "steadier" or "faster" were verified with numbers. Some ideas measured worse and were dropped or limited (see §6). Keep doing this.
 
 ## 2. What the product is
 
-Euphonia is a voice-training feedback app. You record a take and see a dashboard with:
+Timbratune, originally Euphonia, is a voice-training feedback app. You record a take and see a dashboard with:
 - pitch: average, range, variability, contour;
 - resonance: F1–F3, "vocal size";
 - vocal weight: H1*–A3*;
@@ -32,15 +36,15 @@ Euphonia is a voice-training feedback app. You record a take and see a dashboard
 Each metric is placed in zones (masculine / neutral / feminine, and others).
 
 - `Euphonia-TypeScript/` is the original Electron/React app. It used Python and parselmouth (`analyze.py`), which calls Praat.
-- `Euphonia-CSharp/` is the port. It is the active codebase.
+- `Timbratune/` is the port. It is the active codebase.
 
 ## 3. History of requests, in order
 
 1. Run the TypeScript app locally.
-2. Port it to C#/Avalonia in `Euphonia-CSharp/`: .NET 10, core dashboard, same metrics, same zones, same `recordings.json` format.
-3. Trends are per phrase within a single take, not across takes. The publish folder carries a platform suffix: `publish/Euphonia-win-x64`.
+2. Port it to C#/Avalonia in `Timbratune/`: .NET 10, core dashboard, same metrics, same zones, same `recordings.json` format.
+3. Trends are per phrase within a single take, not across takes. The publish folder carries a platform suffix: `publish/Timbratune-win-x64`.
 4. Set up the git repo with `dev` as the main branch, and commit only when asked.
-5. Replace Praat.exe with a pure C# module, `Euphonia.Acoustics`: MIT, zero dependencies, trim/AOT safe. Praat is kept for tests only.
+5. Replace Praat.exe with a pure C# module, `Reyfen.Timbratune.Acoustics`: MIT, zero dependencies, trim/AOT safe. Praat is kept for tests only.
 6. Performance questions: how long analysis takes, and an estimate for low-end Android. FFT and sinc optimizations were then added and verified to give identical results, only faster.
 7. **Live analysis while recording.** Graphs build while you speak and freeze on Stop. The axis grows in 10 s steps. Values update per frame. Live must be verified against the full analysis ("Ideally, they should match perfectly").
    - Show everything possible live, and explicitly list what can't be (see §5.4).
@@ -62,18 +66,18 @@ Each metric is placed in zones (masculine / neutral / feminine, and others).
 
     Also: **disable the reference voices** behind a feature flag ("maybe we will use it later").
 
-## 4. Codebase map (`Euphonia-CSharp/`)
+## 4. Codebase map (`Timbratune/`)
 
 | Project | Role |
 |---|---|
-| `src/Euphonia.Acoustics` | Pure C#, MIT, no dependencies. See the component list below. |
-| `src/Euphonia.Core` | Domain logic, independent of the UI. |
-| `src/Euphonia.Audio.SoundFlow` | Recording and playback through SoundFlow 1.4.1 (miniaudio). The recorder raises `SamplesCaptured` after each WAV write. |
-| `src/Euphonia` | Avalonia 11.3 UI library, using CommunityToolkit.Mvvm. |
-| `src/Euphonia.Desktop` | Desktop entry point (Windows, Linux, macOS); also provides `--import file.wav --label "…"`. Single-file publish profiles live in `Properties/PublishProfiles/`. |
-| `src/Euphonia.Android` | Android head; see §8a. It is **not in `Euphonia.slnx`**, so the desktop solution and tests build without the Android workload. |
-| `tests/Euphonia.Acoustics.Tests` | 50 tests: synthetic, Praat oracle (skipped without Praat), and streaming. |
-| `tests/Euphonia.Core.Tests` | 36 tests: parity with `analyze.py` output on four VCTK fixtures, plus live-analysis tests. |
+| `src/Reyfen.Timbratune.Acoustics` | Pure C#, MIT, no dependencies. See the component list below. |
+| `src/Reyfen.Timbratune.Core` | Domain logic, independent of the UI. |
+| `src/Reyfen.Timbratune.Audio.SoundFlow` | Recording and playback through SoundFlow 1.4.1 (miniaudio). The recorder raises `SamplesCaptured` after each WAV write. |
+| `src/Reyfen.Timbratune` | Avalonia 11.3 UI library, using CommunityToolkit.Mvvm. |
+| `src/Reyfen.Timbratune.Desktop` | Desktop entry point (Windows, Linux, macOS); also provides `--import file.wav --label "…"`. Single-file publish profiles live in `Properties/PublishProfiles/`. |
+| `src/Reyfen.Timbratune.Android` | Android head; see §8a. It is **not in `Timbratune.slnx`**, so the desktop solution and tests build without the Android workload. |
+| `tests/Reyfen.Timbratune.Acoustics.Tests` | 50 tests: synthetic, Praat oracle (skipped without Praat), and streaming. |
+| `tests/Reyfen.Timbratune.Core.Tests` | 36 tests: parity with `analyze.py` output on four VCTK fixtures, plus live-analysis tests. |
 | `tools/live-steadiness` | Dev tool, not in the solution. Measures how steady and accurate the live dots are. |
 | `scripts/` | Helper scripts; see the list below. |
 
@@ -84,7 +88,7 @@ Each metric is placed in zones (masculine / neutral / feminine, and others).
 - `linux-ui.sh`: the same for Linux/X11;
 - `make-emoji-font.py`: builds the Android emoji subset.
 
-**`Euphonia.Acoustics` components:**
+**`Reyfen.Timbratune.Acoustics` components:**
 - Boersma (1993) autocorrelation/cross-correlation pitch with a Viterbi path;
 - Burg LPC formants with Aberth root finding;
 - Kaiser-window intensity;
@@ -94,12 +98,12 @@ Each metric is placed in zones (masculine / neutral / feminine, and others).
 - a sinc resampler;
 - a WAV decoder.
 
-**`Euphonia.Core` main pieces:**
+**`Reyfen.Timbratune.Core` main pieces:**
 - **`Analysis/AcousticsAnalysisEngine.cs`:** the full analysis. It measures the frame tracks, then `RawAnalysisAssembler`, then `AnalysisPostProcessor`.
 - **`Analysis/LiveAnalyzer.cs`:** the live analysis.
 - **Other:** `Audio/WavFile.cs` (includes `ToPcm16` and `Truncate`), `Audio/FileReplayRecorder.cs`, domain `Zones` and `Metrics`, and storage (`RecordingStore`, `DataPaths`).
 
-**`src/Euphonia` UI, key files:**
+**`src/Reyfen.Timbratune` UI, key files:**
 - **`ViewModels/RecordViewModel.cs`:** record, stop and analyze; runs the live timer at 100 ms; holds `LiveWindow`, the dropdown's current choice.
 - **`ViewModels/LiveTimelinesViewModel.cs`:** one persistent instance per recording. The static `Compute(snapshot, window)` runs off the UI thread and returns a `Frame`; `Apply(frame)` updates the persistent `TimelineViewModel`s in place, so charts and their easing survive. It also holds the public `SmoothingSpec`s.
 - **`ViewModels/TakeViewModel.cs`:** the take dashboard, also used for the live take.
@@ -116,7 +120,7 @@ Each metric is placed in zones (masculine / neutral / feminine, and others).
 - **Pitch, HNR and intensity:** the full and live analyses call the same per-frame kernels: `PitchFrameAnalyzer`, `IntensityFrameAnalyzer` and `Harmonicity.CreateFrameAnalyzer`.
 - **Deferred global-peak normalization:** frames store `LocalPeak`, and the path finder divides by the global peak at path time.
 - **Path finder:** non-mutating (`PitchPath.ChooseIndices`), with an exact zero-cost shortcut for harmonicity.
-- **Trackers** (`Euphonia.Acoustics/Streaming/`):
+- **Trackers** (`Reyfen.Timbratune.Acoustics/Streaming/`):
   - `LiveSignal` is a growable buffer with a running sum and peak.
   - The trackers are `LivePitchTracker`, `LiveIntensityTracker`, `LiveFormantTracker` and `LivePulseTracker`.
   - `LiveFormantTracker` re-analyses blocks with Burg, using a 0.25 s margin on each side and 0.5 s blocks.
@@ -232,25 +236,25 @@ F2's large "error" is real phonetics: F2 differs by about 700 Hz between /i/ and
 ## 7. Developer workflow
 
 ```powershell
-cd C:\Projects\TEDinc\Euphonia\Euphonia-CSharp
-dotnet build Euphonia.slnx
-dotnet test Euphonia.slnx                     # 86 tests; the Praat oracle tests skip without Praat
-dotnet run --project src/Euphonia.Desktop
-dotnet publish src/Euphonia.Desktop -c Release -r win-x64 --self-contained false -o publish/Euphonia-win-x64
+cd C:\Projects\Reyfen\Timbratune\Timbratune
+dotnet build Timbratune.slnx
+dotnet test Timbratune.slnx                     # 86 tests; the Praat oracle tests skip without Praat
+dotnet run --project src/Reyfen.Timbratune.Desktop
+dotnet publish src/Reyfen.Timbratune.Desktop -c Release -r win-x64 --self-contained false -o publish/Timbratune-win-x64
 ```
 
 Environment variables:
-- `EUPHONIA_DATA_DIR`: a throwaway data folder. The default is `%APPDATA%\Euphonia-CSharp\`.
-- `EUPHONIA_FAKE_MIC=take.wav`: the recorder replays that file in real time, in 10 ms blocks, instead of using the mic.
-- `EUPHONIA_PRAAT`: the path to Praat, for the oracle tests.
+- `TIMBRATUNE_DATA_DIR`: a throwaway data folder. The default is `%APPDATA%\Timbratune\`.
+- `TIMBRATUNE_FAKE_MIC=take.wav`: the recorder replays that file in real time, in 10 ms blocks, instead of using the mic.
+- `TIMBRATUNE_PRAAT`: the path to Praat, for the oracle tests.
 
 UI check without a person:
 1. `scripts/make-long-wav.ps1 -Out <tmp>\long.wav`
-2. Set `EUPHONIA_FAKE_MIC` to that file and `EUPHONIA_DATA_DIR` to a temp folder.
-3. `scripts/screenshot.ps1 -Exe src\Euphonia.Desktop\bin\Debug\net10.0\Euphonia.Desktop.exe -Out a.png -Wait 7`. It prints `pid=…`.
+2. Set `TIMBRATUNE_FAKE_MIC` to that file and `TIMBRATUNE_DATA_DIR` to a temp folder.
+3. `scripts/screenshot.ps1 -Exe src\Reyfen.Timbratune.Desktop\bin\Debug\net10.0\Reyfen.Timbratune.Desktop.exe -Out a.png -Wait 7`. It prints `pid=…`.
 4. Click the record button. At 1216×939 with at least one take saved it is at (422, 254); with an empty data folder it is at y ≈ 185.
 5. Wait, then run `-ProcId <pid> -Scroll 3` to reach the live panel.
-6. Always pass `-ProcId` after starting, so the user's own copy of Euphonia is never touched.
+6. Always pass `-ProcId` after starting, so the user's own copy of Timbratune is never touched.
 7. PrintWindow doesn't capture popups; select dropdown items with the keyboard (Down, Enter via SendKeys).
 
 Steadiness check: `cd tools/live-steadiness; dotnet run -c Release -- <tmp>\long.wav`
@@ -263,8 +267,8 @@ Shell gotchas on this machine:
 ## 8a. Platforms: Windows single exe, Linux, Android (2026-10-01)
 
 **Reference voices:**
-- They are off behind a feature flag, `src/Euphonia/Features.cs`.
-- The MSBuild property `EuphoniaReferenceVoices` (default false) defines `REFERENCE_VOICES` and only then ships `Assets/reference/**`.
+- They are off behind a feature flag, `src/Reyfen.Timbratune/Features.cs`.
+- The MSBuild property `TimbratuneReferenceVoices` (default false) defines `REFERENCE_VOICES` and only then ships `Assets/reference/**`.
 - When the flag is off:
   - the comparison pop-up shows your own takes only;
   - the hint text reads "tap to compare with your other takes";
@@ -273,18 +277,18 @@ Shell gotchas on this machine:
 **Version and file names:**
 - The user's convention: every artifact is named `<app>-v<Version>-<platform>`, from `<Version>` in `Directory.Build.props` (now 0.1.0).
 - Artifacts:
-  - `Euphonia-Desktop-v0.1.0-win-x64.exe`
-  - `Euphonia-Desktop-v0.1.0-linux-x64.deb`
-  - `Euphonia-Desktop-v0.1.0-linux-x64.AppImage.tar.gz`
-  - `Euphonia-v0.1.0-android.apk`
+  - `Timbratune-Desktop-v0.1.0-win-x64.exe`
+  - `Timbratune-Desktop-v0.1.0-linux-x64.deb`
+  - `Timbratune-Desktop-v0.1.0-linux-x64.AppImage.tar.gz`
+  - `Timbratune-v0.1.0-android.apk`
 - How the names are produced:
-  - Desktop: a post-publish target in `Euphonia.Desktop.csproj`.
-  - Android: a post-publish target in `Euphonia.Android.csproj`, which also removes the unsigned APK and stray dlls.
+  - Desktop: a post-publish target in `Reyfen.Timbratune.Desktop.csproj`.
+  - Android: a post-publish target in `Reyfen.Timbratune.Android.csproj`, which also removes the unsigned APK and stray dlls.
   - Linux packages: `package-linux.sh`.
 - The app shows the version in its footer, via `Features.VersionText` (the informational version without "+commit").
 
 **Linux packages:** `scripts/package-linux.sh` runs in WSL; appimagetool is in `~/tools/appimagetool` there. It turns the binary into two packages:
-- **`Euphonia-Desktop-linux-x64.deb`:** installs to `/opt/euphonia`, with `/usr/bin/euphonia`, a menu entry and an icon. This is the user's preferred option, because a downloaded AppImage needs "Allow executing" first, which the user found unintuitive. Verified: it installs, runs and removes in WSL.
+- **`Timbratune-Desktop-linux-x64.deb`:** installs to `/opt/timbratune`, with `/usr/bin/timbratune`, a menu entry and an icon. This is the user's preferred option, because a downloaded AppImage needs "Allow executing" first, which the user found unintuitive. Verified: it installs, runs and removes in WSL.
 - **`…AppImage.tar.gz`:** for other distributions. The AppImage is inside a tarball so its exec bit survives downloads, which the user asked for. Verified: it extracts as `rwxr-xr-x` and runs without `chmod`.
 
 **Mint VM microphone: unfinished; the user stopped here.** Hyper-V's basic console has no audio.
@@ -292,14 +296,14 @@ Shell gotchas on this machine:
 - Guest side: `scripts/hyperv-mint-enhanced-session.sh` installs xrdp, `pipewire-module-xrdp` and XFCE, and switches only the first `port=` in xrdp.ini to vsock.
   - Changing every `port=` line was a bug that caused a blue screen after login. It is fixed in the script.
   - After running it: reboot, don't log in on the console (Mint auto-login must be off), reconnect, and enable remote audio playback and recording under Show Options.
-- State reached: the XFCE remote desktop works and Euphonia runs in it.
+- State reached: the XFCE remote desktop works and the app runs in it.
 - Remaining problem: the mic fails with "FailedToOpenBackendDevice", most likely because the script also did `unset XDG_RUNTIME_DIR` in startwm.sh, which hides PipeWire. A fix script was offered (it deletes that line, then you log out and back in) but not confirmed.
 - The user declined xrdp auto-login, because it would store the password in plain text.
 
 **App bug seen:** a silent take shows "Loudness −300 dB · strong". −300 is the no-signal value, and `Zones.ZoneOf` puts values below the lowest zone into the last zone, a quirk carried over on purpose. Silent takes should say "no voice detected" instead. Not fixed yet.
 
 **Windows single .exe:**
-- `dotnet publish src/Euphonia.Desktop -p:PublishProfile=win-x64` gives `publish/Euphonia-win-x64/Euphonia.Desktop.exe`, about 47 MB.
+- `dotnet publish src/Reyfen.Timbratune.Desktop -p:PublishProfile=win-x64` gives `publish/Timbratune-win-x64/Reyfen.Timbratune.Desktop.exe`, about 47 MB.
 - It is self-contained and compressed, and bundles its native libraries. Symbol and doc files are excluded.
 - `linux-x64.pubxml` is the same for Linux.
 
@@ -307,7 +311,7 @@ Shell gotchas on this machine:
 - **Test environment:** WSL was updated to the Store version (3.0.1, which includes WSLg), and `Ubuntu-24.04` was installed.
   - The test user is `tester`.
   - Packages added for the app and tests: `libx11-6 libice6 libsm6 libfontconfig1 fonts-noto-color-emoji xdotool imagemagick pulseaudio-utils x11-utils fonttools`.
-- **Driving the UI:** copy the binary to `~/euphonia/`, then drive it with `scripts/linux-ui.sh`.
+- **Driving the UI:** copy the binary to `~/timbratune/`, then drive it with `scripts/linux-ui.sh`.
 - **Verified:**
   - the UI renders and the theme toggle works;
   - the fake-mic take gives live graphs, and the saved numbers are **identical to Windows**;
@@ -316,13 +320,13 @@ Shell gotchas on this machine:
 
 **Full desktop VM: NOT done yet.**
 - The Linux Mint 22.3 ISO is downloaded and SHA-256 checked: `C:\VMs\iso\linuxmint-22.3-cinnamon-64bit.iso`.
-- The VM script is ready: `C:\VMs\create-euphonia-mint.ps1`. It needs to run elevated and creates a Gen-2 VM with 4 CPUs, 6 GB, 40 GB, Default Switch, Secure Boot with the MS UEFI CA, booting from the DVD.
+- The VM script is ready: `C:\VMs\create-timbratune-mint.ps1`. It needs to run elevated and creates a Gen-2 VM with 4 CPUs, 6 GB, 40 GB, Default Switch, Secure Boot with the MS UEFI CA, booting from the DVD.
 - The UAC prompt was cancelled the first time.
 - Next steps: run it again, the user clicks through Mint's installer, then copy and run the Linux binary.
 
 **Android:**
-- **Project:** `src/Euphonia.Android`.
-  - `net10.0-android`, minimum API 26, app id `app.euphonia`, ABIs arm64 and x86_64.
+- **Project:** `src/Reyfen.Timbratune.Android`.
+  - `net10.0-android`, minimum API 26, app id `com.reyfen.timbratune`, ABIs arm64 and x86_64.
   - `MainActivity : AvaloniaMainActivity<App>` wires up the services.
 - **Toolchain:**
   - the android workload (36.1.69);
@@ -331,7 +335,7 @@ Shell gotchas on this machine:
   - Boot it headless: `emulator -avd EuphoniaPixel -no-window -no-snapshot -no-boot-anim -gpu swiftshader_indirect -memory 4096`.
   - Use the SDK's own `platform-tools/adb.exe`.
 - **Debug APK for adb install:** build with `-p:EmbedAssembliesIntoApk=true`. Otherwise fast deployment keeps the assemblies outside the APK.
-- **Release:** `dotnet publish … -c Release -o publish/Euphonia-android`. It is signed with the debug key, which is fine for sideloading. It was renamed to `Euphonia-android.apk` (about 32 MB).
+- **Release:** `dotnet publish … -c Release -o publish/Timbratune-android`. It is signed with the debug key, which is fine for sideloading. It was renamed to `Timbratune-android.apk` (about 32 MB).
 - **Verified on the emulator:**
   - the phone layout;
   - colour emoji;
@@ -347,7 +351,7 @@ Shell gotchas on this machine:
    - This applies to all platforms; it was re-verified with the real mic on Windows and Linux.
 2. **Emoji drew as boxes.**
    - Cause: Android's emoji font is COLRv1, which SkiaSharp 2.88 can't draw. The system font also isn't reachable by family name, and `IFontManagerImpl.TryCreateGlyphTypeface(Stream)` is hidden by Avalonia's reference assemblies.
-   - Fix: the app carries a **54 KB CBDT subset** of Noto Color Emoji (OFL), `Assets/Fonts/EuphoniaEmoji.ttf`, built from Ubuntu's `fonts-noto-color-emoji` by `scripts/make-emoji-font.py`. It is registered as an `EmbeddedFontCollection` plus a `FontFallback`.
+   - Fix: the app carries a **54 KB CBDT subset** of Noto Color Emoji (OFL), `Assets/Fonts/TimbratuneEmoji.ttf`, built from Ubuntu's `fonts-noto-color-emoji` by `scripts/make-emoji-font.py`. It is registered as an `EmbeddedFontCollection` plus a `FontFallback`.
    - **Re-run the script when adding emoji to the UI.**
 3. **`debug.mono.env` aborts the app.** On .NET for Android 36.1, any value there aborts the runtime (an off-by-one in monodroid). So the Android fake mic is a file instead: Debug builds use `files/fake-mic.wav` if it is present.
 4. **Phone layout.**
@@ -363,11 +367,50 @@ Shell gotchas on this machine:
 
 **Automation gotchas:**
 - **Git Bash path conversion:** it rewrites `/mnt/...` arguments to `wsl.exe` and `adb`. Set `MSYS_NO_PATHCONV=1`.
-- **`pkill -f Euphonia.Desktop`** also kills the `bash -c` that contains the name. Use `pkill -x Euphonia.Deskto` (process names are cut to 15 characters).
+- **`pkill -f <name>`** also kills the `bash -c` that contains the name. `linux-ui.sh` uses the pattern `'[R]eyfen.Timbratune.Desktop|[T]imbratune-Desktop'`; the brackets stop it matching itself.
 - **Click timing:** Release starts slower than Debug, so wait about 10 s before tapping.
 - **Background focus:** Windows ignores `SetForegroundWindow` from a background process, and then the first click only activates the window. That looked like "first click does nothing". `screenshot.ps1` now taps Alt first.
 - **Typing collisions:** the user sometimes uses the PC at the same time; their typing landed in the test window once.
-- **The user's app:** `publish/Euphonia-win-x64` is locked while their copy runs. The new single exe was staged in `publish/Euphonia-win-x64.new/` to swap in once it's closed.
+- **The user's app:** `publish/Timbratune-win-x64` is locked while their copy runs. The new single exe was staged in `publish/Timbratune-win-x64.new/` to swap in once it's closed.
+
+## 8b. Rename to Timbratune (2026-10-02)
+
+**What changed:**
+
+| What | Before | After |
+|---|---|---|
+| Folder | `Euphonia-CSharp/` | `Timbratune/` |
+| Solution | `Euphonia.slnx` | `Timbratune.slnx` |
+| Projects, assemblies and namespaces | `Euphonia.*` | `Reyfen.Timbratune.*`; folders `src/Reyfen.Timbratune.*`, `tests/Reyfen.Timbratune.*.Tests` |
+| JSON helper | `EuphoniaJson` | `TimbratuneJson` |
+| Environment variables | `EUPHONIA_*` | `TIMBRATUNE_*` (`DATA_DIR`, `FAKE_MIC`, `PRAAT`) |
+| Build switch | `EuphoniaReferenceVoices` | `TimbratuneReferenceVoices` |
+| Android app id | `app.euphonia` | `com.reyfen.timbratune`, a new app beside the old one |
+| Linux package and command | `euphonia` | `timbratune` |
+| Artifacts | `Euphonia-*` | `Timbratune-Desktop-v0.1.0-<rid>…`, `Timbratune-v0.1.0-android.apk` |
+
+- **`Directory.Build.props`:** Authors and Company are Reyfen, the Product is Timbratune, and the Description is "Timbratune — Gender Voice Analysis Tool".
+- **UI:** the window title is "Timbratune — Gender Voice Analysis Tool" and the header reads "Timbratune".
+  - The footer adds "Timbratune v0.1.0 · by Reyfen · a fork of [Euphonia] · algorithms inspired by [Praat]".
+  - The two names are `HyperlinkButton`s; the links are in `Features.cs`.
+
+**Data:** `DataPaths.Default()` moves `<AppData>/Euphonia-CSharp` to `<AppData>/Timbratune` on first start, if only the old one exists. If the move fails, it keeps using the old folder.
+
+**Kept as "Euphonia" on purpose:** anything describing the original app, e.g. "port of ContourChart.tsx", "the Electron app", "Euphonia-TypeScript/analyze.py". The emulator AVD is still named `EuphoniaPixel`.
+
+**Credits:**
+- The README credits the fork origin (https://github.com/Yuuzulight/Euphonia) and Praat (https://github.com/praat/praat.github.io).
+- The wording is explicit that no Praat source code was copied, translated or adapted. This appears in the README "Licensing and credits" section and in `REFERENCES.md`.
+
+**Submodules, optional by design:**
+- **`Euphonia-TypeScript`:** points to `Yuuzulight/Euphonia` at `247598f`. The local copy was identical to upstream apart from build artifacts. It is checked out locally.
+- **`Praat`:** points to `praat/praat.github.io` at `74cabcc`. It is not checked out.
+- Both have `update = none` and `shallow = true` in `.gitmodules`, so a clone or `git submodule update --init` skips them. Fetch one with `git submodule update --init --checkout [--depth 1] <path>`.
+- The `/Praat/` gitignore rule was removed.
+
+**Backups:** the previous local folders, including `.venv`, `node_modules` and the 381 MB Praat source, were moved to `C:\Projects\TEDinc\_backup-before-submodules\`. The user can delete them.
+
+**Location:** on 2026-10-02 the user moved the repo to `C:\Projects\Reyfen\Timbratune`; the app is in its `Timbratune/` subfolder. The old copy at `C:\Projects\TEDinc\Euphonia` is left for the user to delete. Claude's project memory for the new path is in `C:\Users\mihai\.claude\projects\C--Projects-Reyfen-Timbratune\memory\`. The older transcripts stay under `...\C--Projects-TEDinc-Euphonia\`.
 
 ## 8. Current state, at the time of writing
 
@@ -384,8 +427,8 @@ Shell gotchas on this machine:
 **Tests:** 86/86 pass.
 
 **Publish:**
-- `publish/Euphonia-linux-x64` and `publish/Euphonia-android` are current.
-- The Windows single exe is in `publish/Euphonia-win-x64.new/`. It replaces `publish/Euphonia-win-x64/`, which still holds the old multi-file build, once the user's running copy is closed.
+- `publish/Timbratune-linux-x64` and `publish/Timbratune-android` are current.
+- The Windows single exe is in `publish/Timbratune-win-x64.new/`. It replaces `publish/Timbratune-win-x64/`, which still holds the old multi-file build, once the user's running copy is closed.
 
 ## 9. Possible next steps (none requested yet)
 - Dim the provisional part of each line: the unsettled tail and the "now" extension.

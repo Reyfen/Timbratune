@@ -1,0 +1,10 @@
+[submodule "Euphonia-TypeScript"]
+	path = Euphonia-TypeScript
+	url = https://github.com/Yuuzulight/Euphonia
+	update = none
+	shallow = true
+[submodule "Praat"]
+	path = Praat
+	url = https://github.com/praat/praat.github.io
+	update = none
+	shallow = true

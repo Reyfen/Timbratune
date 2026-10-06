@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- UI-free, platform-free domain + analysis + storage. Everything here must
+       stay portable to macOS / Linux / Android / iOS. -->
+  <PropertyGroup>
+    <RootNamespace>Reyfen.Timbratune.Core</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Reyfen.Timbratune.Acoustics\Reyfen.Timbratune.Acoustics.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Reyfen.Timbratune.Core.Tests" />
+  </ItemGroup>
+</Project>

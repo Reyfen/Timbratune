@@ -1,0 +1,41 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Reyfen.Timbratune.ViewModels"
+             xmlns:c="using:Reyfen.Timbratune.Controls"
+             x:Class="Reyfen.Timbratune.Views.LiveTimelinesView"
+             x:DataType="vm:LiveTimelinesViewModel">
+  <!-- Live while recording. Every graph is drawn over its metric's zones (same colours
+       as the cards): where the current point sits is the feedback. The time axis grows
+       in 10-second steps, or slides when a window is chosen. -->
+  <StackPanel Spacing="8">
+    <WrapPanel>
+      <TextBlock Classes="section" Text="🔴 Live" Margin="0,0,8,0" />
+      <TextBlock Classes="section-sub" Text="· the dot is where you are now; the line is smoothed and settles as you keep talking" />
+    </WrapPanel>
+
+    <Border Classes="card" Padding="10,12">
+      <StackPanel Spacing="4">
+        <TextBlock Classes="label" Text="Pitch" Margin="8,0,0,0" />
+        <c:ContourChart Detail="{Binding Detail}" LiveLine="{Binding PitchLine}" Zones="{Binding PitchZones}" AxisStart="{Binding AxisStart}" AxisDuration="{Binding AxisDuration}" />
+      </StackPanel>
+    </Border>
+
+    <ItemsControl ItemsSource="{Binding Timelines}">
+      <ItemsControl.ItemsPanel>
+        <ItemsPanelTemplate><c:CardGrid MinItemWidth="340" /></ItemsPanelTemplate>
+      </ItemsControl.ItemsPanel>
+      <ItemsControl.ItemTemplate>
+        <DataTemplate x:DataType="vm:TimelineViewModel">
+          <Border Classes="card" Padding="14,12">
+            <StackPanel Spacing="2">
+              <TextBlock Classes="label" Text="{Binding Title}" />
+              <TextBlock Classes="cap" FontSize="11" Text="{Binding Caption}" />
+              <c:TimelineChart Margin="0,6,0,0" Line="{Binding Line}" Zones="{Binding Zones}"
+                               Lo="{Binding Lo}" Hi="{Binding Hi}" AxisStart="{Binding AxisStart}" AxisDuration="{Binding AxisDuration}" />
+            </StackPanel>
+          </Border>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+  </StackPanel>
+</UserControl>

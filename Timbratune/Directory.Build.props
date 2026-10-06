@@ -1,0 +1,15 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <Version>0.1.0</Version>
+    <Authors>Reyfen</Authors>
+    <Company>Reyfen</Company>
+    <Product>Timbratune</Product>
+    <Description>Timbratune — Gender Voice Analysis Tool</Description>
+  </PropertyGroup>
+</Project>

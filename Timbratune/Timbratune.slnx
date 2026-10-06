@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Reyfen.Timbratune.Acoustics/Reyfen.Timbratune.Acoustics.csproj" />
+    <Project Path="src/Reyfen.Timbratune.Core/Reyfen.Timbratune.Core.csproj" />
+    <Project Path="src/Reyfen.Timbratune.Audio.SoundFlow/Reyfen.Timbratune.Audio.SoundFlow.csproj" />
+    <Project Path="src/Reyfen.Timbratune/Reyfen.Timbratune.csproj" />
+    <Project Path="src/Reyfen.Timbratune.Desktop/Reyfen.Timbratune.Desktop.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Reyfen.Timbratune.Acoustics.Tests/Reyfen.Timbratune.Acoustics.Tests.csproj" />
+    <Project Path="tests/Reyfen.Timbratune.Core.Tests/Reyfen.Timbratune.Core.Tests.csproj" />
+  </Folder>
+</Solution>
