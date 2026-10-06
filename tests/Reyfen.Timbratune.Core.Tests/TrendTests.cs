@@ -55,9 +55,9 @@ public sealed class TrendTests
     }
 
     [Fact]
-    public void OlderTakesGetPitchTrendsFromTheContour()
+    public async Task OlderTakesGetPitchTrendsFromTheContour()
     {
-        var detail = new AcousticsAnalysisEngine().AnalyzeAsync(Fixture("vctk_f294.wav")).Result.Detail;
+        var detail = (await new AcousticsAnalysisEngine().AnalyzeAsync(Fixture("vctk_f294.wav"))).Detail;
         var rebuilt = AnalysisPostProcessor.TimeTrends(detail);
         Assert.Equal(detail.Trends!.Points.Select(p => p.MeanHz), rebuilt.Points.Select(p => p.MeanHz));
         Assert.Equal(detail.Trends.Points.Select(p => p.MelodySt), rebuilt.Points.Select(p => p.MelodySt));

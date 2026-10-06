@@ -17,7 +17,7 @@
       <StackPanel Spacing="4">
         <Grid ColumnDefinitions="*,Auto" Margin="8,0,8,0">
           <TextBlock Classes="label" Text="Pitch" VerticalAlignment="Center" />
-          <TextBlock Grid.Column="1" Classes="live-value" Text="{Binding PitchText}" />
+          <c:ZoneText Grid.Column="1" Classes="live-value" Text="{Binding PitchText}" ZoneColor="{Binding PitchZone}" />
         </Grid>
         <c:ContourChart Detail="{Binding Detail}" LiveLine="{Binding PitchLine}" Zones="{Binding PitchZones}" AxisStart="{Binding AxisStart}" AxisDuration="{Binding AxisDuration}" />
       </StackPanel>
@@ -33,7 +33,7 @@
             <StackPanel Spacing="2">
               <Grid ColumnDefinitions="*,Auto">
                 <TextBlock Classes="label" Text="{Binding Title}" VerticalAlignment="Center" />
-                <TextBlock Grid.Column="1" Classes="live-value" Text="{Binding ValueText}" />
+                <c:ZoneText Grid.Column="1" Classes="live-value" Text="{Binding ValueText}" ZoneColor="{Binding ValueZone}" />
               </Grid>
               <TextBlock Classes="cap" FontSize="11" Text="{Binding Caption}" />
               <c:TimelineChart Margin="0,6,0,0" Line="{Binding Line}" Zones="{Binding Zones}"

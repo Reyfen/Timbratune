@@ -9,7 +9,7 @@
 - **Commit only when asked.** The working branch is `dev` (tracks `origin/dev` on https://github.com/Reyfen/Timbratune).
 - **No Praat code.** Praat's algorithms are inspiration only; implement from the published papers (see `src/Reyfen.Timbratune.Acoustics/REFERENCES.md`). Nothing may be copied, translated or adapted from Praat's GPLv3 source; the project must stay MIT. `Praat.exe` is used by tests only, as an oracle.
 - **Cross-platform.** Windows, Linux and Android ship; macOS and iOS must stay possible. No Windows-only dependencies.
-- **Don't touch the user's running app.** The user often runs the published build from `publish/Timbratune-win-x64`, which locks that folder. Check `Get-Process Reyfen.Timbratune.Desktop` (look at `Path`) and ask before closing it. When driving the UI, always target your own instance by pid.
+- **Don't touch the user's running app.** The user often runs the published build from `publish/Timbratune-win-x64`, which locks that folder. Check `Get-Process | ? Path -like '*Timbratune*'` — the single-file exe runs as `Timbratune-Desktop-v<ver>-win-x64`, Debug builds as `Reyfen.Timbratune.Desktop` — and ask before closing it. When driving the UI, always target your own instance by pid.
 - **Measure before claiming.** "Steadier" or "faster" claims need numbers (`tools/live-steadiness`, tests). Several plausible ideas measured worse; see HANDOFF §6.
 
 ## Layout
@@ -35,6 +35,7 @@ dotnet build Timbratune.slnx
 dotnet test Timbratune.slnx                      # Praat oracle tests skip without Praat
 dotnet run --project src/Reyfen.Timbratune.Desktop
 dotnet publish src/Reyfen.Timbratune.Desktop -p:PublishProfile=win-x64   # single self-contained exe
+build.bat [win] [linux] [android]             # all published builds (default: all three)
 ```
 
 Artifact names follow `<app>-v<Version>-<platform>` from `<Version>` in `Directory.Build.props`.

@@ -21,7 +21,7 @@ The full conversation transcript, if you need exact wording, is at `C:\Users\mih
 
   Praat's source lives in the optional `Praat` submodule (reference only). `Praat.exe` is used **by tests only** (the oracle), fetched with `scripts/fetch-praat.ps1`.
 - **Cross-platform.** Windows comes first, but macOS, Linux, Android and iOS must stay possible, so **no Windows-only dependencies**.
-- **Don't touch the user's running app.** The user often has the published build open from `publish/Timbratune-win-x64`. It locks the folder, so `dotnet publish` fails. Check with `Get-Process Reyfen.Timbratune.Desktop` (the `Path` column tells you which build it is) and ask before closing it. Never kill it without asking.
+- **Don't touch the user's running app.** The user often has the published build open from `publish/Timbratune-win-x64`. It locks the folder, so `dotnet publish` fails. Check with `Get-Process | ? Path -like '*Timbratune*'` (the single-file exe's process is named `Timbratune-Desktop-v<ver>-win-x64`, Debug builds `Reyfen.Timbratune.Desktop`; the `Path` column tells you which build it is) and ask before closing it. Never kill it without asking.
 - **Measure before claiming.** Changes aimed at "steadier" or "faster" were verified with numbers. Some ideas measured worse and were dropped or limited (see §6). Keep doing this.
 
 ## 2. What the product is

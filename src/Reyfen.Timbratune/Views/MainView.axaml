@@ -47,15 +47,21 @@
             </WrapPanel>
             <WrapPanel IsVisible="{Binding IsRecording}">
               <Button Classes="live" Margin="0,0,12,6" Content="⏹️ stop &amp; analyze" Command="{Binding StopCommand}" />
-              <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Foreground="{DynamicResource LiveBrush}" Margin="0,0,12,6">
-                <Run Text="● recording" />
-                <Run Text="{Binding ElapsedText}" />
-              </TextBlock>
+              <!-- the time has a fixed width (and equal-width digits) so the controls after it don't shift as it counts -->
+              <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center" Margin="0,0,12,6">
+                <TextBlock FontWeight="SemiBold" Foreground="{DynamicResource LiveBrush}" Text="● recording" />
+                <TextBlock Classes="counter" MinWidth="40" FontWeight="SemiBold" Foreground="{DynamicResource LiveBrush}" Text="{Binding ElapsedText}" />
+              </StackPanel>
               <ComboBox Classes="pill" ItemsSource="{Binding WindowOptions}" SelectedItem="{Binding LiveWindow}" MinWidth="150" Margin="0,0,0,6" />
             </WrapPanel>
             <StackPanel Orientation="Horizontal" Spacing="12" IsVisible="{Binding IsAnalyzing}">
               <ProgressBar Minimum="0" Maximum="100" Value="{Binding AnalysisProgress}" Width="140" VerticalAlignment="Center" />
-              <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Text="{Binding AnalyzingText}" />
+              <!-- the percentage has a fixed width (and equal-width digits) so the estimate after it doesn't shift -->
+              <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                <TextBlock FontWeight="SemiBold" Text="analyzing…" />
+                <TextBlock Classes="counter" MinWidth="38" TextAlignment="Right" FontWeight="SemiBold" Text="{Binding AnalyzingPercent}" />
+                <TextBlock Classes="counter" FontWeight="SemiBold" Text="{Binding AnalyzingEstimate}" />
+              </StackPanel>
             </StackPanel>
             <StackPanel Spacing="6" IsVisible="{Binding IsError}">
               <TextBlock Foreground="{DynamicResource DangerBrush}" FontWeight="SemiBold" Text="{Binding ErrorDetail}" />

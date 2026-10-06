@@ -22,6 +22,8 @@
       <_TimbratuneExe>$(PublishDir)$(AssemblyName)$(_NativeExecutableExtension)</_TimbratuneExe>
       <_TimbratuneNamed>$(PublishDir)Timbratune-Desktop-v$(Version)-$(RuntimeIdentifier)$(_NativeExecutableExtension)</_TimbratuneNamed>
     </PropertyGroup>
+    <!-- Move won't replace an existing file: drop the previous build first. -->
+    <Delete Files="$(_TimbratuneNamed)" Condition="Exists('$(_TimbratuneExe)')" />
     <Move SourceFiles="$(_TimbratuneExe)" DestinationFiles="$(_TimbratuneNamed)" Condition="Exists('$(_TimbratuneExe)')" />
   </Target>
 </Project>

@@ -38,6 +38,10 @@
     <Setter Property="FontWeight" Value="Bold" />
     <Setter Property="Foreground" Value="{DynamicResource InkHeadingBrush}" />
   </Style>
+  <!-- numbers that change in place (timer, percent): equal-width digits so they don't wobble -->
+  <Style Selector="TextBlock.counter">
+    <Setter Property="FontFeatures" Value="+tnum" />
+  </Style>
   <!-- the current value beside a live graph's title -->
   <Style Selector="TextBlock.live-value">
     <Setter Property="FontSize" Value="20" />

@@ -58,6 +58,14 @@
       <Color x:Key="ZoneSoftColor">#d7d0e8</Color>
       <Color x:Key="ZoneComfyColor">#cdeadd</Color>
       <Color x:Key="ZoneStrongColor">#ffd9ea</Color>
+      <!-- zone colours for text on a card (live values): clear hues, each ≥ 3:1 on Card (large bold text) -->
+      <Color x:Key="ZoneMascTextColor">#3a85e0</Color>
+      <Color x:Key="ZoneFemTextColor">#e8509e</Color>
+      <Color x:Key="ZoneNeutralTextColor">#d97706</Color>
+      <Color x:Key="ZoneGrowTextColor">#8a72c8</Color>
+      <Color x:Key="ZoneSoftTextColor">#8a72c8</Color>
+      <Color x:Key="ZoneComfyTextColor">#12a070</Color>
+      <Color x:Key="ZoneStrongTextColor">#e8509e</Color>
     </ResourceDictionary>
     <ResourceDictionary x:Key="Dark">
       <Color x:Key="BgColor">#14131f</Color>
@@ -108,6 +116,14 @@
       <Color x:Key="ZoneSoftColor">#b9b0d2</Color>
       <Color x:Key="ZoneComfyColor">#a6d6c0</Color>
       <Color x:Key="ZoneStrongColor">#eeb0cd</Color>
+      <!-- zone colours for text on a card (live values): soft pastels, easy on a dark card -->
+      <Color x:Key="ZoneMascTextColor">#9fc2ee</Color>
+      <Color x:Key="ZoneFemTextColor">#f59ec6</Color>
+      <Color x:Key="ZoneNeutralTextColor">#ecca8e</Color>
+      <Color x:Key="ZoneGrowTextColor">#b3a9c6</Color>
+      <Color x:Key="ZoneSoftTextColor">#b9b0d2</Color>
+      <Color x:Key="ZoneComfyTextColor">#a6d6c0</Color>
+      <Color x:Key="ZoneStrongTextColor">#eeb0cd</Color>
     </ResourceDictionary>
   </ResourceDictionary.ThemeDictionaries>
 

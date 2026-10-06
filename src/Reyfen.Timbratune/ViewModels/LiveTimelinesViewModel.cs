@@ -11,19 +11,24 @@ namespace Reyfen.Timbratune.ViewModels;
 /// value and the visible time range, which update in place so the chart (and its easing)
 /// survives each refresh.
 /// </summary>
-public sealed partial class TimelineViewModel(string title, string caption, string unit, IReadOnlyList<Zone> zones, double lo, double hi)
+public sealed partial class TimelineViewModel(string title, string caption, string unit, IReadOnlyList<Zone> zones, double lo, double hi,
+    bool holdValue = false)
     : ObservableObject
 {
     public string Title { get; } = title;
     public string Caption { get; } = caption;
     public string Unit { get; } = unit;
+    /// <summary>Keep showing the last value however old it is (loudness: always measured, silence included).</summary>
+    public bool HoldValue { get; } = holdValue;
     public IReadOnlyList<Zone> Zones { get; } = zones;
     public double Lo { get; } = lo;
     public double Hi { get; } = hi;
 
     [ObservableProperty] private IReadOnlyList<TimedValue> _line = [];
-    /// <summary>The current point's value (the dot), e.g. "182 Hz"; "—" before there is one.</summary>
-    [ObservableProperty] private string _valueText = "—";
+    /// <summary>The current point's value (the dot), e.g. "182 Hz"; empty before there is one, or once it is stale.</summary>
+    [ObservableProperty] private string _valueText = "";
+    /// <summary>The zone the current value sits in (its colour), or null when there is no value.</summary>
+    [ObservableProperty] private ZoneColorKey? _valueZone;
     [ObservableProperty] private double _axisStart;
     [ObservableProperty] private double _axisDuration = 10;
 }
@@ -80,14 +85,14 @@ public sealed partial class LiveTimelinesViewModel : ObservableObject
 
     public LiveTimelinesViewModel()
     {
-        TimelineViewModel Metric(MetricKey key, string caption)
+        TimelineViewModel Metric(MetricKey key, string caption, bool hold = false)
         {
             var m = Metrics.All[key];
-            return new TimelineViewModel(m.Title, caption, m.Unit, m.Zones, m.Lo, m.Hi);
+            return new TimelineViewModel(m.Title, caption, m.Unit, m.Zones, m.Lo, m.Hi, hold);
         }
         Timelines =
         [
-            Metric(MetricKey.Loudness, "energy average over about 1 s"),
+            Metric(MetricKey.Loudness, "energy average over about 1 s", hold: true),
             Metric(MetricKey.Sd, "pitch movement over about 2 s"),
             Metric(MetricKey.Hnr, "median over about 1 s"),
             Metric(MetricKey.F2, "on loud vowels, median over about 2 s"),
@@ -103,8 +108,9 @@ public sealed partial class LiveTimelinesViewModel : ObservableObject
     [ObservableProperty] private double _axisDuration = 10;
     [ObservableProperty] private RecordingDetail? _detail;
     [ObservableProperty] private IReadOnlyList<TimedValue> _pitchLine = [];
-    /// <summary>The live pitch now (the contour's dot), e.g. "182 Hz".</summary>
-    [ObservableProperty] private string _pitchText = "—";
+    /// <summary>The live pitch now (the contour's dot), e.g. "182 Hz"; empty when there is none or it is stale.</summary>
+    [ObservableProperty] private string _pitchText = "";
+    [ObservableProperty] private ZoneColorKey? _pitchZone;
 
     public IReadOnlyList<Zone> PitchZones => Zones.Pitch;
     public IReadOnlyList<TimelineViewModel> Timelines { get; }
@@ -156,31 +162,54 @@ public sealed partial class LiveTimelinesViewModel : ObservableObject
         AxisDuration = frame.AxisDuration;
         Detail = frame.Detail;
         PitchLine = frame.PitchLine;
-        PitchText = ValueText(frame.PitchLine, "Hz");
+        (PitchText, PitchZone) = CurrentValue(frame.PitchLine, "Hz", Zones.Pitch, frame.Elapsed, hold: false);
         for (var i = 0; i < Timelines.Count; i++)
         {
             var t = Timelines[i];
             t.AxisStart = frame.AxisStart;
             t.AxisDuration = frame.AxisDuration;
             t.Line = frame.Lines[i];
-            t.ValueText = ValueText(frame.Lines[i], t.Unit);
+            (t.ValueText, t.ValueZone) = CurrentValue(frame.Lines[i], t.Unit, t.Zones, frame.Elapsed, t.HoldValue);
         }
     }
 
+    /// <summary>A live value disappears this long after its metric was last measured (e.g. you stopped talking).</summary>
+    public const double StaleAfterSeconds = 5;
+
+    /// <summary>At or below this a dB value is the analysis' "no signal" marker, not a level.</summary>
+    private const double NoSignalDb = -100;
+
     /// <summary>
     /// The line's newest value — where the chart puts its dot — with as many decimals as
-    /// the unit needs to move visibly: "182 Hz", "64.3 dB", "2.4 st", "0.81 %".
+    /// the unit needs to move visibly ("182 Hz", "64.3 dB", "2.4 st", "0.81 %"), and the
+    /// zone it sits in (beyond the outer zones counts as those, as the chart's bands do).
+    /// Empty before the first value, and <see cref="StaleAfterSeconds"/> after the last one
+    /// unless <paramref name="hold"/>.
     /// </summary>
-    public static string ValueText(IReadOnlyList<TimedValue> line, string unit)
+    public static (string Text, ZoneColorKey? Zone) CurrentValue(IReadOnlyList<TimedValue> line, string unit,
+        IReadOnlyList<Zone> zones, double now, bool hold)
     {
         for (var i = line.Count - 1; i >= 0; i--)
         {
-            var v = line[i].Value;
+            var (t, v) = (line[i].T, line[i].Value);
             if (double.IsNaN(v)) continue;
+            if (!hold && now - t > StaleAfterSeconds) break;
+            // The analysis writes −300 dB for a frame with no signal at all (digital silence): nothing to show.
+            if (unit == "dB" && v <= NoSignalDb) break;
             var format = unit switch { "Hz" => "0", "%" => "0.00", _ => "0.0" };
-            return $"{v.ToString(format, System.Globalization.CultureInfo.InvariantCulture)} {unit}";
+            return ($"{v.ToString(format, System.Globalization.CultureInfo.InvariantCulture)} {unit}", ZoneAt(zones, v));
         }
-        return "—";
+        return ("", null);
+    }
+
+    /// <summary>The zone holding <paramref name="v"/>; below the first zone counts as the first, above the last as the last.</summary>
+    private static ZoneColorKey? ZoneAt(IReadOnlyList<Zone> zones, double v)
+    {
+        if (zones.Count == 0) return null;
+        if (v < zones[0].From) return zones[0].Color;
+        foreach (var z in zones)
+            if (v < z.To) return z.Color;
+        return zones[^1].Color;
     }
 
     private static List<TimedValue> Voiced(RecordingDetail? detail)

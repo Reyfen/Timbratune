@@ -34,6 +34,8 @@
     <ItemGroup>
       <_TimbratuneExtra Include="$(PublishDir)$(ApplicationId).apk;$(PublishDir)*.dll" />
     </ItemGroup>
+    <!-- Move won't replace an existing file: drop the previous build first. -->
+    <Delete Files="$(PublishDir)Timbratune-v$(Version)-android.apk" Condition="Exists('$(_TimbratuneApk)')" />
     <Move SourceFiles="$(_TimbratuneApk)" DestinationFiles="$(PublishDir)Timbratune-v$(Version)-android.apk" Condition="Exists('$(_TimbratuneApk)')" />
     <Delete Files="@(_TimbratuneExtra)" />
   </Target>

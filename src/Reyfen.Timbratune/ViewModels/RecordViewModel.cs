@@ -60,25 +60,27 @@ public sealed partial class RecordViewModel : ObservableObject
 
     /// <summary>How far the work after Stop has got (0–100): finishing the live analysis, the full analysis, saving.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(AnalyzingText))]
+    [NotifyPropertyChangedFor(nameof(AnalyzingPercent), nameof(AnalyzingEstimate))]
     private double _analysisProgress;
 
     private readonly Stopwatch _analysisClock = new();
 
-    /// <summary>"analyzing… 42% · about 3 s left" (the estimate once there is enough to go on).</summary>
-    public string AnalyzingText
+    /// <summary>"42%".</summary>
+    public string AnalyzingPercent => $"{AnalysisProgress:0}%";
+
+    /// <summary>"· about 3 s left 💗" once there is enough to go on, otherwise just the heart.</summary>
+    public string AnalyzingEstimate
     {
         get
         {
-            var text = $"analyzing… {AnalysisProgress:0}%";
             var fraction = AnalysisProgress / 100;
             var elapsed = _analysisClock.Elapsed.TotalSeconds;
             if (fraction is >= 0.15 and < 1 && elapsed >= 0.5)
             {
                 var left = elapsed / fraction * (1 - fraction);
-                text += left < 1.5 ? " · almost done" : $" · about {Math.Round(left):0} s left";
+                return (left < 1.5 ? "· almost done" : $"· about {Math.Round(left):0} s left") + " 💗";
             }
-            return text + " 💗";
+            return "💗";
         }
     }
     [ObservableProperty] private string? _errorDetail;
