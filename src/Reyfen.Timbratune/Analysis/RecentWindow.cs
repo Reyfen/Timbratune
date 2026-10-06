@@ -57,6 +57,13 @@ public sealed record SmoothingSpec(
     /// octave slip in pitch), instead of drawing a near-vertical connection. Positive values only.
     /// </summary>
     public double? MaxStepRatio { get; init; }
+
+    /// <summary>
+    /// When set, stretches separated by a gap up to this long (s) are joined by a straight
+    /// line instead of a break — the gap is drawn, not smoothed over (no window reaches
+    /// across it). Breaks given to <see cref="RecentWindow.Smooth"/> are never bridged.
+    /// </summary>
+    public double? BridgeGap { get; init; }
 }
 
 public static class RecentWindow
@@ -69,11 +76,15 @@ public static class RecentWindow
     /// are separated by a NaN, and grid times before <paramref name="from"/> are skipped.
     /// When <paramref name="now"/> is given and the last stretch is still going (its last
     /// point is at most MaxGap before now), the line is extended to now by prediction.
+    /// With <see cref="SmoothingSpec.BridgeGap"/>, short gaps are joined instead, except
+    /// across any time in <paramref name="keepBreaksAt"/> (e.g. phrase ends).
     /// </summary>
-    public static List<TimedValue> Smooth(IReadOnlyList<TimedValue> points, SmoothingSpec spec, double from = 0, double? now = null)
+    public static List<TimedValue> Smooth(IReadOnlyList<TimedValue> points, SmoothingSpec spec, double from = 0, double? now = null,
+        IReadOnlyList<double>? keepBreaksAt = null)
     {
         var raw = new List<TimedValue>();
         var scratch = new double[16];
+        double? previousEnd = null; // last drawn time of the previous stretch
         var first = 0;
         while (first < points.Count)
         {
@@ -81,18 +92,37 @@ public static class RecentWindow
             while (last + 1 < points.Count && points[last + 1].T - points[last].T <= spec.MaxGap) last++;
             if (points[last].T >= from)
             {
-                if (raw.Count > 0) raw.Add(new TimedValue(points[first].T, double.NaN));
                 if (scratch.Length < last - first + 1) scratch = new double[last - first + 1];
                 var stretch = new List<TimedValue>();
                 SmoothStretch(points, first, last, spec, from, stretch, scratch);
                 if (spec.MaxStepRatio is { } ratio) stretch = BreakJumps(stretch, ratio);
                 var ongoing = last == points.Count - 1 && now is { } n && n - points[last].T <= spec.MaxGap ? now : null;
                 Predict(stretch, points[last].T, spec, ongoing);
-                raw.AddRange(stretch);
+                // Polished per stretch, so the light mean never reaches across a bridge (or a break).
+                stretch = Polish(stretch, spec.PolishRadius);
+                var drawn = stretch.FindIndex(p => !double.IsNaN(p.Value));
+                // A stretch too short to show anything is skipped, so it neither breaks nor ends a bridge.
+                if (spec.BridgeGap is null || drawn >= 0)
+                {
+                    if (raw.Count > 0 && !Bridges(spec, previousEnd, drawn >= 0 ? stretch[drawn].T : points[first].T, keepBreaksAt))
+                        raw.Add(new TimedValue(points[first].T, double.NaN));
+                    raw.AddRange(stretch);
+                    if (FindLast(stretch) is { } end) previousEnd = end.T;
+                }
             }
             first = last + 1;
         }
-        return Polish(raw, spec.PolishRadius);
+        return raw;
+    }
+
+    /// <summary>Whether the gap from <paramref name="end"/> to <paramref name="start"/> is drawn as a straight line.</summary>
+    private static bool Bridges(SmoothingSpec spec, double? end, double start, IReadOnlyList<double>? keepBreaksAt)
+    {
+        if (spec.BridgeGap is not { } gap || end is not { } e || start - e > gap) return false;
+        if (keepBreaksAt is not null)
+            foreach (var t in keepBreaksAt)
+                if (t > e && t < start) return false;
+        return true;
     }
 
     private static void SmoothStretch(IReadOnlyList<TimedValue> points, int first, int last, SmoothingSpec spec, double from,

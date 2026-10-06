@@ -156,8 +156,12 @@ public sealed class ContourChart : ThemedControl
         var divider = new Pen(B("LineSoft"), 1);
         foreach (var p in d.Phrases.Where(p => p.End >= start)) ctx.DrawLine(divider, new Point(X(p.End), PadT), new Point(X(p.End), PadT + ih));
 
-        // Contour runs, split on unvoiced gaps and on crossing the floor. Over the zone bands
-        // (live) the upper runs use a darker ink so they stay visible on the pink band.
+        // Contour runs, split on unvoiced gaps and coloured by side of the floor (runs meet where
+        // the line crosses it). Over the zone bands (live) the upper runs use a darker ink so
+        // they stay visible on the pink band. The saved take's raw frames are joined across
+        // short unvoiced gaps inside a phrase, as the live line is (it arrives already joined).
+        var isLive = LiveLine is not null;
+        var bridge = ViewModels.LiveTimelinesViewModel.ContourBridgeGap;
         var belowPen = new Pen(B("ZoneMascInk"), 3, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round);
         var abovePen = zones is null
             ? new Pen(new SolidColorBrush(ZoneColor(ZoneColorKey.Fem), 0.9), 2.4, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round)
@@ -169,21 +173,36 @@ public sealed class ContourChart : ThemedControl
             if (run.Count > 0 && runBelow is { } below) DrawRun(ctx, run, below ? belowPen : abovePen);
             run.Clear();
         }
+        double? lastT = null; // the previous voiced frame, while a run can still continue from it
         for (var i = 0; i < hz.Count && i < t.Count; i++)
         {
             if (hz[i] is not { } f || t[i] < start)
             {
-                Flush();
-                runBelow = null;
+                // The live line marks its own breaks; raw frames are judged by the gap's length below.
+                if (isLive)
+                {
+                    Flush();
+                    runBelow = null;
+                    lastT = null;
+                }
                 continue;
             }
+            if (!isLive && lastT is { } prev && (t[i] - prev > bridge + 0.011 || d.Phrases.Any(p => p.End > prev && p.End < t[i])))
+            {
+                Flush();
+                runBelow = null;
+            }
+            var at = new Point(X(t[i]), Y(f));
             var isBelow = f < floor;
             if (runBelow != isBelow)
             {
+                var joint = run.Count > 0 ? run[^1] : (Point?)null;
                 Flush();
+                if (joint is { } j) run.Add(j);
                 runBelow = isBelow;
             }
-            run.Add(new Point(X(t[i]), Y(f)));
+            run.Add(at);
+            lastT = t[i];
         }
         Flush();
 

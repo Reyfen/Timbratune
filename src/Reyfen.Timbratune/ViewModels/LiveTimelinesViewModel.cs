@@ -70,12 +70,19 @@ public sealed partial class LiveTimelinesViewModel : ObservableObject
     public static readonly SmoothingSpec VowelSmoothing = new(WindowStatistic.Median, 1.0, 6, 0.8) { PolishRadius = 4 };
     public static readonly SmoothingSpec MovementSmoothing = new(WindowStatistic.StandardDeviation, 1.0, 10, 0.4);
     // Pitch keeps its intonation: a short median (about 0.2 s) removes single-frame octave
-    // slips and softens path revisions; unvoiced gaps over 60 ms stay gaps, and so do
-    // jumps no voice makes in 20 ms (octave slips flip the median between octaves). Like
-    // loudness, intonation turns too quickly for a trend: measured, holding the newest
-    // value moved the dot less and stayed closer to the saved contour than predicting.
-    public static readonly SmoothingSpec PitchSmoothing = new(WindowStatistic.Median, 0.1, 5, 0.06, Step: 0.02)
-        { PolishRadius = 1, TrendDamping = 0, MaxStepRatio = Math.Pow(2, 3.0 / 12) }; // > 3 semitones in 20 ms = a slip
+    // slips and softens path revisions; voiced bits from 30 ms are kept. The median never
+    // reaches across an unvoiced gap over 60 ms (it would flip from one side's pitch to the
+    // other's mid-gap), but within a phrase gaps up to 0.5 s are drawn as a straight line:
+    // the tracker loses the voice on consonants and in fast pitch jumps (e.g. 0.25–0.3 s in
+    // the middle of an upspeak rise), which used to split one phrase into pieces. Jumps no
+    // voice makes in 20 ms still break the line (octave slips flip the median between
+    // octaves). Like loudness, intonation turns too quickly for a trend: measured, holding
+    // the newest value moved the dot less and stayed closer to the saved contour than predicting.
+    public static readonly SmoothingSpec PitchSmoothing = new(WindowStatistic.Median, 0.1, 3, 0.06, Step: 0.02)
+        { PolishRadius = 1, TrendDamping = 0, MaxStepRatio = Math.Pow(2, 3.0 / 12), BridgeGap = ContourBridgeGap }; // > 3 st in 20 ms = a slip
+
+    /// <summary>Longest unvoiced gap inside a phrase that the pitch contours (live and saved) join with a straight line.</summary>
+    public const double ContourBridgeGap = 0.5;
 
     public static readonly SmoothingSpec JitterSmoothing = new(WindowStatistic.Median, 1.5, 1, 3.0) { PolishRadius = 4 };
 
@@ -141,7 +148,10 @@ public sealed partial class LiveTimelinesViewModel : ObservableObject
         var pitch = Voiced(detail);
         var floor = detail?.RegisterFloorHz ?? AnalysisPostProcessor.DefaultRegisterFloorHz;
         var melody = pitch.Where(p => p.Value >= floor).Select(p => new TimedValue(p.T, Semitones(p.Value))).ToList();
-        return new Frame(now, start, duration, detail, Smooth(pitch, PitchSmoothing),
+        var phraseEnds = detail?.Phrases.Select(p => p.End).ToList();
+        var pitchLine = RecentWindow.Smooth(RecentWindow.From(pitch, start - PitchSmoothing.HalfWidth - ContourBridgeGap),
+            PitchSmoothing, start, now, phraseEnds);
+        return new Frame(now, start, duration, detail, pitchLine,
         [
             Smooth(s.Loudness, LoudnessSmoothing),
             Smooth(pitch, MovementSmoothing),
