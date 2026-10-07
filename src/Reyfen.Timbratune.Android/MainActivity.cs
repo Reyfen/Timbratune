@@ -32,6 +32,12 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
 
     protected override void OnCreate(Bundle? savedInstanceState)
     {
+#if PROFILING
+        // Experiment switches are read first: some (e.g. "vulkan") apply while the app is built.
+        var flagsFile = System.IO.Path.Combine(GetExternalFilesDir(null)!.AbsolutePath, "perf-flags.txt");
+        if (System.IO.File.Exists(flagsFile))
+            Diagnostics.Perf.Flags = System.IO.File.ReadAllText(flagsFile).Split((char[])[' ', ',', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries).ToHashSet();
+#endif
         s_audio ??= new SoundFlowAudio();
         var fakeMic = FakeMic();
         s_recorder ??= fakeMic is not null ? new FileReplayRecorder(fakeMic) : s_audio.CreateRecorder();
@@ -54,9 +60,6 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
 #endif
         base.OnCreate(savedInstanceState);
 #if PROFILING
-        var flagsFile = System.IO.Path.Combine(GetExternalFilesDir(null)!.AbsolutePath, "perf-flags.txt");
-        if (System.IO.File.Exists(flagsFile))
-            Diagnostics.Perf.Flags = System.IO.File.ReadAllText(flagsFile).Split((char[])[' ', ',', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries).ToHashSet();
         if (Avalonia.Application.Current is { } app)
             Avalonia.Threading.Dispatcher.UIThread.Post(() => Diagnostics.Perf.ApplyExperiments(app,
                 (app.ApplicationLifetime as Avalonia.Controls.ApplicationLifetimes.ISingleViewApplicationLifetime)?.MainView is { } v
@@ -98,7 +101,23 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
             .With(new FontManagerOptions
             {
                 FontFallbacks = [new FontFallback { FontFamily = new FontFamily("fonts:TimbratuneEmoji#Noto Color Emoji") }],
-            });
+            })
+            .With(new AndroidPlatformOptions { RenderingMode = RenderingModes() });
+
+    /// <summary>
+    /// Vulkan first, then OpenGL ES, then software. Measured scrolling: on a Pixel 9 (Android 17,
+    /// where OpenGL ES runs through a translation layer on Vulkan) OpenGL ES held it to ~33 fps
+    /// with the GPU mostly idle, Vulkan gave ~56 fps; on a Pixel 4a 52 → 56 fps, and live
+    /// recording ran smoother on both. If Vulkan can't start, Avalonia falls back to the next.
+    /// </summary>
+    private static IReadOnlyList<AndroidRenderingMode> RenderingModes()
+    {
+#if PROFILING
+        // A/B switch: "egl" renders through OpenGL ES as before.
+        if (Diagnostics.Perf.Flags.Contains("egl")) return [AndroidRenderingMode.Egl, AndroidRenderingMode.Software];
+#endif
+        return [AndroidRenderingMode.Vulkan, AndroidRenderingMode.Egl, AndroidRenderingMode.Software];
+    }
 
     /// <summary>Asks for the microphone the first time; true when recording is allowed.</summary>
     private Task<bool> RequestMicrophoneAsync()
