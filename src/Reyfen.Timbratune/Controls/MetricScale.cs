@@ -110,6 +110,8 @@ public sealed class MetricScale : ThemedControl
 
     public override void Render(DrawingContext ctx)
     {
+        if (!IsOnScreen) return;
+        using var perf = Diagnostics.Perf.Measure("render.MetricScale");
         _hits.Clear();
         var w = Bounds.Width - 2 * SideInset;
         var span = Hi - Lo;

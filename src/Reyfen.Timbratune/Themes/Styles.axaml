@@ -73,6 +73,7 @@
     <Setter Property="Padding" Value="18,16" />
     <Setter Property="BorderThickness" Value="1" />
     <Setter Property="BorderBrush" Value="{DynamicResource LineSoftBrush}" />
+    <!-- On phones App.Initialize swaps this for a crisp, unblurred edge (see MobileLook). -->
     <Setter Property="BoxShadow" Value="0 8 24 0 #22BA8EC4" />
   </Style>
   <Style Selector="Border.inset">

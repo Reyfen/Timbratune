@@ -41,18 +41,115 @@ public static class Fft
     /// </summary>
     public static (double[] Re, double[] Im) RealForward(ReadOnlySpan<double> signal, int n)
     {
-        var re = new double[n];
-        var im = new double[n];
-        signal[..Math.Min(signal.Length, n)].CopyTo(re);
-        ForwardInPlace(re, im);
         var bins = n / 2 + 1;
         var outRe = new double[bins];
         var outIm = new double[bins];
-        Array.Copy(re, outRe, bins);
-        Array.Copy(im, outIm, bins);
+        if (n == 1)
+        {
+            outRe[0] = signal.Length > 0 ? signal[0] : 0;
+            return (outRe, outIm);
+        }
+        RealForwardHalf(signal[..Math.Min(signal.Length, n)], n, outRe, outIm);
         outIm[0] = 0;
-        if (n > 1) outIm[bins - 1] = 0;
+        outIm[bins - 1] = 0;
         return (outRe, outIm);
+    }
+
+    /// <summary>
+    /// Bins 0..n/2 of the spectrum of a real signal (zero-padded or cut to <paramref name="n"/>,
+    /// a power of two ≥ 2), from one complex transform of half the length: the even samples
+    /// become the real parts and the odd ones the imaginary parts, and the two half-length
+    /// spectra are separated afterwards (the standard real-input FFT, e.g. Press et al.,
+    /// Numerical Recipes, §12.3). About half the work of a full complex transform.
+    /// </summary>
+    /// <param name="re">Receives Re X[k], k = 0..n/2 (length ≥ n/2 + 1).</param>
+    /// <param name="im">Receives Im X[k], k = 0..n/2 (length ≥ n/2 + 1).</param>
+    /// <param name="passDone">Called after each of the log2(n/2) butterfly passes.</param>
+    public static void RealForwardHalf(ReadOnlySpan<double> signal, int n, double[] re, double[] im, Action? passDone = null)
+    {
+        var m = n / 2;
+        var zr = RentExact(m);
+        var zi = RentExact(m);
+        try
+        {
+            for (var j = 0; j < m; j++)
+            {
+                zr[j] = 2 * j < signal.Length ? signal[2 * j] : 0;
+                zi[j] = 2 * j + 1 < signal.Length ? signal[2 * j + 1] : 0;
+            }
+            Transform(zr, zi, false, passDone);
+            var twiddles = Twiddles.For(n);
+            for (var k = 0; k <= m; k++)
+            {
+                int a = k % m, b = (m - k) % m;
+                // E = (Z[k] + conj Z[m−k]) / 2 (even samples), O = (Z[k] − conj Z[m−k]) / 2i (odd samples).
+                double er = 0.5 * (zr[a] + zr[b]), ei = 0.5 * (zi[a] - zi[b]);
+                double odr = 0.5 * (zi[a] + zi[b]), odi = -0.5 * (zr[a] - zr[b]);
+                // X[k] = E + e^(−2πik/n)·O
+                double wr = k < m ? twiddles.Cos[k] : -1, wi = k < m ? -twiddles.Sin[k] : 0;
+                re[k] = er + (wr * odr - wi * odi);
+                im[k] = ei + (wr * odi + wi * odr);
+            }
+        }
+        finally
+        {
+            ReturnExact(zr);
+            ReturnExact(zi);
+        }
+    }
+
+    /// <summary>
+    /// The real signal (length <paramref name="n"/>) whose spectrum bins 0..n/2 are given
+    /// (the rest follow by conjugate symmetry), with the 1/n factor: the inverse of
+    /// <see cref="RealForwardHalf"/>, again through one half-length complex transform.
+    /// </summary>
+    /// <param name="signal">Receives the n samples (length ≥ n).</param>
+    public static void RealInverseHalf(double[] re, double[] im, int n, double[] signal, Action? passDone = null)
+    {
+        var m = n / 2;
+        var zr = RentExact(m);
+        var zi = RentExact(m);
+        try
+        {
+            var twiddles = Twiddles.For(n);
+            for (var k = 0; k < m; k++)
+            {
+                var b = m - k;
+                // E = (X[k] + conj X[m−k]) / 2, O = (X[k] − conj X[m−k]) / 2 · e^(+2πik/n); Z[k] = E + i·O.
+                double er = 0.5 * (re[k] + re[b]), ei = 0.5 * (im[k] - im[b]);
+                double dr = 0.5 * (re[k] - re[b]), di = 0.5 * (im[k] + im[b]);
+                double wr = twiddles.Cos[k], wi = twiddles.Sin[k];
+                double odr = dr * wr - di * wi, odi = dr * wi + di * wr;
+                zr[k] = er - odi;
+                zi[k] = ei + odr;
+            }
+            InverseInPlace(zr, zi, passDone);
+            for (var j = 0; j < m; j++)
+            {
+                signal[2 * j] = zr[j];
+                signal[2 * j + 1] = zi[j];
+            }
+        }
+        finally
+        {
+            ReturnExact(zr);
+            ReturnExact(zi);
+        }
+    }
+
+    /// <summary>A pooled array of exactly <paramref name="length"/> (the transforms take their size from the array).</summary>
+    private static double[] RentExact(int length)
+    {
+        var array = System.Buffers.ArrayPool<double>.Shared.Rent(length);
+        if (array.Length == length) return array;
+        System.Buffers.ArrayPool<double>.Shared.Return(array);
+        return new double[length];
+    }
+
+    /// <summary>Back to the pool — only sizes it holds (powers of two from 16): smaller ones were allocated, not rented.</summary>
+    private static void ReturnExact(double[] array)
+    {
+        if (array.Length >= 16) System.Buffers.ArrayPool<double>.Shared.Return(array);
     }
 
     /// <summary>Number of butterfly passes of a length-<paramref name="n"/> transform (log2 n).</summary>

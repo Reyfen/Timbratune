@@ -33,17 +33,38 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         s_audio ??= new SoundFlowAudio();
-        s_recorder ??= FakeMic() is { } fakeMic ? new FileReplayRecorder(fakeMic) : s_audio.CreateRecorder();
+        var fakeMic = FakeMic();
+        s_recorder ??= fakeMic is not null ? new FileReplayRecorder(fakeMic) : s_audio.CreateRecorder();
         var audio = s_audio;
         var recorder = s_recorder;
+        var paths = DataPaths.Default();
+#if PROFILING
+        // Test takes recorded from the fake mic go to their own folder, not the user's takes.
+        if (fakeMic is not null) paths = new DataPaths(System.IO.Path.Combine(GetExternalFilesDir(null)!.AbsolutePath, "profiling-data"));
+#endif
         App.ServicesFactory = dialogs => new AppServices(
-            Store: new RecordingStore(DataPaths.Default()),
+            Store: new RecordingStore(paths),
             Engine: new AcousticsAnalysisEngine(),
             Recorder: recorder,
             Playback: new PlaybackService(audio.CreatePlayer()),
             Dialogs: dialogs,
             RequestMicrophone: RequestMicrophoneAsync);
+#if PROFILING
+        Diagnostics.Perf.Sink = line => global::Android.Util.Log.Info("Timbratune", line);
+#endif
         base.OnCreate(savedInstanceState);
+#if PROFILING
+        var flagsFile = System.IO.Path.Combine(GetExternalFilesDir(null)!.AbsolutePath, "perf-flags.txt");
+        if (System.IO.File.Exists(flagsFile))
+            Diagnostics.Perf.Flags = System.IO.File.ReadAllText(flagsFile).Split((char[])[' ', ',', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries).ToHashSet();
+        if (Avalonia.Application.Current is { } app)
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => Diagnostics.Perf.ApplyExperiments(app,
+                (app.ApplicationLifetime as Avalonia.Controls.ApplicationLifetimes.ISingleViewApplicationLifetime)?.MainView is { } v
+                    ? Avalonia.Controls.TopLevel.GetTopLevel(v) : null));
+        Diagnostics.Perf.StartStallWatch();
+        if (Diagnostics.Perf.Flags.Contains("fftbench")) System.Threading.Tasks.Task.Run(FftBench.Run);
+        Diagnostics.Perf.Note($"started on {Build.Model}, Android {Build.VERSION.Release}, {System.Environment.ProcessorCount} cores");
+#endif
     }
 
     /// <summary>
@@ -56,6 +77,11 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
     {
 #if DEBUG
         var path = System.IO.Path.Combine(FilesDir!.AbsolutePath, "fake-mic.wav");
+        return System.IO.File.Exists(path) ? path : null;
+#elif PROFILING
+        // Release builds can't be written into over USB; the external app folder can:
+        // adb push take.wav /sdcard/Android/data/com.reyfen.timbratune/files/fake-mic.wav
+        var path = System.IO.Path.Combine(GetExternalFilesDir(null)!.AbsolutePath, "fake-mic.wav");
         return System.IO.File.Exists(path) ? path : null;
 #else
         return null;

@@ -25,6 +25,8 @@ public sealed class ZonePill : ThemedControl
 
     public override void Render(DrawingContext ctx)
     {
+        if (!IsOnScreen) return;
+        using var perf = Diagnostics.Perf.Measure("render.ZonePill");
         if (Zone is not { } z || Label is not { } t) return;
         ctx.DrawRectangle(new SolidColorBrush(ZoneColor(z.Color)), null, new RoundedRect(new Rect(Bounds.Size), 10));
         ctx.DrawText(t, new Point((Bounds.Width - t.Width) / 2, (Bounds.Height - t.Height) / 2));

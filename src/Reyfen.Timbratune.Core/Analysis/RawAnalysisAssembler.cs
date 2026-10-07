@@ -67,13 +67,7 @@ public static class RawAnalysisAssembler
             ["intensity_max"] = intensity.Maximum(),
         };
 
-        // analyze_register() uses a 10 ms step; the pitch track has exactly that step.
-        var contour = new List<(double, double)>(pitch.FrameCount);
-        for (var i = 0; i < pitch.FrameCount; i++)
-        {
-            var hz = pitch.ValueInFrame(i);
-            contour.Add((pitch.Grid.IndexToX(i), double.IsNaN(hz) ? 0 : hz));
-        }
+        var contour = Contour(pitch);
 
         return new RawAnalysis
         {
@@ -97,6 +91,18 @@ public static class RawAnalysisAssembler
         for (var i = 0; i < harmonicity.Db.Count; i++)
             if (harmonicity.Db[i] != HarmonicityContour.Unvoiced) frames.Add((harmonicity.Grid.IndexToX(i), harmonicity.Db[i]));
         return frames;
+    }
+
+    /// <summary>The 10 ms pitch track as (time, Hz), 0 Hz where unvoiced (analyze_register() uses a 10 ms step; the track has exactly that step).</summary>
+    public static List<(double T, double Hz)> Contour(PitchContour pitch)
+    {
+        var contour = new List<(double, double)>(pitch.FrameCount);
+        for (var i = 0; i < pitch.FrameCount; i++)
+        {
+            var hz = pitch.ValueInFrame(i);
+            contour.Add((pitch.Grid.IndexToX(i), double.IsNaN(hz) ? 0 : hz));
+        }
+        return contour;
     }
 
     /// <summary>Sounding stretches of speech (silence detection on the intensity contour).</summary>

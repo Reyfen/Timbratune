@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.Input;
 using Reyfen.Timbratune.Core.Domain;
 using Reyfen.Timbratune.Core.Json;
 using Reyfen.Timbratune.Core.Models;
+using Reyfen.Timbratune.Diagnostics;
 using Reyfen.Timbratune.Services;
 
 namespace Reyfen.Timbratune.ViewModels;
@@ -121,8 +122,9 @@ public sealed partial class MainViewModel : ObservableObject
             Active = null;
             return;
         }
-        var detail = _services.Store.LoadDetail(active);
-        Active = new TakeViewModel(active, detail, active.Id == latest?.Id, OpenMetricCommand);
+        RecordingDetail? detail;
+        using (Perf.Measure("take.load")) detail = _services.Store.LoadDetail(active);
+        using (Perf.Measure("take.viewmodel")) Active = new TakeViewModel(active, detail, active.Id == latest?.Id, OpenMetricCommand);
         if (detail is not null && (detail.Trends?.Version ?? 0) < TakeTrends.CurrentVersion) _ = BackfillTrendsAsync(active);
     }
 

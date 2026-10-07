@@ -65,11 +65,11 @@ public sealed class LivePitchTracker
         if (pending.Count == 0) return;
         var results = new PitchFrame[pending.Count];
         var channels = signal.Channels;
-        Parallel.For(0, pending.Count, _analyzer.CreateBuffers, (i, _, buffers) =>
+        Parallel.For(0, pending.Count, _analyzer.RentBuffers, (i, _, buffers) =>
         {
             results[i] = _analyzer.AnalyzeFrame(channels, signal.Grid, pending[i], buffers);
             return buffers;
-        }, _ => { });
+        }, _analyzer.ReturnBuffers);
         _frames.AddRange(results);
     }
 

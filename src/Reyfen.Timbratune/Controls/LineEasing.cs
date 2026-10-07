@@ -24,6 +24,12 @@ public sealed class LineEasing(Control owner)
     /// <summary>Call when the target line changes; <paramref name="old"/> is the previous target.</summary>
     public void Retarget(IReadOnlyList<TimedValue>? old)
     {
+        // Out of view there is nothing to glide: it is drawn at the new values when it comes back.
+        if (owner is ThemedControl { IsOnScreen: false })
+        {
+            _from = null;
+            return;
+        }
         // Start from what is on screen now (possibly mid-glide), not from the old target.
         _from = old is null ? null : Blend(_from, old, Progress());
         _start = Stopwatch.GetTimestamp();

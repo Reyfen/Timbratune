@@ -4,6 +4,7 @@ using Reyfen.Timbratune.Acoustics.Intensity;
 using Reyfen.Timbratune.Acoustics.Pitch;
 using Reyfen.Timbratune.Acoustics.Spectral;
 using Reyfen.Timbratune.Acoustics.Voice;
+using Reyfen.Timbratune.Core.Diagnostics;
 
 namespace Reyfen.Timbratune.Core.Analysis;
 
@@ -29,8 +30,10 @@ public sealed class AcousticsAnalysisEngine : IAnalysisEngine
             cancellationToken.ThrowIfCancellationRequested();
             // Stage weights: share of the analysis time measured on a 27.6 s take (Release).
             var stages = new StageProgress(progress is null ? null : progress.Report, 0.95, 0.05);
-            var raw = Measure(sound, stages.Stage(0));
-            var result = AnalysisPostProcessor.Process(raw, registerFloorHz);
+            RawAnalysis raw;
+            using (Timing.Measure("analysis.measure")) raw = Measure(sound, stages.Stage(0));
+            AnalysisResult result;
+            using (Timing.Measure("analysis.postprocess")) result = AnalysisPostProcessor.Process(raw, registerFloorHz);
             stages.Complete(1);
             return result;
         }, cancellationToken);
@@ -40,7 +43,8 @@ public sealed class AcousticsAnalysisEngine : IAnalysisEngine
     {
         var stages = new StageProgress(progress, 0.97, 0.03);
         var tracks = MeasureTracks(sound, stages.Stage(0));
-        var raw = RawAnalysisAssembler.Assemble(tracks);
+        RawAnalysis raw;
+        using (Timing.Measure("analysis.assemble")) raw = RawAnalysisAssembler.Assemble(tracks);
         stages.Complete(1);
         return raw;
     }
@@ -54,18 +58,34 @@ public sealed class AcousticsAnalysisEngine : IAnalysisEngine
         HarmonicityContour harmonicity = null!;
         FormantContour formant5500 = null!, formant5000 = null!;
         Ltas ltas = null!;
-        // Weights: CPU time of each stage on a 27.6 s take (ms, Release); pulses run after the rest.
-        var stages = new StageProgress(progress, 80, 50, 155, 330, 330, 135, 160);
+        // Weights: how long each stage takes (ms, 30 s take on a Pixel 4a, all running together);
+        // pulses run after the rest, so theirs is scaled to their share of the wall time.
+        var stages = new StageProgress(progress, 90, 60, 240, 420, 120, 67);
         Parallel.Invoke(
-            () => pitch = PitchAnalyzer.Autocorrelation(sound, 0, PitchFloor, PitchCeiling, progress: stages.Stage(0)),
-            () => { intensity = IntensityAnalyzer.Analyze(sound, PitchFloor); stages.Complete(1); },
-            () => harmonicity = HarmonicityAnalyzer.CrossCorrelation(sound, 0.01, PitchFloor, 0.1, 1.0, stages.Stage(2)),
-            () => formant5500 = FormantAnalyzer.Burg(sound, 0, 5, RawAnalysisAssembler.FormantCeiling, 0.025, 50, stages.Stage(3)),
-            () => formant5000 = FormantAnalyzer.Burg(sound, 0, 5, 5000, 0.025, 50, stages.Stage(4)),
-            () => { ltas = Ltas.FromSound(sound, 100); stages.Complete(5); });
+            () => { using (Timing.Measure("analysis.pitch")) pitch = PitchAnalyzer.Autocorrelation(sound, 0, PitchFloor, PitchCeiling, progress: stages.Stage(0)); },
+            () => { using (Timing.Measure("analysis.intensity")) intensity = IntensityAnalyzer.Analyze(sound, PitchFloor); stages.Complete(1); },
+            () => { using (Timing.Measure("analysis.hnr")) harmonicity = HarmonicityAnalyzer.CrossCorrelation(sound, 0.01, PitchFloor, 0.1, 1.0, stages.Stage(2)); },
+            () =>
+            {
+                // Both ceilings share the resampling's forward transform.
+                using (Timing.Measure("analysis.formants"))
+                {
+                    double[] ceilings = [RawAnalysisAssembler.FormantCeiling, 5000];
+                    var formantStages = new StageProgress(stages.Stage(3), 85, 15);
+                    Sound[] resampled;
+                    using (Timing.Measure("analysis.formants.resample"))
+                        resampled = FormantAnalyzer.ResampleForCeilings(sound, ceilings, formantStages.Stage(0));
+                    FormantContour[] contours;
+                    using (Timing.Measure("analysis.formants.frames"))
+                        contours = FormantAnalyzer.BurgResampled(resampled, ceilings, 0, 5, 0.025, 50, formantStages.Stage(1));
+                    (formant5500, formant5000) = (contours[0], contours[1]);
+                }
+            },
+            () => { using (Timing.Measure("analysis.ltas")) ltas = Ltas.FromSound(sound, 100); stages.Complete(4); });
 
-        var pulses = PulseDetector.PeriodicCrossCorrelation(sound, pitch);
-        stages.Complete(6);
+        double[] pulses;
+        using (Timing.Measure("analysis.pulses")) pulses = PulseDetector.PeriodicCrossCorrelation(sound, pitch);
+        stages.Complete(5);
         return new FrameTracks
         {
             Duration = sound.Duration,

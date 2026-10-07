@@ -77,6 +77,8 @@ public sealed class ContourChart : ThemedControl
 
     public override void Render(DrawingContext ctx)
     {
+        if (!IsOnScreen) return;
+        using var perf = Diagnostics.Perf.Measure("render.ContourChart");
         _dots.Clear();
         var d = Detail;
         var w = Bounds.Width;

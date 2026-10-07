@@ -61,6 +61,8 @@ public sealed class WaveformView : ThemedControl
 
     public override void Render(DrawingContext ctx)
     {
+        if (!IsOnScreen) return;
+        using var perf = Diagnostics.Perf.Measure("render.WaveformView");
         var w = Bounds.Width;
         if (w <= 0) return;
         var peaks = Peaks;

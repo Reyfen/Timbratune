@@ -59,6 +59,8 @@ public sealed class LineChart : ThemedControl
 
     public override void Render(DrawingContext ctx)
     {
+        if (!IsOnScreen) return;
+        using var perf = Diagnostics.Perf.Measure("render.LineChart");
         _dots.Clear();
         var points = Points ?? [];
         var w = Bounds.Width;

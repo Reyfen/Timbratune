@@ -139,7 +139,7 @@ public sealed partial class LiveTimelinesViewModel : ObservableObject
             start = 0;
             duration = AxisFor(snapshot.Elapsed);
         }
-        var detail = snapshot.Result?.Detail;
+        var detail = snapshot.Contour ?? snapshot.Result?.Detail;
         var now = snapshot.Elapsed;
         List<TimedValue> Smooth(IReadOnlyList<TimedValue> points, SmoothingSpec spec) =>
             RecentWindow.Smooth(RecentWindow.From(points, start - spec.HalfWidth - spec.MaxGap), spec, start, now);

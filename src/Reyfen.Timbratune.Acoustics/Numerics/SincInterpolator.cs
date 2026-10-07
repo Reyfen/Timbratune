@@ -16,6 +16,16 @@ public static class SincInterpolator
     public const int Linear = 1;
     public const int Cubic = 2;
 
+    // cos/sin of the window's per-sample angle π / (depth + ½): the same values each call, so
+    // computed once per depth (the resampler interpolates hundreds of thousands of samples).
+    private static readonly (double Cos, double Sin)[] s_windowSteps = Enumerable.Range(0, 257).Select(WindowStep).ToArray();
+
+    private static (double Cos, double Sin) WindowStep(int depth)
+    {
+        var windowStep = Math.PI / (depth + 0.5);
+        return (Math.Cos(windowStep), Math.Sin(windowStep));
+    }
+
     /// <param name="y">Samples; y[0] is sample number 1.</param>
     /// <param name="x">Fractional 1-based sample number.</param>
     /// <param name="maxDepth">Number of samples used on each side (clipped at the edges).</param>
@@ -47,9 +57,7 @@ public static class SincInterpolator
         // flips the sign of sin(d), and the window cosine advances by a fixed angle, so it is
         // updated with the angle-addition formulas instead of being recomputed per term.
         var halfWidth = maxDepth + 0.5;
-        var windowStep = Math.PI / halfWidth;
-        var cosStep = Math.Cos(windowStep);
-        var sinStep = Math.Sin(windowStep);
+        var (cosStep, sinStep) = maxDepth < s_windowSteps.Length ? s_windowSteps[maxDepth] : WindowStep(maxDepth);
         var sum = 0.0;
 
         // Left half: k = midLeft, midLeft − 1, …, midLeft − maxDepth + 1; d = π(x − k) > 0 grows by π.

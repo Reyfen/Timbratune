@@ -3,6 +3,8 @@ using Reyfen.Timbratune.Acoustics.Formants;
 using Reyfen.Timbratune.Acoustics.Spectral;
 using Reyfen.Timbratune.Acoustics.Streaming;
 using Reyfen.Timbratune.Acoustics.Voice;
+using Reyfen.Timbratune.Core.Diagnostics;
+using Reyfen.Timbratune.Core.Models;
 
 namespace Reyfen.Timbratune.Core.Analysis;
 
@@ -31,6 +33,12 @@ public sealed record LiveSeries
 public sealed record LiveSnapshot(double Elapsed, AnalysisResult? Result, LiveSeries Series, bool IsFinal)
 {
     public static readonly LiveSnapshot Empty = new(0, null, LiveSeries.Empty, false);
+
+    /// <summary>
+    /// The pitch frames and phrases so far (what the live graphs draw): the result's detail
+    /// after a full update, or just this after a quick one (<see cref="Result"/> null then).
+    /// </summary>
+    public RecordingDetail? Contour { get; init; }
 }
 
 /// <summary>
@@ -111,7 +119,13 @@ public sealed class LiveAnalyzer
     /// <paramref name="length"/> the take is treated as ending after that many samples
     /// (see <see cref="AlignedLength"/>).
     /// </summary>
-    public LiveSnapshot Update(bool final = false, int? length = null)
+    /// <param name="full">
+    /// False = a quick update for the live graphs: frames, series, pitch contour and phrases,
+    /// without assembling and post-processing the whole take (statistics, formant and weight
+    /// selection, trends) — that is only needed when the take's cards are refreshed.
+    /// The last update (<paramref name="final"/>) is always full.
+    /// </param>
+    public LiveSnapshot Update(bool final = false, int? length = null, bool full = true)
     {
         lock (_updateGate)
         {
@@ -119,20 +133,22 @@ public sealed class LiveAnalyzer
             if (view.Duration < 0.1) return LiveSnapshot.Empty with { Elapsed = view.Duration, IsFinal = final };
 
             Parallel.Invoke(
-                () => _pitch.Update(view, final),
-                () => _harmonicity.Update(view, final),
-                () => _intensity.Update(view, final),
-                () => _formants5500.Update(view, final),
-                () => _formants5000.Update(view, final));
+                () => { using (Timing.Measure("live.pitch")) _pitch.Update(view, final); },
+                () => { using (Timing.Measure("live.hnr")) _harmonicity.Update(view, final); },
+                () => { using (Timing.Measure("live.intensity")) _intensity.Update(view, final); },
+                () => { using (Timing.Measure("live.formants5500")) _formants5500.Update(view, final); },
+                () => { using (Timing.Measure("live.formants5000")) _formants5000.Update(view, final); });
             if (_pitch.FrameCount == 0 || _intensity.FrameCount == 0)
                 return LiveSnapshot.Empty with { Elapsed = view.Duration, IsFinal = final };
 
-            var pitch = _pitch.Contour(view);
+            Acoustics.Pitch.PitchContour pitch;
+            using (Timing.Measure("live.pitchpath")) pitch = _pitch.Contour(view);
             var intensity = _intensity.Contour(view);
-            var harmonicity = _harmonicity.HarmonicityContour(view);
+            Acoustics.Pitch.HarmonicityContour harmonicity;
+            using (Timing.Measure("live.hnrpath")) harmonicity = _harmonicity.HarmonicityContour(view);
             var sound = view.AsSound();
             var lastFrame = pitch.FrameCount > 0 ? pitch.Grid.IndexToX(pitch.FrameCount - 1) : 0;
-            _pulses.Update(view, pitch, lastFrame - PulseStability, final);
+            using (Timing.Measure("live.pulses")) _pulses.Update(view, pitch, lastFrame - PulseStability, final);
             var pulses = _pulses.Pulses;
 
             var track5500 = _formants5500.Track();
@@ -166,8 +182,24 @@ public sealed class LiveAnalyzer
                 Harmonicity = harmonicity,
                 Pulses = pulses,
             };
-            var result = AnalysisPostProcessor.Process(RawAnalysisAssembler.Assemble(tracks), _registerFloorHz);
-            return new LiveSnapshot(view.Duration, result, BuildSeries(tracks, harmonicity, WeightRow), final);
+            AnalysisResult? result = null;
+            RecordingDetail contour;
+            if (full || final)
+            {
+                RawAnalysis raw;
+                using (Timing.Measure("live.assemble")) raw = RawAnalysisAssembler.Assemble(tracks);
+                using (Timing.Measure("live.postprocess")) result = AnalysisPostProcessor.Process(raw, _registerFloorHz);
+                contour = result.Detail;
+            }
+            else
+            {
+                using (Timing.Measure("live.contour"))
+                    contour = AnalysisPostProcessor.AnalyzeRegister(RawAnalysisAssembler.Contour(pitch), tracks.Sounding, view.Duration,
+                        _registerFloorHz).Detail;
+            }
+            LiveSeries series;
+            using (Timing.Measure("live.series")) series = BuildSeries(tracks, harmonicity, WeightRow);
+            return new LiveSnapshot(view.Duration, result, series, final) { Contour = contour };
         }
     }
 
