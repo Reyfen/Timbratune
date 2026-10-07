@@ -42,12 +42,14 @@ public static class Resampler
             var offset = (double)ch / sound.ChannelCount;
             Action<double>? Part(double from, double share) => progress is null ? null
                 : f => progress(offset + (from + share * f) / sound.ChannelCount);
-            var channel = sound.Channel(ch).ToArray();
+            // The spectrum is taken straight from the channel; a copy is only needed for a rate
+            // that doesn't low-pass (none in the formant analysis).
             var anyLowPass = newSamplingFrequencies.Any(f => f * grid.Step < 1);
-            using var spectrum = anyLowPass ? Spectrum.Of(channel, Part(0, forwardShare)) : null;
+            var channel = newSamplingFrequencies.Any(f => f * grid.Step >= 1) ? sound.Channel(ch).ToArray() : null;
+            using var spectrum = anyLowPass ? Spectrum.Of(sound.Channel(ch), Part(0, forwardShare)) : null;
             // After the shared forward transform, the rates are independent: in parallel.
             var shares = new double[rates];
-            Parallel.For(0, rates, r =>
+            Parallel.For(0, rates, Parallelism.Options, r =>
             {
                 Action<double>? RatePart(double from, double share) => progress is null ? null : f =>
                 {
@@ -58,8 +60,20 @@ public static class Resampler
                     }
                 };
                 var ratio = newSamplingFrequencies[r] * grid.Step;
-                var source = ratio < 1 ? spectrum!.LowPassed(ratio, RatePart(0, 0.9)) : channel.ToArray();
-                results[r][ch] = Interpolate(source, grid, newSamplingFrequencies[r], sincDepth, RatePart(0.9, 0.1));
+                if (ratio < 1)
+                {
+                    // The filtered signal is only needed for the interpolation: a pooled buffer.
+                    var (buffer, start, length) = spectrum!.LowPassed(ratio, RatePart(0, 0.9));
+                    try
+                    {
+                        results[r][ch] = Interpolate(buffer, start, length, grid, newSamplingFrequencies[r], sincDepth, RatePart(0.9, 0.1));
+                    }
+                    finally
+                    {
+                        Release(buffer);
+                    }
+                }
+                else results[r][ch] = Interpolate(channel!, 0, channel!.Length, grid, newSamplingFrequencies[r], sincDepth, RatePart(0.9, 0.1));
             });
         }
         return results.Select((channels, r) => new Sound(channels, NewGrid(grid, newSamplingFrequencies[r]))).ToArray();
@@ -74,7 +88,9 @@ public static class Resampler
     }
 
     /// <summary>The new samples read off <paramref name="source"/> with windowed-sinc interpolation.</summary>
-    private static double[] Interpolate(double[] source, TimeGrid grid, double newSamplingFrequency, int sincDepth, Action<double>? progress)
+    /// <param name="source">The signal: <paramref name="length"/> samples from <paramref name="start"/>.</param>
+    private static double[] Interpolate(double[] source, int start, int length, TimeGrid grid, double newSamplingFrequency, int sincDepth,
+        Action<double>? progress)
     {
         var newGrid = NewGrid(grid, newSamplingFrequency);
         var n = newGrid.Count;
@@ -82,11 +98,11 @@ public static class Resampler
         var counter = new FrameProgress(chunks, progress);
         var output = new double[n];
         // Every output sample is independent, so chunks run in parallel with identical results.
-        Parallel.For(0, chunks, c =>
+        Parallel.For(0, chunks, Parallelism.Options, c =>
         {
             var end = Math.Min(n, (c + 1) * Chunk);
             for (var i = c * Chunk; i < end; i++)
-                output[i] = SincInterpolator.Interpolate(source, grid.XToIndex(newGrid.IndexToX(i)) + 1, sincDepth);
+                output[i] = SincInterpolator.Interpolate(source.AsSpan(start, length), grid.XToIndex(newGrid.IndexToX(i)) + 1, sincDepth);
             counter.Done();
         });
         return output;
@@ -134,8 +150,12 @@ public static class Resampler
             }
         }
 
-        /// <summary>The signal with all spectral content above ratio × (old Nyquist) zeroed (a brick-wall low-pass).</summary>
-        public double[] LowPassed(double ratio, Action<double>? progress)
+        /// <summary>
+        /// The signal with all spectral content above ratio × (old Nyquist) zeroed (a brick-wall
+        /// low-pass): <c>Length</c> samples from <c>Start</c> in a pooled <c>Buffer</c>, which the
+        /// caller gives back with <see cref="Release"/>.
+        /// </summary>
+        public (double[] Buffer, int Start, int Length) LowPassed(double ratio, Action<double>? progress)
         {
             var nfft = _nfft;
             var bins = nfft / 2 + 1;
@@ -160,11 +180,15 @@ public static class Resampler
                 var passes = Fft.PassCount(nfft / 2);
                 var done = 0;
                 Fft.RealInverseHalf(re, im, nfft, padded, progress is null ? null : () => progress((double)++done / passes));
-                return padded.AsSpan(Padding, _length).ToArray();
+                return (padded, Padding, _length);
+            }
+            catch
+            {
+                Release(padded);
+                throw;
             }
             finally
             {
-                Release(padded);
                 System.Buffers.ArrayPool<double>.Shared.Return(re);
                 System.Buffers.ArrayPool<double>.Shared.Return(im);
             }

@@ -65,7 +65,7 @@ public static class PitchAnalyzer
         else
         {
             var counter = new FrameProgress(frames.Count, progress);
-            Parallel.For(0, frames.Count, analyzer.CreateBuffers,
+            Parallel.For(0, frames.Count, Parallelism.Options, analyzer.CreateBuffers,
                 (i, _, buffers) =>
                 {
                     result[i] = analyzer.AnalyzeFrame(channels, grid, frames.IndexToX(i), buffers);

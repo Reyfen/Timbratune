@@ -76,28 +76,50 @@ public sealed class TimelineChart : ThemedControl
             var top = z == zones.Count - 1 ? Hi : Math.Min(Hi, zones[z].To);
             var bottom = z == 0 ? Lo : Math.Max(Lo, zones[z].From);
             if (top <= bottom) continue;
-            ctx.FillRectangle(new SolidColorBrush(ZoneColor(zones[z].Color), 0.35), new Rect(PadL, Y(top), iw, Y(bottom) - Y(top)));
+            ctx.FillRectangle(ZoneBrush(z, ZoneColor(zones[z].Color)), new Rect(PadL, Y(top), iw, Y(bottom) - Y(top)));
         }
 
         var soft = C("InkSoft");
-        foreach (var v in new[] { Lo, Hi }.Concat(zones.Skip(1).Select(z => z.From)).Where(v => v > Lo && v < Hi || v == Lo || v == Hi).Distinct())
+        // Axis values: the scale's ends and the inner zone boundaries.
+        void AxisLabel(double v)
         {
             var label = Text(Math.Round(v, 1).ToString(CultureInfo.InvariantCulture), 10, soft);
             ctx.DrawText(label, new Point(PadL - 5 - label.Width, Y(v) - label.Height / 2));
         }
+        AxisLabel(Lo);
+        AxisLabel(Hi);
+        for (var k = 1; k < zones.Count; k++)
+            if (zones[k].From > Lo && zones[k].From < Hi) AxisLabel(zones[k].From);
         ctx.DrawText(Text(Seconds(start), 10, soft), new Point(PadL, H - PadB + 4));
         var end = Text(Seconds(start + duration), 10, soft);
         ctx.DrawText(end, new Point(w - PadR - end.Width, H - PadB + 4));
 
         var line = Line is { } target ? _easing.Current(target) : null;
-        DrawLine(ctx, line, new Pen(B("InkStrong"), 3, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round), X, Y, start);
+        var ink = C("InkStrong");
+        if (_linePen?.Brush is not SolidColorBrush lb || lb.Color != ink)
+        {
+            _linePen = new Pen(new SolidColorBrush(ink), 3, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round);
+            _dotPen = new Pen(new SolidColorBrush(ink), 2.5);
+        }
+        DrawLine(ctx, line, _linePen, X, Y, start);
         // The current point: the latest settled-enough value (it stays put through a pause).
         var lastIndex = line is null ? -1 : FindLastValue(line);
         if (lastIndex >= 0 && line![lastIndex].T >= start)
         {
             var last = line[lastIndex];
-            ctx.DrawEllipse(B("Card"), new Pen(B("InkStrong"), 2.5), new Point(X(last.T), Y(last.Value)), 5.5, 5.5);
+            ctx.DrawEllipse(B("Card"), _dotPen, new Point(X(last.T), Y(last.Value)), 5.5, 5.5);
         }
+    }
+
+    private Pen? _linePen, _dotPen;
+    private readonly List<SolidColorBrush> _zoneBrushes = [];
+
+    /// <summary>Zone band brushes kept between frames (rebuilt when a colour changes).</summary>
+    private SolidColorBrush ZoneBrush(int index, Color color)
+    {
+        while (_zoneBrushes.Count <= index) _zoneBrushes.Add(new SolidColorBrush(color, 0.35));
+        if (_zoneBrushes[index].Color != color) _zoneBrushes[index] = new SolidColorBrush(color, 0.35);
+        return _zoneBrushes[index];
     }
 
     private static int FindLastValue(IReadOnlyList<TimedValue> line)
@@ -113,16 +135,27 @@ public sealed class TimelineChart : ThemedControl
         Func<double, double> y, double start)
     {
         if (points is not { Count: > 0 }) return;
+        // At most about one point per pixel (closer points are skipped, but each stretch keeps its
+        // last point): the lines are redrawn every frame while they glide.
+        const double MinStep = 0.75;
         var geo = new StreamGeometry();
         using (var g = geo.Open())
         {
             var open = false;
-            foreach (var p in points)
+            var lastX = double.NegativeInfinity;
+            Point? pending = null;
+            for (var i = 0; i < points.Count; i++)
             {
+                var p = points[i];
                 if (double.IsNaN(p.Value) || p.T < start)
                 {
-                    if (open) g.EndFigure(false);
+                    if (open)
+                    {
+                        if (pending is { } last) g.LineTo(last);
+                        g.EndFigure(false);
+                    }
                     open = false;
+                    pending = null;
                     continue;
                 }
                 var at = new Point(x(p.T), y(p.Value));
@@ -131,10 +164,21 @@ public sealed class TimelineChart : ThemedControl
                     g.BeginFigure(at, false);
                     g.LineTo(at); // a lone point still shows as a dot with round caps
                     open = true;
+                    lastX = at.X;
                 }
-                else g.LineTo(at);
+                else if (at.X - lastX >= MinStep)
+                {
+                    g.LineTo(at);
+                    lastX = at.X;
+                    pending = null;
+                }
+                else pending = at;
             }
-            if (open) g.EndFigure(false);
+            if (open)
+            {
+                if (pending is { } last) g.LineTo(last);
+                g.EndFigure(false);
+            }
         }
         ctx.DrawGeometry(null, pen, geo);
     }

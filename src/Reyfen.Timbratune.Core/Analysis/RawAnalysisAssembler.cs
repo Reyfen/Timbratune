@@ -1,3 +1,4 @@
+using Reyfen.Timbratune.Acoustics.Numerics;
 using Reyfen.Timbratune.Acoustics;
 using Reyfen.Timbratune.Acoustics.Formants;
 using Reyfen.Timbratune.Acoustics.Intensity;
@@ -121,12 +122,15 @@ public static class RawAnalysisAssembler
         return points;
     }
 
-    public static List<(double T, double F0)> VoicedFrames(PitchContour pitch)
+    public static List<(double T, double F0)> VoicedFrames(PitchContour pitch) => VoicedFrames(pitch, []);
+
+    /// <summary>The same, filling <paramref name="into"/> (cleared first) so the live analysis can reuse one list.</summary>
+    public static List<(double T, double F0)> VoicedFrames(PitchContour pitch, List<(double T, double F0)> into)
     {
-        var voiced = new List<(double, double)>();
+        into.Clear();
         for (var i = 0; i < pitch.FrameCount; i++)
-            if (pitch.IsVoiced(i)) voiced.Add((pitch.Grid.IndexToX(i), pitch.ValueInFrame(i)));
-        return voiced;
+            if (pitch.IsVoiced(i)) into.Add((pitch.Grid.IndexToX(i), pitch.ValueInFrame(i)));
+        return into;
     }
 
     /// <summary>
@@ -153,11 +157,18 @@ public static class RawAnalysisAssembler
     }
 
     /// <summary>Times of voiced frames within 10 dB of the loudest intensity frame.</summary>
-    public static List<double> LoudVoicedTimes(List<(double T, double F0)> voiced, IntensityContour intensity)
+    public static List<double> LoudVoicedTimes(List<(double T, double F0)> voiced, IntensityContour intensity) =>
+        LoudVoicedTimes(voiced, intensity, []);
+
+    /// <summary>The same, filling <paramref name="candidates"/> (cleared first).</summary>
+    public static List<double> LoudVoicedTimes(List<(double T, double F0)> voiced, IntensityContour intensity, List<double> candidates)
     {
         var db = intensity.Db;
-        var loudFloor = db.Where(v => !double.IsNaN(v)).DefaultIfEmpty(double.NaN).Max() - 10;
-        var candidates = new List<double>();
+        var loudFloor = double.NaN;
+        foreach (var v in db)
+            if (!double.IsNaN(v) && !(v <= loudFloor)) loudFloor = v;
+        loudFloor -= 10;
+        candidates.Clear();
         var p = 0;
         foreach (var (t, _) in voiced)
         {
@@ -172,7 +183,7 @@ public static class RawAnalysisAssembler
     {
         var frames = Subsample(voiced, 250);
         var rows = new RawAnalysis.WeightRow?[frames.Count];
-        Parallel.For(0, frames.Count, k => rows[k] = weightRow(frames[k].T, frames[k].F0));
+        Parallel.For(0, frames.Count, Parallelism.Options, k => rows[k] = weightRow(frames[k].T, frames[k].F0));
         return rows.Where(r => r.HasValue).Select(r => r!.Value).ToList();
     }
 

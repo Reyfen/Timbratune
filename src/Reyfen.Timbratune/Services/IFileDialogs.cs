@@ -21,4 +21,5 @@ public sealed record AppServices(
     PlaybackService Playback,
     IFileDialogs Dialogs,
     string? ReferenceDir = null,
-    Func<Task<bool>>? RequestMicrophone = null);
+    Func<Task<bool>>? RequestMicrophone = null,
+    Action? LowerThreadPriority = null);

@@ -1,3 +1,4 @@
+using Reyfen.Timbratune.Acoustics.Numerics;
 using System.Collections.Concurrent;
 using Reyfen.Timbratune.Acoustics.Formants;
 using Reyfen.Timbratune.Acoustics.Spectral;
@@ -132,12 +133,12 @@ public sealed class LiveAnalyzer
             var view = length is { } n ? _signal.View(n) : _signal.View();
             if (view.Duration < 0.1) return LiveSnapshot.Empty with { Elapsed = view.Duration, IsFinal = final };
 
-            Parallel.Invoke(
+            Parallel.Invoke(Parallelism.Options,
                 () => { using (Timing.Measure("live.pitch")) _pitch.Update(view, final); },
                 () => { using (Timing.Measure("live.hnr")) _harmonicity.Update(view, final); },
                 () => { using (Timing.Measure("live.intensity")) _intensity.Update(view, final); },
-                () => { using (Timing.Measure("live.formants5500")) _formants5500.Update(view, final); },
-                () => { using (Timing.Measure("live.formants5000")) _formants5000.Update(view, final); });
+                // Both ceilings share each block's segment and resampling.
+                () => { using (Timing.Measure("live.formants")) LiveFormantTracker.UpdateAll([_formants5500, _formants5000], view, final); });
             if (_pitch.FrameCount == 0 || _intensity.FrameCount == 0)
                 return LiveSnapshot.Empty with { Elapsed = view.Duration, IsFinal = final };
 
@@ -203,20 +204,41 @@ public sealed class LiveAnalyzer
         }
     }
 
+    /// <summary>
+    /// The series lists, two sets used in turn: each update refills one, so the previous
+    /// snapshot's lists stay intact while the next is built, and no whole-take lists are
+    /// allocated per update (they were a large share of the live analysis' garbage).
+    /// </summary>
+    private sealed class SeriesBuffers
+    {
+        public readonly List<TimedValue> Loudness = [], Hnr = [], F2 = [], F3 = [], Weight = [], Jitter = [];
+        public readonly List<(double T, double F0)> Voiced = [];
+        public readonly List<double> LoudTimes = [];
+        public RawAnalysis.WeightRow?[] Rows = [];
+    }
+
+    private readonly SeriesBuffers[] _series = [new(), new()];
+    private int _seriesTurn;
+
     private LiveSeries BuildSeries(FrameTracks t, Acoustics.Pitch.HarmonicityContour harmonicity,
         Func<double, double, RawAnalysis.WeightRow?> weightRow)
     {
-        var loudness = new List<TimedValue>(t.Intensity.Db.Count);
+        var b = _series[_seriesTurn ^= 1];
+        var loudness = b.Loudness;
+        loudness.Clear();
         for (var i = 0; i < t.Intensity.Db.Count; i++) loudness.Add(new(t.Intensity.Grid.IndexToX(i), t.Intensity.Db[i]));
 
-        var hnr = new List<TimedValue>();
+        var hnr = b.Hnr;
+        hnr.Clear();
         for (var i = 0; i < harmonicity.Db.Count; i++)
             if (harmonicity.Db[i] != Acoustics.Pitch.HarmonicityContour.Unvoiced) hnr.Add(new(harmonicity.Grid.IndexToX(i), harmonicity.Db[i]));
 
-        var voiced = RawAnalysisAssembler.VoicedFrames(t.Pitch);
-        var f2 = new List<TimedValue>();
-        var f3 = new List<TimedValue>();
-        foreach (var time in RawAnalysisAssembler.LoudVoicedTimes(voiced, t.Intensity))
+        var voiced = RawAnalysisAssembler.VoicedFrames(t.Pitch, b.Voiced);
+        var f2 = b.F2;
+        var f3 = b.F3;
+        f2.Clear();
+        f3.Clear();
+        foreach (var time in RawAnalysisAssembler.LoudVoicedTimes(voiced, t.Intensity, b.LoudTimes))
         {
             double v1 = t.Formants5500.ValueAtTime(1, time), v2 = t.Formants5500.ValueAtTime(2, time), v3 = t.Formants5500.ValueAtTime(3, time);
             if (!(v1 >= 250 && v1 <= 1000 && v2 > 0 && v3 > 0)) continue;
@@ -224,17 +246,22 @@ public sealed class LiveAnalyzer
             f3.Add(new(time, v3));
         }
 
-        var rows = new RawAnalysis.WeightRow?[voiced.Count];
-        Parallel.For(0, voiced.Count, k => rows[k] = weightRow(voiced[k].T, voiced[k].F0));
-        var weight = new List<TimedValue>();
-        foreach (var row in rows)
+        if (b.Rows.Length < voiced.Count) b.Rows = new RawAnalysis.WeightRow?[Math.Max(voiced.Count, 2 * b.Rows.Length)];
+        var rows = b.Rows;
+        Parallel.For(0, voiced.Count, Parallelism.Options, k => rows[k] = weightRow(voiced[k].T, voiced[k].F0));
+        var weight = b.Weight;
+        weight.Clear();
+        for (var k = 0; k < voiced.Count; k++)
         {
-            if (row is not { } w) continue;
+            if (rows[k] is not { } w) continue;
             var value = AnalysisPostProcessor.CorrectedH1A3(w, t.SamplingFrequency);
             if (double.IsFinite(value)) weight.Add(new(w.T, value));
         }
 
-        var jitter = _pulses.StretchJitter.Where(s => double.IsFinite(s.Jitter)).Select(s => new TimedValue(s.End, s.Jitter * 100)).ToList();
+        var jitter = b.Jitter;
+        jitter.Clear();
+        foreach (var s in _pulses.StretchJitter)
+            if (double.IsFinite(s.Jitter)) jitter.Add(new TimedValue(s.End, s.Jitter * 100));
         return new LiveSeries { Loudness = loudness, Hnr = hnr, F2 = f2, F3 = f3, Weight = weight, Jitter = jitter };
     }
 }

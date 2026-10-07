@@ -25,7 +25,7 @@ public sealed class LineEasing(Control owner)
     public void Retarget(IReadOnlyList<TimedValue>? old)
     {
         // Out of view there is nothing to glide: it is drawn at the new values when it comes back.
-        if (owner is ThemedControl { IsOnScreen: false })
+        if (owner is ThemedControl { IsOnScreen: false } || Diagnostics.Perf.Flags.Contains("noease"))
         {
             _from = null;
             return;
@@ -36,8 +36,21 @@ public sealed class LineEasing(Control owner)
         RequestFrame();
     }
 
-    /// <summary>What to draw now for the target line.</summary>
-    public IReadOnlyList<TimedValue> Current(IReadOnlyList<TimedValue> target) => Blend(_from, target, Progress());
+    /// <summary>
+    /// What to draw now for the target line. While gliding this is a view over a buffer reused
+    /// every frame (valid until the next call): a new array per frame was most of a live
+    /// chart's garbage.
+    /// </summary>
+    public IReadOnlyList<TimedValue> Current(IReadOnlyList<TimedValue> target)
+    {
+        var p = Progress();
+        if (_from is not { Count: > 0 } || p >= 1) return target;
+        if (_drawn.Length < target.Count) _drawn = new TimedValue[Math.Max(target.Count, 2 * _drawn.Length)];
+        BlendInto(_from, target, p, _drawn);
+        return new ArraySegment<TimedValue>(_drawn, 0, target.Count);
+    }
+
+    private TimedValue[] _drawn = [];
 
     private double Progress() =>
         _from is null ? 1 : Math.Clamp(Stopwatch.GetElapsedTime(_start).TotalSeconds / EaseSeconds, 0, 1);
@@ -59,15 +72,20 @@ public sealed class LineEasing(Control owner)
     private static IReadOnlyList<TimedValue> Blend(IReadOnlyList<TimedValue>? from, IReadOnlyList<TimedValue> to, double p)
     {
         if (from is not { Count: > 0 } || p >= 1) return to;
-        var e = 1 - Math.Pow(1 - p, 3); // ease-out
         var result = new TimedValue[to.Count];
+        BlendInto(from, to, p, result);
+        return result;
+    }
+
+    private static void BlendInto(IReadOnlyList<TimedValue> from, IReadOnlyList<TimedValue> to, double p, TimedValue[] result)
+    {
+        var e = 1 - Math.Pow(1 - p, 3); // ease-out
         for (var i = 0; i < to.Count; i++)
         {
             var v = to[i].Value;
             if (!double.IsNaN(v) && ValueAt(from, to[i].T) is { } old) v = old + (v - old) * e;
             result[i] = new TimedValue(to[i].T, v);
         }
-        return result;
     }
 
     /// <summary>The drawn value at time t: interpolated inside a stretch, or the stretch's end value just after it.</summary>

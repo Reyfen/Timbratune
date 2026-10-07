@@ -54,9 +54,11 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
             Recorder: recorder,
             Playback: new PlaybackService(audio.CreatePlayer()),
             Dialogs: dialogs,
-            RequestMicrophone: RequestMicrophoneAsync);
+            RequestMicrophone: RequestMicrophoneAsync,
+            LowerThreadPriority: () => global::Android.OS.Process.SetThreadPriority(global::Android.OS.ThreadPriority.Background));
 #if PROFILING
-        Diagnostics.Perf.Sink = line => global::Android.Util.Log.Info("Timbratune", line);
+        // "noprobes": keep the fake mic and switches but log nothing (the probes' own cost out of the measurement).
+        if (!Diagnostics.Perf.Flags.Contains("noprobes")) Diagnostics.Perf.Sink = line => global::Android.Util.Log.Info("Timbratune", line);
 #endif
         base.OnCreate(savedInstanceState);
 #if PROFILING

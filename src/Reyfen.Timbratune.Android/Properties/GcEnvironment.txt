@@ -1,0 +1,1 @@
+MONO_GC_PARAMS=nursery-size=16m,major=marksweep-conc

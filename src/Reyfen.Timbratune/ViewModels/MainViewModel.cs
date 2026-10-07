@@ -22,7 +22,7 @@ public sealed partial class MainViewModel : ObservableObject
     {
         _services = services;
         Record = new RecordViewModel(services.Recorder, services.Engine, services.Store, () => ReloadAsync(selectLatest: true),
-            services.RequestMicrophone);
+            services.RequestMicrophone, services.LowerThreadPriority);
         OpenMetricCommand = new RelayCommand<MetricKey>(OpenMetric);
         if (Features.ReferenceVoices && services.ReferenceDir is { } referenceDir) _references = LoadReferences(referenceDir);
     }

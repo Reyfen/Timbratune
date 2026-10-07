@@ -32,6 +32,14 @@
   <ItemGroup>
     <PackageReference Include="Avalonia.Android" />
   </ItemGroup>
+  <!-- Mono garbage collector: a 16 MB nursery (default 4 MB) and concurrent marking for full
+       collections (Properties/GcEnvironment.txt). While recording, the live analysis and the
+       charts allocate ~15-20 MB/s; with the defaults the collections' stop-the-world pauses
+       were most of the remaining dropped frames on a Pixel 9 (UI stalls per 30 s ~15 -> 3-5).
+       32 MB makes the runtime fail to start. -p:TimbratuneGcEnv=false leaves the defaults. -->
+  <ItemGroup Condition="'$(TimbratuneGcEnv)' != 'false'">
+    <AndroidEnvironment Include="Properties\GcEnvironment.txt" />
+  </ItemGroup>
   <ItemGroup>
     <!-- Emoji subset of Noto Color Emoji (SIL OFL 1.1, licence alongside): see MainActivity. -->
     <AvaloniaResource Include="Assets\Fonts\TimbratuneEmoji.ttf" />

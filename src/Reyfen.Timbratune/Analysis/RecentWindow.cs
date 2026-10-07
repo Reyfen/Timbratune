@@ -82,7 +82,7 @@ public static class RecentWindow
     public static List<TimedValue> Smooth(IReadOnlyList<TimedValue> points, SmoothingSpec spec, double from = 0, double? now = null,
         IReadOnlyList<double>? keepBreaksAt = null)
     {
-        var raw = new List<TimedValue>();
+        var raw = new List<TimedValue>(Math.Max(16, points.Count / 2));
         var scratch = new double[16];
         double? previousEnd = null; // last drawn time of the previous stretch
         var first = 0;
@@ -147,7 +147,15 @@ public static class RecentWindow
 
     private static List<TimedValue> BreakJumps(List<TimedValue> line, double ratio)
     {
-        var result = new List<TimedValue>(line.Count);
+        // Most stretches have no jump: then the line is returned as is (no copy).
+        var any = false;
+        for (var i = 1; i < line.Count && !any; i++)
+        {
+            double a = line[i - 1].Value, b = line[i].Value;
+            any = !double.IsNaN(a) && !double.IsNaN(b) && a > 0 && b > 0 && Math.Max(a, b) / Math.Min(a, b) > ratio;
+        }
+        if (!any) return line;
+        var result = new List<TimedValue>(line.Count + 4);
         for (var i = 0; i < line.Count; i++)
         {
             if (i > 0 && line[i - 1].Value is var a && line[i].Value is var b && !double.IsNaN(a) && !double.IsNaN(b)
@@ -260,25 +268,25 @@ public static class RecentWindow
     }
 
     /// <summary>A short centred mean over neighbouring grid values, never across a break.</summary>
+    /// <remarks>In place: the original values are read from a reused scratch copy (same arithmetic, no new list).</remarks>
     private static List<TimedValue> Polish(List<TimedValue> line, int radius)
     {
         if (radius <= 0) return line;
-        var result = new List<TimedValue>(line.Count);
+        var values = s_polishScratch is { } scratch && scratch.Length >= line.Count ? scratch : s_polishScratch = new double[Math.Max(line.Count, 256)];
+        for (var i = 0; i < line.Count; i++) values[i] = line[i].Value;
         for (var i = 0; i < line.Count; i++)
         {
-            if (double.IsNaN(line[i].Value))
-            {
-                result.Add(line[i]);
-                continue;
-            }
-            double sum = line[i].Value;
+            if (double.IsNaN(values[i])) continue;
+            double sum = values[i];
             var n = 1;
-            for (var j = i - 1; j >= Math.Max(0, i - radius) && !double.IsNaN(line[j].Value); j--) { sum += line[j].Value; n++; }
-            for (var j = i + 1; j <= Math.Min(line.Count - 1, i + radius) && !double.IsNaN(line[j].Value); j++) { sum += line[j].Value; n++; }
-            result.Add(new TimedValue(line[i].T, sum / n));
+            for (var j = i - 1; j >= Math.Max(0, i - radius) && !double.IsNaN(values[j]); j--) { sum += values[j]; n++; }
+            for (var j = i + 1; j <= Math.Min(line.Count - 1, i + radius) && !double.IsNaN(values[j]); j++) { sum += values[j]; n++; }
+            line[i] = new TimedValue(line[i].T, sum / n);
         }
-        return result;
+        return line;
     }
+
+    [ThreadStatic] private static double[]? s_polishScratch;
 
     /// <summary>The points from the first one at or after <paramref name="from"/> (binary search).</summary>
     public static IReadOnlyList<TimedValue> From(IReadOnlyList<TimedValue> points, double from)
@@ -291,8 +299,20 @@ public static class RecentWindow
             else hi = mid;
         }
         if (lo == 0) return points;
-        var result = new List<TimedValue>(points.Count - lo);
-        for (var i = lo; i < points.Count; i++) result.Add(points[i]);
-        return result;
+        return new Tail(points, lo); // a view, not a copy (this runs for every line on every live update)
+    }
+
+    /// <summary>The points of <paramref name="source"/> from index <paramref name="start"/> on.</summary>
+    private sealed class Tail(IReadOnlyList<TimedValue> source, int start) : IReadOnlyList<TimedValue>
+    {
+        public TimedValue this[int index] => source[start + index];
+        public int Count => source.Count - start;
+
+        public IEnumerator<TimedValue> GetEnumerator()
+        {
+            for (var i = start; i < source.Count; i++) yield return source[i];
+        }
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
     }
 }

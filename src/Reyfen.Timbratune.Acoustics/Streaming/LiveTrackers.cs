@@ -1,3 +1,4 @@
+using Reyfen.Timbratune.Acoustics.Numerics;
 using Reyfen.Timbratune.Acoustics.Formants;
 using Reyfen.Timbratune.Acoustics.Intensity;
 using Reyfen.Timbratune.Acoustics.Pitch;
@@ -65,7 +66,7 @@ public sealed class LivePitchTracker
         if (pending.Count == 0) return;
         var results = new PitchFrame[pending.Count];
         var channels = signal.Channels;
-        Parallel.For(0, pending.Count, _analyzer.RentBuffers, (i, _, buffers) =>
+        Parallel.For(0, pending.Count, Parallelism.Options, _analyzer.RentBuffers, (i, _, buffers) =>
         {
             results[i] = _analyzer.AnalyzeFrame(channels, signal.Grid, pending[i], buffers);
             return buffers;
@@ -126,53 +127,84 @@ public sealed class LiveFormantTracker(double formantCeiling, double maxFormants
     double preEmphasisFrom = 50, double blockSeconds = 0.5, double marginSeconds = 0.25)
 {
     private readonly List<(double T, FormantValue[] Formants)> _frames = [];
+    private readonly double _maxFormants = maxFormants, _windowLength = windowLength, _preEmphasisFrom = preEmphasisFrom;
+    private readonly double _blockSeconds = blockSeconds, _marginSeconds = marginSeconds;
 
     /// <summary>Formants are known up to this time (s).</summary>
     public double CoveredUntil { get; private set; }
 
     public double FormantCeiling { get; } = formantCeiling;
 
-    public void Update(LiveSignalView signal, bool final = false)
-    {
-        var duration = signal.Duration;
-        if (!final && duration - CoveredUntil < blockSeconds + marginSeconds) return;
-        var keepUntil = final ? duration + 1 : duration - marginSeconds;
-        var segmentStart = Math.Max(0, CoveredUntil - marginSeconds);
-        if (duration - segmentStart < 2 * windowLength + 0.01) return;
+    public void Update(LiveSignalView signal, bool final = false) => UpdateAll([this], signal, final);
 
-        var segment = signal.AsSound().ExtractPart(segmentStart, duration);
-        var contour = FormantAnalyzer.Burg(segment, 0, maxFormants, FormantCeiling, windowLength, preEmphasisFrom);
-        for (var i = 0; i < contour.Grid.Count; i++)
+    /// <summary>
+    /// Updates several trackers of the same signal at once. Trackers with the same block settings
+    /// that are at the same point share the segment and its resampling (<see cref="FormantAnalyzer.BurgAll"/>,
+    /// identical to separate <see cref="FormantAnalyzer.Burg"/> calls); the others update on their own.
+    /// </summary>
+    public static void UpdateAll(IReadOnlyList<LiveFormantTracker> trackers, LiveSignalView signal, bool final = false)
+    {
+        foreach (var group in trackers.GroupBy(t => (t.CoveredUntil, t._maxFormants, t._windowLength, t._preEmphasisFrom, t._blockSeconds, t._marginSeconds)))
         {
-            var t = contour.Grid.IndexToX(i) + segmentStart;
-            if (t < CoveredUntil || t >= keepUntil) continue;
-            _frames.Add((t, [.. contour.Frames[i]]));
+            var members = group.ToList();
+            var lead = members[0];
+            var duration = signal.Duration;
+            if (!final && duration - lead.CoveredUntil < lead._blockSeconds + lead._marginSeconds) continue;
+            var keepUntil = final ? duration + 1 : duration - lead._marginSeconds;
+            var segmentStart = Math.Max(0, lead.CoveredUntil - lead._marginSeconds);
+            if (duration - segmentStart < 2 * lead._windowLength + 0.01) continue;
+
+            var segment = signal.AsSound().ExtractPart(segmentStart, duration);
+            var contours = FormantAnalyzer.BurgAll(segment, members.Select(m => m.FormantCeiling).ToList(), 0, lead._maxFormants,
+                lead._windowLength, lead._preEmphasisFrom);
+            for (var k = 0; k < members.Count; k++)
+            {
+                var tracker = members[k];
+                var contour = contours[k];
+                for (var i = 0; i < contour.Grid.Count; i++)
+                {
+                    var t = contour.Grid.IndexToX(i) + segmentStart;
+                    if (t < tracker.CoveredUntil || t >= keepUntil) continue;
+                    tracker._frames.Add((t, contour.Frames[i] as FormantValue[] ?? [.. contour.Frames[i]]));
+                }
+                tracker.CoveredUntil = final ? duration : keepUntil;
+            }
         }
-        CoveredUntil = final ? duration : keepUntil;
     }
 
-    public IFormantTrack Track() => new StitchedFormantTrack([.. _frames]);
+    /// <summary>
+    /// The frames so far, as a view (no copy): valid while no update runs, i.e. for use within
+    /// the same live update (the frames are only ever appended).
+    /// </summary>
+    public IFormantTrack Track() => new StitchedFormantTrack(_frames, _frames.Count);
 }
 
 /// <summary>Formant frames at irregular times, interpolated like <see cref="FormantContour"/>.</summary>
-internal sealed class StitchedFormantTrack((double T, FormantValue[] Formants)[] frames) : IFormantTrack
+internal sealed class StitchedFormantTrack(IReadOnlyList<(double T, FormantValue[] Formants)> frames, int count) : IFormantTrack
 {
     public double ValueAtTime(int number, double t) => AtTime(number, t, f => f.Frequency);
     public double BandwidthAtTime(int number, double t) => AtTime(number, t, f => f.Bandwidth);
 
     private double AtTime(int number, double t, Func<FormantValue, double> select)
     {
-        if (frames.Length == 0) return double.NaN;
+        if (count == 0) return double.NaN;
         // Beyond half a frame step outside the known frames, nothing is known.
-        var halfStep = frames.Length > 1 ? 0.5 * (frames[1].T - frames[0].T) : 0.003;
-        if (t < frames[0].T - halfStep || t > frames[^1].T + halfStep) return double.NaN;
+        var halfStep = count > 1 ? 0.5 * (frames[1].T - frames[0].T) : 0.003;
+        if (t < frames[0].T - halfStep || t > frames[count - 1].T + halfStep) return double.NaN;
 
-        var right = Array.BinarySearch(frames, (t, Array.Empty<FormantValue>()), Comparer<(double T, FormantValue[] F)>.Create((a, b) => a.T.CompareTo(b.T)));
-        if (right >= 0) return Get(right);
-        right = ~right; // first frame after t
+        // First frame at or after t (frames are in time order).
+        int lo = 0, hi = count;
+        while (lo < hi)
+        {
+            var mid = (lo + hi) >>> 1;
+            if (frames[mid].T < t) lo = mid + 1;
+            else hi = mid;
+        }
+        if (lo < count && frames[lo].T == t) return Get(lo);
+        var right = lo;
         var left = right - 1;
         if (left < 0) return Get(0);
-        if (right >= frames.Length) return Get(frames.Length - 1);
+        if (right >= count) return Get(count - 1);
         var phase = (t - frames[left].T) / (frames[right].T - frames[left].T);
         int near = left, far = right;
         if (phase >= 0.5)
