@@ -69,7 +69,9 @@ if defined DO_LINUX (
 if defined DO_ANDROID (
   echo.
   echo ===== Android =====
-  dotnet publish src\Reyfen.Timbratune.Android -c Release -o publish\Timbratune-android -v quiet -nologo -p:AndroidSdkDirectory="%ANDROID_SDK%" -p:JavaSdkDirectory="%ANDROID_JDK%"
+  rem No reused build servers: a long-running MSBuild node can keep a failed SDK lookup and
+  rem then report "Android SDK directory could not be found" (XA5300) although it's there.
+  dotnet publish src\Reyfen.Timbratune.Android -c Release -o publish\Timbratune-android -v quiet -nologo --disable-build-servers -p:AndroidSdkDirectory="%ANDROID_SDK%" -p:JavaSdkDirectory="%ANDROID_JDK%"
   if errorlevel 1 (set "FAILED=1" & echo Android build FAILED.) else echo Android build done.
 )
 
