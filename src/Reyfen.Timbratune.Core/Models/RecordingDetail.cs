@@ -30,6 +30,11 @@ public sealed class RecordingDetail
 
 public sealed class TakeTrends
 {
+    /// <summary>What these trends hold; older versions are re-analyzed once to fill in the newer measures.</summary>
+    public const int CurrentVersion = 2;
+
+    /// <summary>1 (or absent): pitch, melody, endings, F2, F3, weight, HNR, jitter. 2: + loudness, pitch variability.</summary>
+    public int Version { get; set; } = 1;
     /// <summary>Slice length in whole seconds; the points sit at Step, 2·Step, 3·Step, …</summary>
     public double StepS { get; set; }
     public List<TrendSlice> Points { get; set; } = [];
@@ -47,8 +52,12 @@ public sealed class TrendSlice
     public double End { get; set; }
     /// <summary>Mean F0 over the voiced frames.</summary>
     public double? MeanHz { get; set; }
+    /// <summary>Sample SD of F0 over the voiced frames (pitch variability).</summary>
+    public double? PitchSdHz { get; set; }
     /// <summary>Semitone SD over the in-register frames ("true melody").</summary>
     public double? MelodySt { get; set; }
+    /// <summary>Energy average of the intensity frames, as the loudness card averages the take.</summary>
+    public double? LoudnessDb { get; set; }
     /// <summary>Mean ending pitch of the phrases that end in the slice.</summary>
     public double? OffsetHz { get; set; }
     /// <summary>Median F2 / F3 of the gated vowel-core frames.</summary>

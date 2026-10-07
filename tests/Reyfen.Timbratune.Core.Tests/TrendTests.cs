@@ -1,4 +1,5 @@
 using Reyfen.Timbratune.Core.Analysis;
+using Reyfen.Timbratune.Core.Models;
 
 namespace Reyfen.Timbratune.Core.Tests;
 
@@ -33,6 +34,7 @@ public sealed class TrendTests
         var trends = detail.Trends!;
         var step = AnalysisPostProcessor.TrendStep(detail.DurationS);
         Assert.Equal(step, trends.StepS);
+        Assert.Equal(TakeTrends.CurrentVersion, trends.Version);
         Assert.Equal((int)Math.Floor(detail.DurationS / step), trends.Points.Count);
 
         for (var k = 0; k < trends.Points.Count; k++)
@@ -52,6 +54,9 @@ public sealed class TrendTests
         Assert.Contains(trends.Points, p => p.WeightDb is not null);
         Assert.Contains(trends.Points, p => p.HnrDb is not null);
         Assert.Contains(trends.Points, p => p.JitterPct is not null);
+        Assert.Contains(trends.Points, p => p.PitchSdHz is not null);
+        // Loudness covers every frame, silence included, so every slice has it.
+        Assert.All(trends.Points, p => Assert.InRange(p.LoudnessDb!.Value, 20, 100));
     }
 
     [Fact]

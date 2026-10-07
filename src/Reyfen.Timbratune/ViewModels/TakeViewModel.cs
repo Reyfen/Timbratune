@@ -101,26 +101,34 @@ public sealed class TakeViewModel
             var trends = detail.Trends ?? AnalysisPostProcessor.TimeTrends(detail);
             TrendStep = trends.StepS;
             TrendPointCount = trends.Points.Count;
-            PhraseTrends = BuildTrends(trends.Points, detail.RegisterFloorHz, detail.Trends is null);
+            PhraseTrends = BuildTrends(trends.Points, detail.RegisterFloorHz, detail.Trends is null,
+                (detail.Trends?.Version ?? 0) < TakeTrends.CurrentVersion);
         }
     }
 
-    private static IReadOnlyList<TrendViewModel> BuildTrends(List<TrendSlice> slices, double floor, bool legacy)
+    /// <param name="legacy">Only the contour is known yet (older take, being re-analyzed).</param>
+    /// <param name="older">Saved before loudness was in the trends (also being re-analyzed).</param>
+    private static IReadOnlyList<TrendViewModel> BuildTrends(List<TrendSlice> slices, double floor, bool legacy, bool older)
     {
         IReadOnlyList<TrendPoint> Mk(Func<TrendSlice, double?> sel, string unit) => slices
             .Select(s => new TrendPoint($"{s.T:0}", sel(s), $"{s.T:0} s ({s.Start:0.0}–{s.End:0.0} s): {Fmt(sel(s), unit)}"))
             .ToList();
         var reanalyze = legacy ? " · measuring…" : "";
+        var reanalyzeLoudness = older ? " · measuring…" : "";
 
         return
         [
             new("Pitch (avg)", "pink band = feminine zone (165 Hz+)", Mk(s => s.MeanHz, " Hz"), "Chart1",
                 bandFrom: Metrics.FemininePitchHz, bandTo: 260, bandColorKey: "ZoneFem"),
+            new("Pitch variability", "how much your melody moves · ~20–40 Hz is lively, natural speech",
+                Mk(s => s.PitchSdHz, " Hz"), "Chart9", bands: Zones.PitchSd),
             new("In-register melody", "true expressiveness, crashes removed (st)",
                 Mk(s => s.MelodySt, " st"), "Chart2", bands: Zones.Melody),
             new("Phrase endings", $"pitch of the phrases ending here · blue = below the register floor ({Fmt(floor)} Hz)",
                 Mk(s => s.OffsetHz, " Hz"), "Chart3",
                 bands: [new Zone(floor - 50, floor, ZoneColorKey.Masc, "below"), new Zone(floor, 260, ZoneColorKey.Fem, "in register")]),
+            new("Loudness", "louder = more present & confident" + reanalyzeLoudness, Mk(s => s.LoudnessDb, " dB"),
+                "Chart10", bands: Zones.Loudness),
             new("Resonance (F2)", "brightness / vocal-tract size cue" + reanalyze, Mk(s => s.F2Hz, " Hz"), "Chart4",
                 bands: Zones.F2),
             new("Resonance (F3)", "supports brightness" + reanalyze, Mk(s => s.F3Hz, " Hz"), "Chart6",

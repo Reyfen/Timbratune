@@ -21,6 +21,8 @@ public sealed class RawAnalysis
     public required IReadOnlyList<(double Start, double End)> Sounding { get; init; }
     /// <summary>Voiced harmonicity frames (time, dB), for the trends; empty when not measured.</summary>
     public IReadOnlyList<(double T, double Db)> HnrFrames { get; init; } = [];
+    /// <summary>Intensity frames (time, dB), for the trends' loudness; empty when not measured.</summary>
+    public IReadOnlyList<(double T, double Db)> IntensityFrames { get; init; } = [];
     /// <summary>Glottal pulse times, for the trends' jitter; empty when not measured.</summary>
     public IReadOnlyList<double> Pulses { get; init; } = [];
 

@@ -84,6 +84,7 @@ public static class RawAnalysisAssembler
             Contour = contour,
             Sounding = t.Sounding,
             HnrFrames = HnrFrames(t.Harmonicity),
+            IntensityFrames = Enumerable.Range(0, intensity.Db.Count).Select(i => (intensity.Grid.IndexToX(i), intensity.Db[i])).ToList(),
             Pulses = t.Pulses,
         };
     }

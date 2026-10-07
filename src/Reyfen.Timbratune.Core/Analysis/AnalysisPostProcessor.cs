@@ -64,7 +64,7 @@ public static class AnalysisPostProcessor
         detail.Trends = TimeTrends(detail,
             formants.Kept.Select(r => (r.T, r.F2, r.F3)).ToList(),
             raw.WeightFrames.Select(w => (w.T, CorrectedH1A3(w, fs))).Where(p => double.IsFinite(p.Item2)).ToList(),
-            raw.HnrFrames, raw.Pulses);
+            raw.HnrFrames, raw.Pulses, raw.IntensityFrames);
         return new AnalysisResult(metrics, detail);
     }
 
@@ -101,7 +101,8 @@ public static class AnalysisPostProcessor
         IReadOnlyList<(double T, double F2, double F3)>? formantFrames = null,
         IReadOnlyList<(double T, double H1A3c)>? weightFrames = null,
         IReadOnlyList<(double T, double Db)>? hnrFrames = null,
-        IReadOnlyList<double>? pulses = null)
+        IReadOnlyList<double>? pulses = null,
+        IReadOnlyList<(double T, double Db)>? intensityFrames = null)
     {
         var duration = detail.DurationS;
         var step = TrendStep(duration);
@@ -113,8 +114,9 @@ public static class AnalysisPostProcessor
             .ToList();
         var hasPulses = pulses is { Count: > 0 };
         var hasHnr = hnrFrames is { Count: > 0 };
+        var hasIntensity = intensityFrames is { Count: > 0 };
 
-        var trends = new TakeTrends { StepS = step };
+        var trends = new TakeTrends { StepS = step, Version = TakeTrends.CurrentVersion };
         for (var k = 1; k <= count; k++)
         {
             var t = k * step;
@@ -128,6 +130,7 @@ public static class AnalysisPostProcessor
             var formants = formantFrames?.Where(f => Inside(f.T)).ToList();
             var weight = weightFrames?.Where(w => Inside(w.T)).Select(w => w.H1A3c).ToList();
             var hnr = hasHnr ? hnrFrames!.Where(h => Inside(h.T)).Select(h => h.Db).ToList() : null;
+            var intensity = hasIntensity ? intensityFrames!.Where(f => Inside(f.T)).Select(f => f.Db).ToList() : null;
             var jitter = hasPulses ? VoiceReport.JitterLocal(pulses!.Where(Inside).ToList(), 0.0001, 0.02, 1.3) : double.NaN;
 
             trends.Points.Add(new TrendSlice
@@ -136,7 +139,9 @@ public static class AnalysisPostProcessor
                 Start = Round(start, 3),
                 End = Round(end, 3),
                 MeanHz = hz.Count > 0 ? Round(hz.Average(), 1) : null,
+                PitchSdHz = Clean(SampleSd(hz)),
                 MelodySt = Clean(SampleSd(inReg)),
+                LoudnessDb = intensity is { Count: > 0 } ? Clean(10 * Math.Log10(intensity.Average(db => Math.Pow(10, 0.1 * db)))) : null,
                 OffsetHz = endings.Count > 0 ? Round(endings.Average(), 1) : null,
                 F2Hz = formants is { Count: > 0 } ? Clean(Median(formants.Select(f => f.F2).ToList())) : null,
                 F3Hz = formants is { Count: > 0 } ? Clean(Median(formants.Select(f => f.F3).ToList())) : null,

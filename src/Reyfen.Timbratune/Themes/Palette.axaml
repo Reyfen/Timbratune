@@ -47,6 +47,8 @@
       <Color x:Key="Chart6Color">#6a9fd4</Color>
       <Color x:Key="Chart7Color">#e08a7a</Color>
       <Color x:Key="Chart8Color">#7cae5a</Color>
+      <Color x:Key="Chart9Color">#c9a227</Color>
+      <Color x:Key="Chart10Color">#4fb3c4</Color>
       <Color x:Key="Chart3BandColor">#b8ecd8</Color>
       <Color x:Key="Chart4BandColor">#c9b6ff</Color>
       <Color x:Key="ZoneMascColor">#bcd3f0</Color>
@@ -105,6 +107,8 @@
       <Color x:Key="Chart6Color">#8fb8e6</Color>
       <Color x:Key="Chart7Color">#eba597</Color>
       <Color x:Key="Chart8Color">#a3cc85</Color>
+      <Color x:Key="Chart9Color">#e3c45c</Color>
+      <Color x:Key="Chart10Color">#7fd0dc</Color>
       <Color x:Key="Chart3BandColor">#92e2c3</Color>
       <Color x:Key="Chart4BandColor">#b6a2f2</Color>
       <Color x:Key="ZoneMascColor">#a8c8ee</Color>

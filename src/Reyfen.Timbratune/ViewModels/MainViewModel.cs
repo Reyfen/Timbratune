@@ -123,7 +123,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
         var detail = _services.Store.LoadDetail(active);
         Active = new TakeViewModel(active, detail, active.Id == latest?.Id, OpenMetricCommand);
-        if (detail is { Trends: null }) _ = BackfillTrendsAsync(active);
+        if (detail is not null && (detail.Trends?.Version ?? 0) < TakeTrends.CurrentVersion) _ = BackfillTrendsAsync(active);
     }
 
     /// <summary>
