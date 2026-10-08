@@ -140,8 +140,15 @@ public sealed class ContourChart : ThemedControl
 
         var floorPen = new Pen(new SolidColorBrush(Color.Parse("#7c9fd6")), 1.5) { DashStyle = new DashStyle([5 / 1.5, 4 / 1.5], 0) };
         ctx.DrawLine(floorPen, new Point(PadL, Y(floor)), new Point(w - PadR, Y(floor)));
+        // The floor's label goes on top of the contour, on a card-coloured plate, so lines crossing it don't hide it.
         var floorLabel = Text($"register floor {floor.ToString(CultureInfo.InvariantCulture)} Hz", 11, C("ZoneMascInk"));
-        ctx.DrawText(floorLabel, new Point(w - PadR - floorLabel.Width, Y(floor) - 5 - floorLabel.Height));
+        var floorLabelAt = new Point(w - PadR - floorLabel.Width - 3, Y(floor) - 5 - floorLabel.Height);
+        void DrawFloorLabel()
+        {
+            ctx.FillRectangle(new SolidColorBrush(C("Card"), 0.85),
+                new Rect(floorLabelAt.X - 4, floorLabelAt.Y - 1, floorLabel.Width + 8, floorLabel.Height + 2), 4);
+            ctx.DrawText(floorLabel, floorLabelAt);
+        }
 
         var soft = C("InkSoft");
         var ticks = zones is null
@@ -245,12 +252,14 @@ public sealed class ContourChart : ThemedControl
                 ctx.DrawEllipse(B("Card"), new Pen(B("InkStrong"), 2.5), at, 6, 6);
                 break;
             }
+            DrawFloorLabel();
             var end = Text(TimelineChart.Seconds(start + dur), 11, soft);
             ctx.DrawText(Text(TimelineChart.Seconds(start), 11, soft), new Point(PadL, H - 18));
             ctx.DrawText(end, new Point(w - PadR - end.Width, H - 18));
             return;
         }
 
+        DrawFloorLabel();
         ctx.DrawText(Text("time →", 11, soft), new Point(PadL, H - 18));
         var legend = Text("● dots = how each phrase landed", 11, soft);
         ctx.DrawText(legend, new Point(w - PadR - legend.Width, H - 18));

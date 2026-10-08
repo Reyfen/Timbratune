@@ -15,12 +15,12 @@
     <ProjectReference Include="..\Reyfen.Timbratune\Reyfen.Timbratune.csproj" />
     <ProjectReference Include="..\Reyfen.Timbratune.Audio.SoundFlow\Reyfen.Timbratune.Audio.SoundFlow.csproj" />
   </ItemGroup>
-  <!-- Single-file publishes are named by version and platform: Timbratune-Desktop-v0.1.0-win-x64.exe,
-       Timbratune-Desktop-v0.1.0-linux-x64 (the assembly keeps its Reyfen.Timbratune.Desktop name). -->
+  <!-- Single-file publishes are named by version and platform: Timbratune-v0.1.0-win-x64.exe,
+       Timbratune-v0.1.0-linux-x64 (the assembly keeps its Reyfen.Timbratune.Desktop name). -->
   <Target Name="NameSingleFileForPlatform" AfterTargets="Publish" Condition="'$(PublishSingleFile)' == 'true'">
     <PropertyGroup>
       <_TimbratuneExe>$(PublishDir)$(AssemblyName)$(_NativeExecutableExtension)</_TimbratuneExe>
-      <_TimbratuneNamed>$(PublishDir)Timbratune-Desktop-v$(Version)-$(RuntimeIdentifier)$(_NativeExecutableExtension)</_TimbratuneNamed>
+      <_TimbratuneNamed>$(PublishDir)Timbratune-v$(Version)-$(RuntimeIdentifier)$(_NativeExecutableExtension)</_TimbratuneNamed>
     </PropertyGroup>
     <!-- Move won't replace an existing file: drop the previous build first. -->
     <Delete Files="$(_TimbratuneNamed)" Condition="Exists('$(_TimbratuneExe)')" />

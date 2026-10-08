@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Packs the Linux single-file build (dotnet publish src/Reyfen.Timbratune.Desktop -p:PublishProfile=linux-x64)
 # into the two files users get, then removes the raw binary (v0.1.0 = <Version> in Directory.Build.props):
-#   Timbratune-Desktop-v0.1.0-linux-x64.deb              Mint / Ubuntu / Debian: double-click → Install; then
+#   Timbratune-v0.1.0-linux-x64.deb              Mint / Ubuntu / Debian: double-click → Install; then
 #                                                      it's in the app menu (and `timbratune` in a terminal).
-#   Timbratune-Desktop-v0.1.0-linux-x64.AppImage.tar.gz  any distribution: extract (double-click → Extract),
+#   Timbratune-v0.1.0-linux-x64.AppImage.tar.gz  any distribution: extract (double-click → Extract),
 #                                                      then double-click the AppImage. The archive keeps its
 #                                                      "run as program" bit, which a bare download loses.
 # Run on Linux or in WSL. Needs dpkg-deb, ImageMagick (convert) and appimagetool
@@ -16,7 +16,7 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 out_dir="$root/publish/Timbratune-linux-x64"
 tool="${1:-$(command -v appimagetool || echo "$HOME/tools/appimagetool")}"
 version="$(sed -n 's|.*<Version>\(.*\)</Version>.*|\1|p' "$root/Directory.Build.props" | head -1)"
-name="Timbratune-Desktop-v$version-linux-x64"
+name="Timbratune-v$version-linux-x64"
 binary="$out_dir/$name"
 [ -f "$binary" ] || { echo "no $binary — publish the linux-x64 profile first"; exit 1; }
 [ -x "$tool" ] || { echo "appimagetool not found ($tool)"; exit 1; }
@@ -41,9 +41,9 @@ EOF
 
 # --- .deb ---------------------------------------------------------------------------------------
 deb="$work/deb"
-install -Dm755 "$binary" "$deb/opt/timbratune/Timbratune-Desktop"
+install -Dm755 "$binary" "$deb/opt/timbratune/Timbratune"
 mkdir -p "$deb/usr/bin"
-ln -s /opt/timbratune/Timbratune-Desktop "$deb/usr/bin/timbratune"
+ln -s /opt/timbratune/Timbratune "$deb/usr/bin/timbratune"
 install -Dm644 "$work/timbratune.png" "$deb/usr/share/icons/hicolor/256x256/apps/timbratune.png"
 mkdir -p "$deb/usr/share/applications"
 desktop_entry timbratune > "$deb/usr/share/applications/timbratune.desktop"

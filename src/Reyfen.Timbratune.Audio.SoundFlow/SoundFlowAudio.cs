@@ -12,7 +12,7 @@ namespace Reyfen.Timbratune.Audio.SoundFlow;
 /// Owns the one miniaudio engine for the app. Create once, share between the
 /// recorder and the player, dispose on exit.
 /// </summary>
-public sealed class SoundFlowAudio : IDisposable
+public sealed class SoundFlowAudio : IDisposable, IAudioDecoder
 {
     /// <summary>44.1 kHz mono — what analyze.py converted everything to before analysis.</summary>
     public const int SampleRate = 44100;
@@ -28,6 +28,26 @@ public sealed class SoundFlowAudio : IDisposable
     public IAudioPlayer CreatePlayer() => new SoundFlowPlayer(Engine);
 
     public void Dispose() => Engine.Dispose();
+
+    /// <summary>
+    /// Decodes any format miniaudio reads (WAV, MP3, FLAC) to a 44.1 kHz mono PCM16 WAV,
+    /// streaming (the whole file is never held in memory).
+    /// </summary>
+    public void DecodeToWav(string sourcePath, string wavPath)
+    {
+        using var stream = File.OpenRead(sourcePath);
+        using var decoder = Engine.CreateDecoder(stream, out _, Format(1));
+        using var writer = new WavWriter(wavPath, SampleRate, channels: 1);
+        var buffer = new float[SampleRate];
+        var total = 0L;
+        int read;
+        while ((read = decoder.Decode(buffer)) > 0)
+        {
+            writer.Write(buffer.AsSpan(0, read));
+            total += read;
+        }
+        if (total == 0) throw new InvalidDataException($"No audio could be decoded from {Path.GetFileName(sourcePath)}.");
+    }
 
     internal static AudioFormat Format(int channels) => new()
     {

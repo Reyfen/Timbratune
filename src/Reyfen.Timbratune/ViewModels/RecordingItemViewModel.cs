@@ -15,10 +15,12 @@ public sealed partial class RecordingItemViewModel : ObservableObject, IDisposab
     private readonly IFileDialogs _dialogs;
     private readonly Func<int, Task> _delete;
     private readonly Func<Recording, string, Task<string?>> _exportData;
+    private readonly Func<Recording, string, Task> _rename;
 
     /// <param name="exportData">Writes the take's .tmbr file (take, its audio path); returns where it went, or null if cancelled.</param>
     public RecordingItemViewModel(Recording r, string? audioPath, bool isLatest, PlaybackService playback,
-        IFileDialogs dialogs, Func<int, Task> delete, Func<Recording, string, Task<string?>> exportData)
+        IFileDialogs dialogs, Func<int, Task> delete, Func<Recording, string, Task<string?>> exportData,
+        Func<Recording, string, Task> rename)
     {
         Recording = r;
         AudioPath = audioPath is not null && File.Exists(audioPath) ? audioPath : null;
@@ -27,6 +29,7 @@ public sealed partial class RecordingItemViewModel : ObservableObject, IDisposab
         _dialogs = dialogs;
         _delete = delete;
         _exportData = exportData;
+        _rename = rename;
         _playback.PropertyChanged += OnPlaybackChanged;
         if (AudioPath is not null) _ = LoadPeaksAsync(AudioPath);
     }
@@ -61,6 +64,10 @@ public sealed partial class RecordingItemViewModel : ObservableObject, IDisposab
     [ObservableProperty, NotifyPropertyChangedFor(nameof(HasExportStatus))] private string? _exportStatus;
 
     public bool HasExportStatus => ExportStatus is not null;
+
+    /// <summary>The label is being edited in place.</summary>
+    [ObservableProperty] private bool _isRenaming;
+    [ObservableProperty] private string _renameText = "";
     public string SaveTip => IsExporting ? "exporting…" : "save or export this take";
 
     public bool IsCurrent => AudioPath is not null && _playback.CurrentPath == AudioPath;
@@ -120,6 +127,32 @@ public sealed partial class RecordingItemViewModel : ObservableObject, IDisposab
         finally
         {
             IsExporting = false;
+        }
+    }
+
+    [RelayCommand]
+    private void StartRename()
+    {
+        RenameText = Recording.Label;
+        IsConfirmingDelete = false;
+        IsRenaming = true;
+    }
+
+    [RelayCommand] private void CancelRename() => IsRenaming = false;
+
+    [RelayCommand]
+    private async Task ConfirmRenameAsync()
+    {
+        var label = RenameText.Trim();
+        IsRenaming = false;
+        if (label.Length == 0 || label == Recording.Label) return;
+        try
+        {
+            await _rename(Recording, label);
+        }
+        catch (Exception ex)
+        {
+            ExportStatus = $"couldn't rename this take 🌧️ {ex.Message}";
         }
     }
 

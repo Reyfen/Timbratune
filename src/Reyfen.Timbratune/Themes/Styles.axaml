@@ -171,6 +171,68 @@
     <Setter Property="Background" Value="{DynamicResource Card2Brush}" />
     <Setter Property="Foreground" Value="{DynamicResource InkStrongBrush}" />
   </Style>
+  <!-- square, framed icon buttons: the take cards' rename / delete / save -->
+  <Style Selector="Button.icon">
+    <Setter Property="Background" Value="{DynamicResource ControlBgBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource LineSoftBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="Width" Value="34" />
+    <Setter Property="Height" Value="34" />
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="FontSize" Value="15" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Cursor" Value="Hand" />
+  </Style>
+  <Style Selector="Button.icon:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Card2Brush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource InkStrongBrush}" />
+  </Style>
+  <Style Selector="Button.icon:disabled /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource ControlBgBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource LineSoftBrush}" />
+    <Setter Property="Opacity" Value="0.5" />
+  </Style>
+  <!-- a pill with a frame, the same height as the record button: import -->
+  <Style Selector="Button.outline">
+    <Setter Property="Background" Value="{DynamicResource ControlBgBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource LineSoftBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="999" />
+    <Setter Property="Padding" Value="20,9" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Cursor" Value="Hand" />
+  </Style>
+  <Style Selector="Button.outline:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource ControlBgBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource InkStrongBrush}" />
+  </Style>
+  <!-- the placeholder in italics: "untitled take" is what an unnamed take is called -->
+  <Style Selector="TextBox.label-input /template/ TextBlock#PART_Watermark">
+    <Setter Property="FontStyle" Value="Italic" />
+  </Style>
+  <!-- keep the app's input colour while typing (Fluent turns it black / white on focus) -->
+  <Style Selector="TextBox.label-input:pointerover /template/ Border#PART_BorderElement">
+    <Setter Property="Background" Value="{DynamicResource ControlBgBrush}" />
+  </Style>
+  <Style Selector="TextBox.label-input:focus /template/ Border#PART_BorderElement">
+    <Setter Property="Background" Value="{DynamicResource ControlBgBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+  </Style>
+  <Style Selector="TextBox.label-input:focus">
+    <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
+  </Style>
+  <Style Selector="TextBox.rename">
+    <Setter Property="MinWidth" Value="0" />
+    <Setter Property="Padding" Value="12,6" />
+  </Style>
   <Style Selector="Button.danger">
     <Setter Property="Background" Value="{DynamicResource DangerBgBrush}" />
     <Setter Property="Foreground" Value="{DynamicResource DangerBrush}" />
@@ -318,14 +380,6 @@
   <Style Selector="Border.rec.active">
     <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
   </Style>
-  <Style Selector="Border.num">
-    <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
-    <Setter Property="CornerRadius" Value="999" />
-    <Setter Property="MinWidth" Value="30" />
-    <Setter Property="Height" Value="30" />
-    <Setter Property="Padding" Value="8,0" />
-  </Style>
-
   <Style Selector="Expander">
     <Setter Property="Background" Value="{DynamicResource CardBrush}" />
     <Setter Property="CornerRadius" Value="{StaticResource CardRadius}" />

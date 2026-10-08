@@ -8,18 +8,32 @@
   <Border Classes="rec" Classes.active="{Binding IsActive}" ToolTip.Tip="click to view this take above"
           PointerReleased="OnCardClicked">
     <StackPanel Spacing="10">
-      <Grid ColumnDefinitions="Auto,*,Auto">
-        <Border Classes="num" VerticalAlignment="Center">
-          <TextBlock Text="{Binding Id}" FontWeight="Bold" Foreground="{DynamicResource OnAccentBrush}"
-                     HorizontalAlignment="Center" VerticalAlignment="Center" />
-        </Border>
-        <TextBlock Grid.Column="1" Margin="10,0" VerticalAlignment="Center" FontWeight="SemiBold"
-                   Text="{Binding Label}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
-        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
+      <!-- #id and label (plain text, not a button) · rename · date · delete -->
+      <Grid ColumnDefinitions="Auto,*,Auto" IsVisible="{Binding !IsRenaming}">
+        <TextBlock VerticalAlignment="Center" FontWeight="Bold" Foreground="{DynamicResource AccentBrush}"
+                   Text="{Binding Id, StringFormat='#{0}'}" />
+        <TextBlock Grid.Column="1" Margin="8,0" VerticalAlignment="Center" FontWeight="SemiBold"
+                   Text="{Binding Label}" TextTrimming="CharacterEllipsis" TextWrapping="Wrap" MaxLines="2" />
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+          <Button Classes="icon" Content="✏️" ToolTip.Tip="rename this take" Command="{Binding StartRenameCommand}" />
           <TextBlock Classes="cap" VerticalAlignment="Center" Text="{Binding DateLine}" />
-          <Button Classes="ghost" Content="🗑️" ToolTip.Tip="delete this take"
-                  IsVisible="{Binding !IsConfirmingDelete}" Command="{Binding AskDeleteCommand}" />
+          <Button Classes="icon" Content="🗑️" ToolTip.Tip="delete this take"
+                  IsEnabled="{Binding !IsConfirmingDelete}" Command="{Binding AskDeleteCommand}" />
         </StackPanel>
+      </Grid>
+      <!-- renaming: Enter saves, Escape cancels -->
+      <Grid x:Name="RenameRow" ColumnDefinitions="*,Auto,Auto" IsVisible="{Binding IsRenaming}">
+        <TextBox x:Name="RenameBox" Classes="label-input rename" Text="{Binding RenameText}" MaxLength="80"
+                 Watermark="name this take">
+          <TextBox.KeyBindings>
+            <KeyBinding Gesture="Enter" Command="{Binding ConfirmRenameCommand}" />
+            <KeyBinding Gesture="Escape" Command="{Binding CancelRenameCommand}" />
+          </TextBox.KeyBindings>
+        </TextBox>
+        <Button Grid.Column="1" Classes="icon" Margin="8,0,0,0" Content="✓" ToolTip.Tip="save the name"
+                Command="{Binding ConfirmRenameCommand}" />
+        <Button Grid.Column="2" Classes="icon" Margin="8,0,0,0" Content="✕" ToolTip.Tip="cancel"
+                Command="{Binding CancelRenameCommand}" />
       </Grid>
 
       <Border Classes="inset" IsVisible="{Binding IsConfirmingDelete}" Background="{DynamicResource DangerBgBrush}">
@@ -48,7 +62,7 @@
         <c:WaveformView Grid.Column="1" Margin="10,0" VerticalAlignment="Center" Peaks="{Binding Peaks}"
                         Progress="{Binding Progress}" SeekCommand="{Binding SeekCommand}" />
         <TextBlock Grid.Column="2" Classes="cap" VerticalAlignment="Center" FontSize="11" Text="{Binding TimeText}" />
-        <Button Grid.Column="3" Classes="ghost" Content="💾" ToolTip.Tip="{Binding SaveTip}" IsEnabled="{Binding !IsExporting}">
+        <Button Grid.Column="3" Classes="icon" Content="💾" ToolTip.Tip="{Binding SaveTip}" IsEnabled="{Binding !IsExporting}">
           <Button.Flyout>
             <MenuFlyout Placement="BottomEdgeAlignedRight" FlyoutPresenterClasses="save-menu">
               <MenuItem Header="🎵 save audio (.wav)" Command="{Binding SaveCopyCommand}" />

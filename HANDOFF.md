@@ -21,7 +21,7 @@ The full conversation transcript, if you need exact wording, is at `C:\Users\mih
 
   Praat's source lives in the optional `Praat` submodule (reference only). `Praat.exe` is used **by tests only** (the oracle), fetched with `scripts/fetch-praat.ps1`.
 - **Cross-platform.** Windows comes first, but macOS, Linux, Android and iOS must stay possible, so **no Windows-only dependencies**.
-- **Don't touch the user's running app.** The user often has the published build open from `publish/Timbratune-win-x64`. It locks the folder, so `dotnet publish` fails. Check with `Get-Process | ? Path -like '*Timbratune*'` (the single-file exe's process is named `Timbratune-Desktop-v<ver>-win-x64`, Debug builds `Reyfen.Timbratune.Desktop`; the `Path` column tells you which build it is) and ask before closing it. Never kill it without asking.
+- **Don't touch the user's running app.** The user often has the published build open from `publish/Timbratune-win-x64`. It locks the folder, so `dotnet publish` fails. Check with `Get-Process | ? Path -like '*Timbratune*'` (the single-file exe's process is named `Timbratune-v<ver>-win-x64` (`Timbratune-Desktop-v<ver>-win-x64` for builds before 2026-10-08), Debug builds `Reyfen.Timbratune.Desktop`; the `Path` column tells you which build it is) and ask before closing it. Never kill it without asking.
 - **Measure before claiming.** Changes aimed at "steadier" or "faster" were verified with numbers. Some ideas measured worse and were dropped or limited (see §6). Keep doing this.
 
 ## 2. What the product is
@@ -509,7 +509,7 @@ The 💾 button on each "All recordings" card now opens a menu (`RecordingCardVi
   - That is the same code the live graphs use: `LiveAnalyzer.BuildSeries` now calls it. Live output is unchanged (all live lines identical to `b5d73f4`).
   - Series: `pitch` (every 10 ms frame, null = unvoiced, equal to the saved contour), `loudness` (every intensity frame, 0.8/75 s), `hnr` (voiced 10 ms frames), `f1`/`f2`/`f3` (loud voiced frames with F1 in 250–1000 Hz, 5500 Hz ceiling), `weight` (corrected H1*–A3* on every measurable voiced frame, not the ≤ 250 subsample the metric uses), `jitter` (% per voiced stretch, at its end).
   - Each series is `{unit, step_s, description, t[], values[]}`, with explicit times, so an importer needs no grid maths.
-- **Storage:** `RecordingStore` writes them to `analysis/<id>.series.json`, apart from `<id>.json`, so loading the dashboard isn't slowed.
+- **Storage (superseded by §8f, now `series.json` in the take's folder):** `RecordingStore` writes them to `analysis/<id>.series.json`, apart from `<id>.json`, so loading the dashboard isn't slowed.
   - Writes are streamed and atomic (tmp, then rename). The file is deleted with the take.
   - Values are rounded: t to 1 ms, Hz to 0.1, dB to 0.01, % to 0.001.
   - They are saved after Stop, on `--import`, by the trends backfill, and on the first export of an older take.
@@ -527,17 +527,89 @@ The 💾 button on each "All recordings" card now opens a menu (`RecordingCardVi
   - `detail`: the saved `RecordingDetail` (contour, phrases, register summary, trends; older takes get trends rebuilt from the contour, as the take view does);
   - `series`: the per-frame lists.
 
-`TakeArchive.Read` returns the `TakeExport` and refuses other zips. It is the starting point for a future import; nothing in the UI uses it yet. Bump `exporter_version` when a field changes meaning or disappears.
+`TakeArchive.Read` / `Extract` return the `TakeExport` and refuse other zips and files from a newer exporter version; import uses them (§8f). Bump `exporter_version` when a field changes meaning or disappears.
 
 **Tests:** `ExportTests` (4) cover the series grid and values, the store keeping and deleting them, the archive round trip (WAV byte-identical, metadata, lists equal) and refusing a foreign zip.
 
 **Emoji:** the menu adds 🎵 📦 📄, so `scripts/make-emoji-font.py` was re-run (WSL, Ubuntu's Noto Color Emoji).
 
+## 8f. One folder per take, folder link, import (2026-10-08)
+
+The user asked to drop `recordings.json`, so takes can be added and removed by hand, the folder line to become a link, and import of audio and `.tmbr` files. Their choices: one folder per take, auto-import of files dropped into the folder, WAV + MP3 + FLAC + `.tmbr`, and on Android the USB-visible app folder.
+
+**Layout** (`DataPaths`, `RecordingStore`):
+- `takes/NNN label/` holds `take.wav`, `take.json`, `detail.json` and `series.json`.
+- `take.json` is the `.tmbr` export's `TakeExport` shape without `detail`/`series` (they're in their own files): take info including `source_file`, audio format, analysis settings and metrics. It's small, so startup stays fast: listing 36 takes takes ~5 ms.
+- **No index:** `Load()` lists `takes/*/take.json`.
+  - A folder without `take.json` isn't a take, which is why `take.json` is written last.
+  - An unreadable `take.json` is reported in the load error line (`Store.Unreadable`).
+  - A duplicate or missing id (a folder copied from another device) gets the next free id, written back to its `take.json`.
+- The folder name is cosmetic: id and safe label (≤ 40 chars) when created. The id is in `take.json`.
+- `Recording.Audio` / `Detail` hold the folder-relative paths in memory, so `Paths.Resolve` works as before. `FolderOf(recording)` gives the folder, and `Delete` removes the whole folder (only ever directly inside `takes/`).
+
+**Converting the old layout:** `recordings.json` + `audio/` + `analysis/` is converted take by take on the first `Load()`.
+- Files are moved; ids are kept unless already used.
+- `recordings.json` is then renamed `recordings.json.migrated`, and the empty `audio/` and `analysis/` folders are removed.
+- Tried on a copy of the user's real data: 36/36 takes, labels, dates and metrics identical, 0.9 s once.
+- **Note:** the published 0.2.0 build from before this change no longer sees takes after the conversion. If it records again it writes a new `recordings.json`, which the next start converts too (ids that clash get new ones).
+
+**Import** (`Storage/TakeImporter.cs`):
+- **Audio:** WAV is analyzed as is. MP3 / FLAC (or a WAV the decoder can't read) is first decoded to a 44.1 kHz mono PCM16 WAV by `SoundFlowAudio.DecodeToWav` (miniaudio, streamed; `IAudioDecoder` in Core, `AppServices.Decoder`). Label = file name, date = the file's last-write date, `source_file` kept.
+  - A FLAC of a fixture gives exactly the WAV's metrics.
+- **`.tmbr`:** unpacked as it is (`TakeArchive.Extract` → `RecordingStore.AddImported`), with a new id and no analysis.
+- **Import button** ("📥 import" beside "All recordings"): `IFileDialogs.OpenFilesAsync` (multi-select; `PickedFile` with a stream, because Android gives no path). The file is copied to `<root>/.import/`, imported, then the copy is deleted. A status line under the header shows "importing 2 of 3 · name · 45%", then the result.
+- **Dropped files:** `MainViewModel.StartAsync` (called by `App`) loads, cleans `.import/`, then imports audio and `.tmbr` files lying directly in `takes/`.
+  - A WAV or `.tmbr` is then deleted (its contents are in the new folder).
+  - An MP3 / FLAC original is moved into the take's folder as `source.mp3` / `source.flac`.
+- CLI `--import` uses the same importer, so it now also takes mp3, flac and tmbr.
+
+**Folder link:** the footer's "your takes live in …" is a `HyperlinkButton` opening `takes/` through Avalonia's `Launcher.LaunchDirectoryInfoAsync` (`IFileDialogs.OpenFolderAsync`). Checked on Windows: Explorer opens the folder.
+- **Android:** `MainActivity.DataFolder()` now uses `GetExternalFilesDir(null)` (`Android/data/com.reyfen.timbratune/files`), which a PC sees over USB. Like private storage, it's removed on uninstall.
+  - Takes in private storage are moved there once (`DataPaths.MoveContents`: file by file across volumes, a `.moving` marker for interrupted moves, never merging two folders that both have takes).
+  - Android can't open that folder in a file manager, so `AppServices.DataFolderHint` replaces the link with a text saying where it is.
+  - **Not yet tried on a phone.**
+
+**Tests:** 119 pass.
+- New store tests: folders, hand-copied and hand-removed folders, unreadable `take.json`, converting the old layout, never merging data folders.
+- `ImportTests` (4): audio, `.tmbr` round trip without analysis, dropped files, no-decoder limits.
+
+**Emoji:** 📥 added; the font was regenerated.
+
+## 8g. Card buttons, rename, build.sh, phone layout fixes (2026-10-08)
+
+- **`build.sh`** (Linux counterpart of `build.bat`, same `win` / `linux` / `android` options). Tested in WSL `Ubuntu-24.04` as `tester`, with the .NET 10 SDK installed to `~/.dotnet` (dotnet-install.sh, no sudo, `.bashrc` untouched), on a copy of the tree in `~/tt` so Linux builds don't touch the Windows `obj/` folders.
+  - The `.exe` and the `.deb` / AppImage built there run: the AppImage on Ubuntu and the exe on Windows both gave the same import results as before.
+  - Android isn't installed there; the script says which piece is missing.
+  - **Both scripts check for the .NET 10 SDK first** and say so with the download link.
+  - Through `wsl.exe … bash -c '…'`, `$?` must be written `\$?`, or it's expanded before the command reaches bash.
+- **Take cards** (`RecordingCardView.axaml`):
+  - "#N" is plain accent text (the pink number circle looked like a button; `Border.num` removed).
+  - Rename, delete and save are square framed `Button.icon` buttons (34 px, radius 8). The header row reads [✏️ rename] date [🗑️ delete].
+  - The label wraps to two lines before it's cut short (phones).
+- **Rename:** ✏️ swaps the header for a text box (focused, text selected); Enter or ✓ saves, Escape or ✕ cancels.
+  - `RecordingStore.Rename` rewrites `take.json` and renames the folder to "NNN new label".
+  - The folder keeps its old name while its audio is playing or if the move fails; the name in `take.json` is what counts.
+  - `MainViewModel.RenameAsync` reloads after renaming.
+- **Import** moved beside Record (`Button.outline`, a framed pill); its status line is now in the record panel and is cleared when a recording starts.
+- **Text boxes** keep the app's input colour when hovered or focused (Fluent made them black in the dark theme).
+- **Phone layout, checked on the `EuphoniaPixel` emulator** (Debug APK, fake mic, light and dark themes):
+  - The "analyzing… 42% · about 4 s left" row ran off the right edge; it's now a `WrapPanel`.
+  - The contour chart's "register floor" label was drawn under the pitch lines; it's now drawn last, on a card-coloured plate.
+  - Nothing else was missing or misaligned in the take view, live view, trends, cards or footer.
+  - Auto-import of files dropped into `Android/data/com.reyfen.timbratune/files/takes` works there.
+- **Emoji:** ✏ ✓ added; the font was regenerated.
+- **Tests:** 120 pass, including a new rename test.
+- **Take title with date and time:** the "💗 #N · label · date" bubble under the hero is gone. The take's title reads "Latest take · <date time>" / "Take #N · <date time>" (`TakeViewModel.When`: `RecordedAt` in the device's "g" format, at 14 px in soft ink, like the bubble's date).
+  - Takes now keep `recorded_at` (ISO 8601 with offset) in `take.json` / `Recording.RecordedAt`: set on Stop, on import (the file's time) and carried by `.tmbr` files.
+  - Older takes use their `take.wav` time when it falls on the take's date (moving files keeps their time), otherwise only the date shows.
+  - The empty label box says *untitled take* in italics.
+- **Artifact names** lost "Desktop-": `Timbratune-v<ver>-win-x64.exe`, `Timbratune-v<ver>-linux-x64.deb` / `.AppImage.tar.gz`, `Timbratune-v<ver>-android.apk` (csproj target, `package-linux.sh`, both build scripts). Inside the .deb the binary is `/opt/timbratune/Timbratune`; the command is still `timbratune`. Keep `build.bat` and `build.sh` in step whenever either changes.
+
 ## 8. Current state, at the time of writing
 
-**Branches:** `dev` holds everything up to `bc1ce48`. `v0.2.0` adds the Android performance work of §8d and is pushed to `origin/v0.2.0`. The save menu and `.tmbr` export (§8e) are not committed yet.
+**Branches:** `dev` holds everything up to `bc1ce48`. `v0.2.0` adds §8d and §8e (pushed, `c08da28`). §8f is not committed yet.
 
-**Tests:** 112/112 pass.
+**Tests:** 120/120 pass.
 
 **Publish:** `build.bat [win] [linux] [android]` builds into `publish/`. All three 0.2.0 builds are there; the Android APK was built from `b5d73f4`'s code.
 
@@ -552,7 +624,7 @@ The 💾 button on each "All recordings" card now opens a menu (`RecordingCardVi
 - Fix Android's 16 KB page alignment (§8a).
 - Use a release keystore and an AAB for the Play Store.
 - Re-measure the Pixel 4a with the jank fixes, and push the remaining 2–3 % janky frames on the Pixel 9 down (§8d).
-- Import `.tmbr` files (`TakeArchive.Read`) and show them without re-analysis; implement the PDF export (§8e).
-- Check the `.tmbr` export through Android's file picker, and the series cost after Stop, on a phone (§8e).
+- Implement the PDF export (§8e).
+- On a phone: the `.tmbr` export and import through Android's file pickers, the move to the USB-visible folder, and the series cost after Stop (§8e, §8f).
 - Live charts in the light theme have pale zone bands; their contrast could be improved.
 - Port to macOS and iOS: same pattern, SoundFlow has natives for both.

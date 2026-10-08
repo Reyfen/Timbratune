@@ -68,8 +68,10 @@ public sealed class ExportTests : IDisposable
         Assert.False(store.HasSeries(older));
         Assert.Null(store.LoadSeries(older));
 
+        var folder = store.FolderOf(take);
+        Assert.True(File.Exists(Path.Combine(folder, RecordingStore.SeriesJson)));
         store.Delete(take.Id);
-        Assert.False(File.Exists(store.Paths.SeriesFile(take.Id)));
+        Assert.False(Directory.Exists(folder));
     }
 
     [Fact]

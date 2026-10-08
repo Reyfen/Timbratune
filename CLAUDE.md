@@ -9,7 +9,7 @@
 - **Commit only when asked.** The working branch is `dev` (tracks `origin/dev` on https://github.com/Reyfen/Timbratune).
 - **No Praat code.** Praat's algorithms are inspiration only; implement from the published papers (see `src/Reyfen.Timbratune.Acoustics/REFERENCES.md`). Nothing may be copied, translated or adapted from Praat's GPLv3 source; the project must stay MIT. `Praat.exe` is used by tests only, as an oracle.
 - **Cross-platform.** Windows, Linux and Android ship; macOS and iOS must stay possible. No Windows-only dependencies.
-- **Don't touch the user's running app.** The user often runs the published build from `publish/Timbratune-win-x64`, which locks that folder. Check `Get-Process | ? Path -like '*Timbratune*'` — the single-file exe runs as `Timbratune-Desktop-v<ver>-win-x64`, Debug builds as `Reyfen.Timbratune.Desktop` — and ask before closing it. When driving the UI, always target your own instance by pid.
+- **Don't touch the user's running app.** The user often runs the published build from `publish/Timbratune-win-x64`, which locks that folder. Check `Get-Process | ? Path -like '*Timbratune*'` — the single-file exe runs as `Timbratune-v<ver>-win-x64`, Debug builds as `Reyfen.Timbratune.Desktop` — and ask before closing it. When driving the UI, always target your own instance by pid.
 - **Measure before claiming.** "Steadier" or "faster" claims need numbers (`tools/live-steadiness`, tests). Several plausible ideas measured worse; see HANDOFF §6.
 
 ## Layout
@@ -17,10 +17,10 @@
 | Path | Role |
 |---|---|
 | `src/Reyfen.Timbratune.Acoustics` | Pure C#, MIT, zero dependencies, trim/AOT safe: pitch (Boersma 1993), Burg LPC formants, intensity, HNR, pulses/jitter/shimmer, spectrum, resampler, WAV decoder, and live `Streaming/` trackers. |
-| `src/Reyfen.Timbratune.Core` | UI-independent domain: `Analysis/AcousticsAnalysisEngine.cs` (full analysis), `Analysis/LiveAnalyzer.cs` (live), zones, metrics, storage (`RecordingStore`, `DataPaths`; each take is `audio/NNN.wav` + `analysis/<id>.json` + `analysis/<id>.series.json` per-frame lists), `.tmbr` export (`Storage/TakeArchive.cs`). |
+| `src/Reyfen.Timbratune.Core` | UI-independent domain: `Analysis/AcousticsAnalysisEngine.cs` (full analysis), `Analysis/LiveAnalyzer.cs` (live), zones, metrics, storage (`RecordingStore`, `DataPaths`; one folder per take under `takes/`: `take.wav`, `take.json`, `detail.json`, `series.json`; no index), `.tmbr` export (`Storage/TakeArchive.cs`), import (`Storage/TakeImporter.cs`). |
 | `src/Reyfen.Timbratune.Audio.SoundFlow` | Recording/playback via SoundFlow (miniaudio). |
 | `src/Reyfen.Timbratune` | Avalonia UI library (CommunityToolkit.Mvvm). Key: `ViewModels/RecordViewModel.cs`, `ViewModels/LiveTimelinesViewModel.cs`, `ViewModels/TakeViewModel.cs`, `Analysis/RecentWindow.cs` (live smoothing/prediction), `Controls/TimelineChart.cs`, `Controls/ContourChart.cs`, `Themes/Styles.axaml`, `Features.cs` (feature flags, version, links). |
-| `src/Reyfen.Timbratune.Desktop` | Desktop head (Windows/Linux/macOS); `--import file.wav --label "…"`. Publish profiles in `Properties/PublishProfiles/`. |
+| `src/Reyfen.Timbratune.Desktop` | Desktop head (Windows/Linux/macOS); `--import file.wav|.mp3|.flac|.tmbr --label "…"`. Publish profiles in `Properties/PublishProfiles/`. |
 | `src/Reyfen.Timbratune.Android` | Android head. **Not in `Timbratune.slnx`** so the solution builds without the Android workload. |
 | `tests/` | Acoustics tests (synthetic, Praat oracle, streaming) and Core tests (parity with `analyze.py` on VCTK fixtures, live-vs-saved). |
 | `tools/live-steadiness` | Dev tool measuring how steady and accurate the live dots are. |
@@ -35,13 +35,14 @@ dotnet build Timbratune.slnx
 dotnet test Timbratune.slnx                      # Praat oracle tests skip without Praat
 dotnet run --project src/Reyfen.Timbratune.Desktop
 dotnet publish src/Reyfen.Timbratune.Desktop -p:PublishProfile=win-x64   # single self-contained exe
-build.bat [win] [linux] [android]             # all published builds (default: all three)
+build.bat [win] [linux] [android]             # all published builds (default: all three); keep build.sh in step
+./build.sh [win] [linux] [android]            # the same on Linux (tested in WSL Ubuntu-24.04, user tester, .NET in ~/.dotnet)
 ```
 
 Artifact names follow `<app>-v<Version>-<platform>` from `<Version>` in `Directory.Build.props`.
 
 Environment variables:
-- `TIMBRATUNE_DATA_DIR`: throwaway data folder (default `%APPDATA%\Timbratune\`).
+- `TIMBRATUNE_DATA_DIR`: throwaway data folder (default `%APPDATA%\Timbratune\`; takes in its `takes/`). A folder in the old layout (`recordings.json`) is converted when the app opens it, so test on a copy of real data, never the user's folder.
 - `TIMBRATUNE_FAKE_MIC=take.wav`: the recorder replays that file in real time instead of the mic.
 - `TIMBRATUNE_PRAAT`: path to Praat for oracle tests.
 

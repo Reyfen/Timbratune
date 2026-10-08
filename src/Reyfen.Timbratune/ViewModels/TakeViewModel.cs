@@ -50,8 +50,7 @@ public sealed partial class TakeViewModel : ObservableObject
         Recording = r;
         Title = liveElapsed is { } elapsed ? $"🔴 Live · {TimeSpan.FromSeconds(elapsed):m\\:ss}"
             : _isLatest ? "Latest take" : $"Take #{r.Id}";
-        Banner = $"💗 #{r.Id} · {r.Label} · ";
-        Date = r.Date;
+        When = liveElapsed is null ? WhenText(r) : "";
 
         var pz = ZoneOf(Zones.Pitch, r.Pitch.MeanHz);
         StatCards[0].Update(r.Pitch.MeanHz,
@@ -159,9 +158,24 @@ public sealed partial class TakeViewModel : ObservableObject
     public bool IsLive { get; }
     /// <summary>The register section's contour; live, it's shown above the cards with zone bands instead.</summary>
     public bool ShowContour => !IsLive;
-    [ObservableProperty] private string _title = "";
-    [ObservableProperty] private string _banner = "";
-    [ObservableProperty] private string _date = "";
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasWhen))] private string _title = "";
+
+    /// <summary>When the take was recorded, in the device's date and time format (empty while live).</summary>
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasWhen))] private string _when = "";
+    public bool HasWhen => When.Length > 0;
+
+    /// <summary>The take's date and time in the device's format ("g"), or just its date for takes without a time.</summary>
+    public static string WhenText(Recording r)
+    {
+        var culture = System.Globalization.CultureInfo.CurrentCulture;
+        if (DateTimeOffset.TryParse(r.RecordedAt, System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out var at))
+            return at.LocalDateTime.ToString("g", culture);
+        if (DateTime.TryParseExact(r.Date, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out var day))
+            return day.ToString("d", culture);
+        return r.Date;
+    }
     public IReadOnlyList<StatCardViewModel> StatCards { get; }
 
     public GaugeViewModel F2 { get; }

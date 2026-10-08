@@ -1,7 +1,7 @@
 @echo off
 rem Builds the published Timbratune builds into publish\ (created if missing):
-rem   win      publish\Timbratune-win-x64\Timbratune-Desktop-v<ver>-win-x64.exe
-rem   linux    publish\Timbratune-linux-x64\Timbratune-Desktop-v<ver>-linux-x64.deb + .AppImage.tar.gz (packed in WSL)
+rem   win      publish\Timbratune-win-x64\Timbratune-v<ver>-win-x64.exe
+rem   linux    publish\Timbratune-linux-x64\Timbratune-v<ver>-linux-x64.deb + .AppImage.tar.gz (packed in WSL)
 rem   android  publish\Timbratune-android\Timbratune-v<ver>-android.apk
 rem
 rem Usage:  build.bat                 all three
@@ -31,6 +31,21 @@ for %%A in (%*) do (
     set "FAILED=1"
     goto :done
   )
+)
+
+rem The projects target net10.0: an older SDK fails with a confusing error, so check first.
+where dotnet >nul 2>&1
+if errorlevel 1 (
+  echo dotnet wasn't found. Install the .NET 10 SDK or newer: https://dotnet.microsoft.com/download
+  set "FAILED=1"
+  goto :done
+)
+set "SDK_MAJOR=0"
+for /f "tokens=1 delims=." %%V in ('dotnet --list-sdks 2^>nul') do if %%V GTR !SDK_MAJOR! set "SDK_MAJOR=%%V"
+if !SDK_MAJOR! LSS 10 (
+  echo The .NET 10 SDK or newer is needed ^(found: !SDK_MAJOR!^). Install it: https://dotnet.microsoft.com/download
+  set "FAILED=1"
+  goto :done
 )
 
 rem A running published build locks its exe, so the Windows publish can't replace it.

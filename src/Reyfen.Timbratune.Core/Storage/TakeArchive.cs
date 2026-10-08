@@ -18,27 +18,41 @@ public static class TakeArchive
     public const string AudioEntry = "take.wav";
     public const string DataEntry = "take.json";
 
-    public static void Write(Stream target, Recording recording, RecordingDetail detail, TakeSeries series, string wavPath,
-        string appVersion)
+    /// <summary>This build's version ("0.2.0"), written into every take.json.</summary>
+    public static string AppVersion { get; } = typeof(TakeArchive).Assembly
+        .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+        .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion.Split('+')[0] ?? "";
+
+    /// <summary>
+    /// Everything about a take except its detail and series: the take.json of a take folder
+    /// (<paramref name="keepSource"/> true) or the start of an export's take.json.
+    /// </summary>
+    public static TakeExport Describe(Recording recording, RecordingDetail detail, string? audioPath, bool keepSource) => new()
     {
-        var export = new TakeExport
+        AppVersion = AppVersion,
+        ExportedAt = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
+        Take = new ExportedTake
         {
-            AppVersion = appVersion,
-            ExportedAt = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
-            Take = new ExportedTake
-            {
-                Id = recording.Id,
-                Label = recording.Label,
-                Note = recording.Note,
-                Date = recording.Date,
-                DurationS = recording.DurationS,
-            },
-            Audio = ReadFormat(wavPath),
-            Analysis = Settings(detail),
-            Metrics = Metrics(recording),
-            Detail = WithTrends(detail),
-            Series = series,
-        };
+            Id = recording.Id,
+            Label = recording.Label,
+            Note = recording.Note,
+            Date = recording.Date,
+            RecordedAt = recording.RecordedAt,
+            DurationS = recording.DurationS,
+            SourceFile = keepSource && !string.IsNullOrEmpty(recording.SourceFile) ? recording.SourceFile : null,
+        },
+        Audio = audioPath is null ? new ExportedAudio() : ReadFormat(audioPath),
+        Analysis = Settings(detail),
+        Metrics = Metrics(recording),
+    };
+
+    public static void Write(Stream target, Recording recording, RecordingDetail detail, TakeSeries series, string wavPath,
+        string? appVersion = null)
+    {
+        var export = Describe(recording, detail, wavPath, keepSource: false);
+        if (appVersion is not null) export.AppVersion = appVersion;
+        export.Detail = WithTrends(detail);
+        export.Series = series;
 
         using var zip = new ZipArchive(target, ZipArchiveMode.Create, leaveOpen: true);
         using (var entry = zip.CreateEntry(AudioEntry, CompressionLevel.Fastest).Open())
@@ -52,11 +66,34 @@ public static class TakeArchive
     public static TakeExport Read(Stream source)
     {
         using var zip = new ZipArchive(source, ZipArchiveMode.Read, leaveOpen: true);
+        return ReadData(zip);
+    }
+
+    /// <summary>
+    /// Reads a .tmbr file: its take.json, with the audio extracted to <paramref name="audioTarget"/>.
+    /// Throws <see cref="InvalidDataException"/> if it isn't a take this version can read.
+    /// </summary>
+    public static TakeExport Extract(Stream source, string audioTarget)
+    {
+        using var zip = new ZipArchive(source, ZipArchiveMode.Read, leaveOpen: true);
+        var export = ReadData(zip);
+        var audio = zip.GetEntry(string.IsNullOrEmpty(export.Audio.File) ? AudioEntry : export.Audio.File)
+                    ?? throw new InvalidDataException("The take's audio is missing from the file.");
+        using (var from = audio.Open())
+        using (var to = File.Create(audioTarget))
+            from.CopyTo(to);
+        return export;
+    }
+
+    private static TakeExport ReadData(ZipArchive zip)
+    {
         var entry = zip.GetEntry(DataEntry) ?? throw new InvalidDataException($"No {DataEntry} in the archive.");
         TakeExport? export;
         using (var json = entry.Open()) export = TimbratuneJson.ReadExport(json);
         if (export is null || export.Format != TakeExport.FormatName)
             throw new InvalidDataException("Not a Timbratune take.");
+        if (export.ExporterVersion > TakeExport.CurrentExporterVersion)
+            throw new InvalidDataException($"This take was saved by a newer Timbratune ({export.AppVersion}); update to open it.");
         return export;
     }
 

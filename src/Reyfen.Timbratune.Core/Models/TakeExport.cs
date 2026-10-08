@@ -2,6 +2,8 @@ namespace Reyfen.Timbratune.Core.Models;
 
 // take.json inside a .tmbr file (see Storage/TakeArchive): everything the take's
 // dashboard shows, so a later version can import it without analyzing the audio again.
+// A take's folder (Storage/RecordingStore) uses the same shape for its take.json, with the
+// detail and series kept in their own files (detail.json, series.json) instead.
 
 public sealed class TakeExport
 {
@@ -24,11 +26,13 @@ public sealed class TakeExport
     /// <summary>The take's metrics: the stat cards, resonance gauges and register cards.</summary>
     public Recording Metrics { get; set; } = new();
 
-    /// <summary>The saved take: 10 ms pitch contour, phrases, register summary, trends.</summary>
-    public RecordingDetail Detail { get; set; } = new();
+    /// <summary>The saved take: 10 ms pitch contour, phrases, register summary, trends (null in a take folder's take.json).</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public RecordingDetail? Detail { get; set; }
 
-    /// <summary>Per-frame lists: pitch, loudness, hnr, f1, f2, f3, weight, jitter.</summary>
-    public TakeSeries Series { get; set; } = new();
+    /// <summary>Per-frame lists: pitch, loudness, hnr, f1, f2, f3, weight, jitter (null in a take folder's take.json).</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public TakeSeries? Series { get; set; }
 }
 
 public sealed class ExportedTake
@@ -37,7 +41,13 @@ public sealed class ExportedTake
     public string? Label { get; set; }
     public string? Note { get; set; }
     public string? Date { get; set; }
+    /// <summary>Date and time, ISO 8601 with offset; absent for takes saved before it was kept.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? RecordedAt { get; set; }
     public double? DurationS { get; set; }
+    /// <summary>The file the take was imported from (kept in take folders, left out of exports).</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? SourceFile { get; set; }
 }
 
 public sealed class ExportedAudio

@@ -12,7 +12,12 @@
 
     <!-- this take -->
     <StackPanel Spacing="8">
-      <TextBlock Classes="section" Text="{Binding Title}" />
+      <!-- "Latest take · 07/10/2026 14:03": the date and time in the device's format, at body size in soft ink -->
+      <WrapPanel>
+        <TextBlock Classes="section" Text="{Binding Title}" VerticalAlignment="Center" />
+        <TextBlock IsVisible="{Binding HasWhen}" VerticalAlignment="Center" Margin="8,3,0,0" FontSize="14"
+                   Foreground="{DynamicResource InkSoftBrush}" Text="{Binding When, StringFormat='· {0}'}" />
+      </WrapPanel>
       <TextBlock Classes="cap" IsVisible="{Binding !IsLive}" Text="{x:Static e:Features.CompareHint}" />
       <ItemsControl ItemsSource="{Binding StatCards}" Margin="0,6,0,0">
         <ItemsControl.ItemsPanel>

@@ -43,4 +43,32 @@ public sealed class StorageProviderDialogs : IFileDialogs
             await write(target);
         return file.TryGetLocalPath() ?? file.Name;
     }
+
+    public async Task<IReadOnlyList<PickedFile>> OpenFilesAsync(string title, string typeName, IReadOnlyList<string> extensions)
+    {
+        _topLevel ??= _pending as TopLevel ?? TopLevel.GetTopLevel(_pending);
+        if (_topLevel is null) return [];
+        var files = await _topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = title,
+            AllowMultiple = true,
+            FileTypeFilter = [new FilePickerFileType(typeName) { Patterns = [.. extensions.Select(e => "*." + e)] }, FilePickerFileTypes.All],
+        });
+        return [.. files.Select(f => new PickedFile(f.Name, f.OpenReadAsync))];
+    }
+
+    public async Task<bool> OpenFolderAsync(string path)
+    {
+        _topLevel ??= _pending as TopLevel ?? TopLevel.GetTopLevel(_pending);
+        if (_topLevel is null) return false;
+        Directory.CreateDirectory(path);
+        try
+        {
+            return await _topLevel.Launcher.LaunchDirectoryInfoAsync(new DirectoryInfo(path));
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
 }

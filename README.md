@@ -26,8 +26,8 @@ To build something you can run without the SDK, publish it. Each platform gets *
 executable**, with no .NET install needed on the target. The output folder is named per platform:
 
 ```powershell
-dotnet publish src/Reyfen.Timbratune.Desktop -p:PublishProfile=win-x64     # → publish\Timbratune-win-x64\Timbratune-Desktop-v0.1.0-win-x64.exe  (~47 MB)
-dotnet publish src/Reyfen.Timbratune.Desktop -p:PublishProfile=linux-x64   # → publish/Timbratune-linux-x64/Timbratune-Desktop-v0.1.0-linux-x64     (~47 MB)
+dotnet publish src/Reyfen.Timbratune.Desktop -p:PublishProfile=win-x64     # → publish\Timbratune-win-x64\Timbratune-v0.1.0-win-x64.exe  (~47 MB)
+dotnet publish src/Reyfen.Timbratune.Desktop -p:PublishProfile=linux-x64   # → publish/Timbratune-linux-x64/Timbratune-v0.1.0-linux-x64     (~47 MB)
 ```
 
 Every published file is named `<app>-v<version>-<platform>`, with the version taken from `<Version>` in
@@ -56,6 +56,14 @@ The profiles are in `src/Reyfen.Timbratune.Desktop/Properties/PublishProfiles/`.
 - **Linux needs:** an X11 or XWayland session, `libx11-6 libice6 libsm6 libfontconfig1`, PulseAudio or ALSA, and a
   colour-emoji font such as `fonts-noto-color-emoji`. These are standard on desktop distributions.
 
+### All builds at once
+
+`build.bat` (Windows) and `./build.sh` (Linux) build every published file into `publish/`, or only the platforms
+named: `build.bat win android`, `./build.sh linux`. Both need the .NET 10 SDK or newer and say so if it's missing.
+On Windows the Linux packages are made in WSL (`Ubuntu-24.04`); on Linux `scripts/package-linux.sh` runs directly
+(needs `dpkg-deb`, ImageMagick and appimagetool). `build.sh` finds the Android SDK and JDK through `ANDROID_SDK` /
+`ANDROID_HOME` and `ANDROID_JDK` / `JAVA_HOME`.
+
 ### Android
 
 Prerequisites, once:
@@ -81,7 +89,7 @@ adb install -r publish\Timbratune-android\Timbratune-v0.1.0-android.apk
 - **Solution:** `Reyfen.Timbratune.Android` is not in `Timbratune.slnx`, so the desktop solution and its tests build without
   the workload.
 - **Microphone:** Android asks for microphone access the first time you press Record.
-- **Takes:** they live in the app's private folder.
+- **Takes:** they live in `Android/data/com.reyfen.timbratune/files/takes`, which a PC sees over USB.
 - **Emulator:** created with `avdmanager create avd -n EuphoniaPixel -k "system-images;android-35;google_apis;x86_64"
   -d pixel_7`. It uses the Windows Hypervisor Platform. Its virtual microphone plays a steady 100 Hz tone, which
   Timbratune measures as 100.0 Hz.
@@ -94,8 +102,8 @@ adb install -r publish\Timbratune-android\Timbratune-v0.1.0-android.apk
 Other useful commands:
 
 ```powershell
-# analyze existing WAV files without the UI (like `uv run analyze.py clip.wav --label …`)
-dotnet run --project src/Reyfen.Timbratune.Desktop -- --import take1.wav take2.wav --label "rainbow passage"
+# import audio (.wav, .mp3, .flac) or .tmbr files without the UI (like `uv run analyze.py clip.wav --label …`)
+dotnet run --project src/Reyfen.Timbratune.Desktop -- --import take1.wav take2.mp3 --label "rainbow passage"
 
 # use a throwaway data folder
 $env:TIMBRATUNE_DATA_DIR = "C:\temp\timbratune-test"
@@ -104,15 +112,23 @@ $env:TIMBRATUNE_DATA_DIR = "C:\temp\timbratune-test"
 dotnet build -p:TimbratuneReferenceVoices=true
 ```
 
-Takes are stored in `%APPDATA%\Timbratune\` (on Linux `~/.config/Timbratune/`). Takes from builds made before the
-rename, in `Euphonia-CSharp`, are moved there automatically on first start. This is deliberately separate from the
-original Electron app's `%APPDATA%\Euphonia`. The layout is the same:
+Takes are stored in `%APPDATA%\Timbratune	akes\` (on Linux `~/.config/Timbratune/takes/`; on Android
+`Android/data/com.reyfen.timbratune/files/takes`, visible from a PC over USB). The footer link opens the folder.
+Each take is one folder, found by listing the folder (there is no index), so takes can be copied in or deleted by hand:
 
 ```
-recordings.json         index (sorted by id, pretty JSON — same schema analyze.py writes)
-audio/NNN.wav           44.1 kHz mono PCM16, recorded directly (no ffmpeg step)
-analysis/<id>.json      10 ms pitch contour + phrases (+ per-phrase metrics) for the register and trends sections
+takes/003 rainbow passage/
+  take.wav        44.1 kHz mono PCM16, recorded directly (no ffmpeg step)
+  take.json       label, note, date, metrics, audio format, analysis settings
+  detail.json     10 ms pitch contour + phrases + register summary + trends
+  series.json     per-frame lists (pitch, loudness, HNR, F1–F3, weight, jitter), used for export
 ```
+
+Audio (`.wav`, `.mp3`, `.flac`) or `.tmbr` files dropped into `takes/` are imported on the next start; the 📥 import
+button does the same from a file picker. Data folders from earlier versions (`recordings.json` + `audio/` +
+`analysis/`, the Electron app's layout) are converted on first start; `recordings.json` is kept as
+`recordings.json.migrated`. Takes from builds made before the rename, in `Euphonia-CSharp`, are moved over first.
+This is deliberately separate from the original Electron app's `%APPDATA%\Euphonia`.
 
 ## Solution layout
 
@@ -242,8 +258,8 @@ using the microphone.
 - **trends within the take** (this differs from the React app, whose trend charts plot one point per take across
   all recordings). The take is split into phrases at the pauses, and five charts plot one point per phrase: pitch,
   in-register melody, ending pitch, F2 and weight. The values are stored as `phrase_metrics` in
-  `analysis/<id>.json`. Takes analyzed before this existed are re-analyzed once in the background from their WAV.
-- the recordings list: waveform player, save-a-copy, delete with confirmation
+  the take's `detail.json`. Takes analyzed before this existed are re-analyzed once in the background from their WAV.
+- the recordings list: waveform player, save menu (audio copy, `.tmbr` export), delete with confirmation, import
 - the take switcher
 - the cheat sheet
 - light (blossom) and dark (dusk-plum) themes that follow the OS, with a toggle

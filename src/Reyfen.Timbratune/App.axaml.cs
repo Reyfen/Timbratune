@@ -55,7 +55,7 @@ public sealed class App : Application
             single.MainView = view;
         }
 
-        _ = vm.ReloadAsync(selectLatest: true);
+        _ = vm.StartAsync();
         base.OnFrameworkInitializationCompleted();
     }
 }

@@ -43,7 +43,7 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
         s_recorder ??= fakeMic is not null ? new FileReplayRecorder(fakeMic) : s_audio.CreateRecorder();
         var audio = s_audio;
         var recorder = s_recorder;
-        var paths = DataPaths.Default();
+        var paths = DataFolder();
 #if PROFILING
         // Test takes recorded from the fake mic go to their own folder, not the user's takes.
         if (fakeMic is not null) paths = new DataPaths(System.IO.Path.Combine(GetExternalFilesDir(null)!.AbsolutePath, "profiling-data"));
@@ -55,7 +55,9 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
             Playback: new PlaybackService(audio.CreatePlayer()),
             Dialogs: dialogs,
             RequestMicrophone: RequestMicrophoneAsync,
-            LowerThreadPriority: () => global::Android.OS.Process.SetThreadPriority(global::Android.OS.ThreadPriority.Background));
+            LowerThreadPriority: () => global::Android.OS.Process.SetThreadPriority(global::Android.OS.ThreadPriority.Background),
+            Decoder: audio,
+            DataFolderHint: FolderHint(paths));
 #if PROFILING
         // "noprobes": keep the fake mic and switches but log nothing (the probes' own cost out of the measurement).
         if (!Diagnostics.Perf.Flags.Contains("noprobes")) Diagnostics.Perf.Sink = line => global::Android.Util.Log.Info("Timbratune", line);
@@ -71,6 +73,36 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
         Diagnostics.Perf.Note($"started on {Build.Model}, Android {Build.VERSION.Release}, {System.Environment.ProcessorCount} cores");
 #endif
     }
+
+    /// <summary>
+    /// The app's folder in shared storage (Android/data/com.reyfen.timbratune/files): a PC sees
+    /// it over USB, and so do some file managers. Like private storage it's removed with the
+    /// app. Takes kept in private storage by earlier versions are moved there once. Without
+    /// shared storage (not mounted) private storage is used as before.
+    /// </summary>
+    private DataPaths DataFolder()
+    {
+        var old = DataPaths.Default();
+        var external = GetExternalFilesDir(null)?.AbsolutePath;
+        if (external is null) return old;
+        var paths = new DataPaths(external);
+        try
+        {
+            DataPaths.MoveContents(old.Root, paths.Root);
+        }
+        catch (Exception e)
+        {
+            global::Android.Util.Log.Warn("Timbratune", $"couldn't move the takes to {paths.Root}: {e.Message}");
+            return old;
+        }
+        return paths;
+    }
+
+    /// <summary>Android can't open the app's folder in a file manager: say where it is instead.</summary>
+    private static string? FolderHint(DataPaths paths) =>
+        paths.TakesDir.Contains("/Android/data/", StringComparison.Ordinal)
+            ? "Android/data/com.reyfen.timbratune/files/takes on this phone · open it from a PC over USB to add or copy takes"
+            : null;
 
     /// <summary>
     /// Debug builds only: files/fake-mic.wav in the app's private folder replays as if it were

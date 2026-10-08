@@ -283,6 +283,7 @@ public sealed partial class RecordViewModel : ObservableObject
             entry.Label = string.IsNullOrWhiteSpace(Label) ? "untitled take" : Label.Trim();
             entry.Note = "";
             entry.Date = DateTime.Now.ToString("yyyy-MM-dd");
+            entry.RecordedAt = Recording.Timestamp(DateTime.Now);
             entry.SourceFile = Path.GetFileName(wav);
             var sourceWav = wav;
             using (Perf.Measure("stop.save")) await Task.Run(() => _store.Add(entry, result.Detail, sourceWav, result.Series));
