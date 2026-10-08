@@ -7,6 +7,7 @@ namespace Reyfen.Timbratune.Core.Storage;
 ///   recordings.json            index (sorted by id, pretty JSON)
 ///   audio/NNN.wav              the take's audio (zero-padded id)
 ///   analysis/&lt;id&gt;.json         per-frame register detail
+///   analysis/&lt;id&gt;.series.json  per-frame lists (pitch, loudness, HNR, F1-F3, weight, jitter), for export
 ///   analysis/&lt;id&gt;-insight.json  cached insight (not written by v1)
 /// </code>
 /// </summary>
@@ -23,6 +24,9 @@ public sealed class DataPaths
     public string RecordingsJson => Path.Combine(Root, "recordings.json");
     public string AudioDir => Path.Combine(Root, "audio");
     public string AnalysisDir => Path.Combine(Root, "analysis");
+
+    /// <summary>The take's per-frame lists (see <see cref="Models.TakeSeries"/>).</summary>
+    public string SeriesFile(int id) => Path.Combine(AnalysisDir, $"{id}.series.json");
 
     /// <summary>Where builds from before the rename to Timbratune kept their takes.</summary>
     public const string LegacyFolderName = "Euphonia-CSharp";

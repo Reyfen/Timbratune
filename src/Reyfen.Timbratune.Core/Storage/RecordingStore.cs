@@ -43,11 +43,12 @@ public sealed class RecordingStore
 
     /// <summary>
     /// Adds an analyzed take: assigns the next id (max + 1), copies the audio
-    /// to audio/NNN.ext, writes analysis/&lt;id&gt;.json and rewrites the index.
-    /// <paramref name="entry"/> must carry the metrics; id, audio and detail
-    /// paths are filled in here.
+    /// to audio/NNN.ext, writes analysis/&lt;id&gt;.json (and the per-frame
+    /// <paramref name="series"/> to analysis/&lt;id&gt;.series.json) and rewrites
+    /// the index. <paramref name="entry"/> must carry the metrics; id, audio and
+    /// detail paths are filled in here.
     /// </summary>
-    public Recording Add(Recording entry, RecordingDetail detail, string audioSourcePath)
+    public Recording Add(Recording entry, RecordingDetail detail, string audioSourcePath, TakeSeries? series = null)
     {
         lock (_gate)
         {
@@ -60,6 +61,7 @@ public sealed class RecordingStore
             var playbackName = $"{id:000}{ext}";
             File.Copy(audioSourcePath, Path.Combine(Paths.AudioDir, playbackName), overwrite: true);
             File.WriteAllText(Path.Combine(Paths.AnalysisDir, $"{id}.json"), TimbratuneJson.WriteDetail(detail), Utf8NoBom);
+            if (series is not null) WriteSeries(Paths.SeriesFile(id), series);
 
             entry.Id = id;
             entry.Audio = $"audio/{playbackName}";
@@ -86,7 +88,47 @@ public sealed class RecordingStore
         }
     }
 
-    /// <summary>Deletes one take (audio, detail, cached insight) and its index entry. Unknown id → no-op.</summary>
+    /// <summary>Whether the take's per-frame lists are saved (takes analyzed before they were kept have none).</summary>
+    public bool HasSeries(Recording recording) => File.Exists(Paths.SeriesFile(recording.Id));
+
+    /// <summary>
+    /// The take's per-frame lists, read from analysis/&lt;id&gt;.series.json; null if absent
+    /// or unreadable. They can be large: callers use them and let them go (nothing caches them).
+    /// </summary>
+    public TakeSeries? LoadSeries(Recording recording)
+    {
+        var path = Paths.SeriesFile(recording.Id);
+        if (!File.Exists(path)) return null;
+        try
+        {
+            using var stream = File.OpenRead(path);
+            return TimbratuneJson.ReadSeries(stream);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Writes (or replaces) the take's analysis/&lt;id&gt;.series.json.</summary>
+    public void SaveSeries(Recording recording, TakeSeries series)
+    {
+        lock (_gate)
+        {
+            Directory.CreateDirectory(Paths.AnalysisDir);
+            WriteSeries(Paths.SeriesFile(recording.Id), series);
+        }
+    }
+
+    // Streamed to the file (the lists can be a few MB as text) and written then renamed.
+    private static void WriteSeries(string path, TakeSeries series)
+    {
+        var tmp = path + ".tmp";
+        using (var stream = File.Create(tmp)) TimbratuneJson.WriteSeries(stream, series);
+        File.Move(tmp, path, overwrite: true);
+    }
+
+    /// <summary>Deletes one take (audio, detail, series, cached insight) and its index entry. Unknown id → no-op.</summary>
     public void Delete(int id)
     {
         lock (_gate)
@@ -97,6 +139,7 @@ public sealed class RecordingStore
 
             TryDelete(Paths.Resolve(entry.Audio));
             TryDelete(Paths.Resolve(entry.Detail));
+            TryDelete(Paths.SeriesFile(id));
             TryDelete(Path.Combine(Paths.AnalysisDir, $"{id}-insight.json"));
 
             recordings.Remove(entry);

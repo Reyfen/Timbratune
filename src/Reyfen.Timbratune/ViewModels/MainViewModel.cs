@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.Input;
 using Reyfen.Timbratune.Core.Domain;
 using Reyfen.Timbratune.Core.Json;
 using Reyfen.Timbratune.Core.Models;
+using Reyfen.Timbratune.Core.Storage;
 using Reyfen.Timbratune.Diagnostics;
 using Reyfen.Timbratune.Services;
 
@@ -74,7 +75,7 @@ public sealed partial class MainViewModel : ObservableObject
         {
             var r = _recordings[i];
             Items.Add(new RecordingItemViewModel(r, _services.Store.Paths.Resolve(r.Audio), r.Id == latestId,
-                _services.Playback, _services.Dialogs, DeleteAsync));
+                _services.Playback, _services.Dialogs, DeleteAsync, ExportDataAsync));
         }
 
         OnPropertyChanged(nameof(ShowSwitcher));
@@ -103,6 +104,38 @@ public sealed partial class MainViewModel : ObservableObject
         app.RequestedThemeVariant = app.ActualThemeVariant == Avalonia.Styling.ThemeVariant.Dark
             ? Avalonia.Styling.ThemeVariant.Light
             : Avalonia.Styling.ThemeVariant.Dark;
+    }
+
+    /// <summary>
+    /// Exports a take as a .tmbr file (WAV + take.json, see <see cref="TakeArchive"/>).
+    /// Takes analyzed before the per-frame lists were kept get them now: the stored WAV is
+    /// analyzed once and the lists saved for next time. The lists are only held while the
+    /// file is written. Returns where it went, or null if cancelled.
+    /// </summary>
+    private async Task<string?> ExportDataAsync(Recording take, string audioPath)
+    {
+        var store = _services.Store;
+        var (detail, series) = await Task.Run(() => (store.LoadDetail(take), store.LoadSeries(take)));
+        if (detail is null) throw new InvalidOperationException("this take's analysis file is missing");
+        if (series is null)
+        {
+            var floor = take.Register?.FloorHz ?? Core.Analysis.AnalysisPostProcessor.DefaultRegisterFloorHz;
+            var result = await _services.Engine.AnalyzeAsync(audioPath, floor);
+            series = result.Series ?? throw new InvalidOperationException("the analysis gave no per-frame lists");
+            detail = result.Detail;
+            var analyzed = series;
+            await Task.Run(() =>
+            {
+                store.SaveDetail(take, detail);
+                store.SaveSeries(take, analyzed);
+            });
+            if (Active?.Recording.Id == take.Id) UpdateActive();
+        }
+
+        var (d, s) = (detail, series);
+        return await _services.Dialogs.SaveAsync("Export this take's data", $"voice-take-{take.Id}.{TakeArchive.Extension}",
+            "Timbratune take", TakeArchive.Extension, "application/octet-stream",
+            target => Task.Run(() => TakeArchive.Write(target, take, d, s, audioPath, Features.Version)));
     }
 
     private async Task DeleteAsync(int id)
@@ -141,7 +174,11 @@ public sealed partial class MainViewModel : ObservableObject
         {
             var floor = take.Register?.FloorHz ?? Core.Analysis.AnalysisPostProcessor.DefaultRegisterFloorHz;
             var result = await _services.Engine.AnalyzeAsync(audio, floor);
-            await Task.Run(() => _services.Store.SaveDetail(take, result.Detail));
+            await Task.Run(() =>
+            {
+                _services.Store.SaveDetail(take, result.Detail);
+                if (result.Series is { } series) _services.Store.SaveSeries(take, series);
+            });
             if (Active?.Recording.Id == take.Id) UpdateActive();
         }
         catch (Exception)

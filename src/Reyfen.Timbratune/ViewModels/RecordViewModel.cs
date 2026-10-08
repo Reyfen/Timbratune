@@ -285,7 +285,7 @@ public sealed partial class RecordViewModel : ObservableObject
             entry.Date = DateTime.Now.ToString("yyyy-MM-dd");
             entry.SourceFile = Path.GetFileName(wav);
             var sourceWav = wav;
-            using (Perf.Measure("stop.save")) await Task.Run(() => _store.Add(entry, result.Detail, sourceWav));
+            using (Perf.Measure("stop.save")) await Task.Run(() => _store.Add(entry, result.Detail, sourceWav, result.Series));
             AnalysisProgress = 100;
 
             Label = "";

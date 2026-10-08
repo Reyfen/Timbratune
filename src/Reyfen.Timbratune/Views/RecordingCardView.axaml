@@ -48,9 +48,18 @@
         <c:WaveformView Grid.Column="1" Margin="10,0" VerticalAlignment="Center" Peaks="{Binding Peaks}"
                         Progress="{Binding Progress}" SeekCommand="{Binding SeekCommand}" />
         <TextBlock Grid.Column="2" Classes="cap" VerticalAlignment="Center" FontSize="11" Text="{Binding TimeText}" />
-        <Button Grid.Column="3" Classes="ghost" Content="💾" ToolTip.Tip="save a copy of this take's audio"
-                Command="{Binding SaveCopyCommand}" />
+        <Button Grid.Column="3" Classes="ghost" Content="💾" ToolTip.Tip="{Binding SaveTip}" IsEnabled="{Binding !IsExporting}">
+          <Button.Flyout>
+            <MenuFlyout Placement="BottomEdgeAlignedRight" FlyoutPresenterClasses="save-menu">
+              <MenuItem Header="🎵 save audio (.wav)" Command="{Binding SaveCopyCommand}" />
+              <MenuItem Header="📦 export data (.tmbr)" Command="{Binding ExportDataCommand}"
+                        ToolTip.Tip="the audio plus every graph's numbers, in one file" />
+              <MenuItem Header="📄 export PDF · coming soon" IsEnabled="False" />
+            </MenuFlyout>
+          </Button.Flyout>
+        </Button>
       </Grid>
+      <TextBlock Classes="cap" Text="{Binding ExportStatus}" IsVisible="{Binding HasExportStatus}" TextWrapping="Wrap" />
     </StackPanel>
   </Border>
 </UserControl>

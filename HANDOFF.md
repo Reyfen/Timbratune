@@ -2,7 +2,7 @@
 
 This file brings a new engineer or agent up to date on everything done so far: what the user asked for, what was decided and why, how the code is organised, what was measured, and what is still open.
 
-Last updated 2026-10-02.
+Last updated 2026-10-07 (see §8d for the v0.2.0 Android performance work).
 
 **Name:** the project is **Timbratune — Gender Voice Analysis Tool**, by **Reyfen**.
 - **Before 2026-10-02 it was called Euphonia**, and it is a fork of [Euphonia](https://github.com/Yuuzulight/Euphonia). Older parts of this file and of the transcript say "Euphonia" and "Euphonia-CSharp"; read those as Timbratune and the repo root (the code moved from `Timbratune/` to the root on 2026-10-06).
@@ -238,7 +238,7 @@ F2's large "error" is real phonetics: F2 differs by about 700 Hz between /i/ and
 ```powershell
 cd C:\Projects\Reyfen\Timbratune
 dotnet build Timbratune.slnx
-dotnet test Timbratune.slnx                     # 86 tests; the Praat oracle tests skip without Praat
+dotnet test Timbratune.slnx                     # 108 tests; the Praat oracle tests skip without Praat
 dotnet run --project src/Reyfen.Timbratune.Desktop
 dotnet publish src/Reyfen.Timbratune.Desktop -c Release -r win-x64 --self-contained false -o publish/Timbratune-win-x64
 ```
@@ -429,23 +429,119 @@ Shell gotchas on this machine:
 - **Resampler:** the sinc interpolation now runs in parallel chunks. Results are identical (all tests pass); the median full analysis of the 27.6 s take went from 715 to 645 ms.
 - Tests: 101 (`TrendTests` added).
 
+## 8d. v0.2.0: Android performance on real phones (2026-10-07)
+
+Branch `v0.2.0` (from `dev`): commits `82c5621`, `750b29a`, `2fa4420`, `b5d73f4`. The version is 0.2.0 (`Directory.Build.props`), with Android `ApplicationVersion` (versionCode) 2 and versionName 0.2.0.
+
+The user tested 0.1.0 on a **Pixel 9** and a **Pixel 4a** and found live recording far too slow and janky ("It is not acceptable"). Everything below was measured on those two phones over USB (adb), not the emulator, which runs at desktop speed.
+
+**Constraint from the user:** formants and weight must not be degraded: same algorithms, same 0.5 s formant blocks, same results. Charts and the reader may lag a little.
+
+### What caused the jank (Pixel 9, 30 s fake-mic take)
+1. **Rendering backend.** OpenGL ES gave 38 fps with 40 % janky frames (> 25 ms). Vulkan gave 50 fps with 11–12 % janky frames.
+2. **CPU contention.** Live updates ran back to back on all 8 cores (about 50 ms each on the Pixel 9, 70 ms on the 4a), starving the UI and render threads.
+3. **Garbage collection.** The live analysis allocated about 30 MB/s. Mono's 4 MB nursery then collected about 5×/s, plus about 0.5 full collections/s. Each collection stops the world and also triggers a ~10 ms Java collection through the GC bridge (logcat: "Explicit concurrent copying GC").
+4. **UI-thread work:** chart easing redraws every frame (ContourChart ~2–3 ms, TimelineChart ~1.5 ms) and live-value text changes that re-laid out their cards.
+
+The algorithm itself wasn't the problem: each update is fast enough, but it competed with the UI.
+
+### Fixes, in order (each measured)
+- **`82c5621`** (first round):
+  - Release builds use **LLVM full AOT** (`EnableLLVM`, no profiled AOT). On the Pixel 4a the analysis after Stop went from 12.7 to 6.6 s for a 30 s take, and live updates from 258 to 106 ms. It costs about 10 MB of APK and a few minutes of build time.
+  - **Mobile-only cheaper look** (set up in code in `App.Initialize`, not with `OnPlatform` in XAML, which crashed on desktop): a crisp card shadow instead of a blurred one, and a two-stop vertical page gradient. iOS should get the same when added.
+  - **Cheaper FFT:** real input as a half-size complex FFT, with pooled buffers. Results are identical.
+  - The **profiling build** (see below).
+- **`750b29a`:** `AndroidPlatformOptions.RenderingMode` = Vulkan, then Egl, then Software.
+- **`b5d73f4`** (jank round):
+  - **Scheduling:** live updates run on one dedicated thread (`Analysis/LiveWorker.cs`) at Android background priority (`AppServices.LowerThreadPriority`). At most one update starts per 100 ms, and nested parallelism is capped at 2 cores through an ambient limit (`Acoustics/Numerics/Parallelism.cs`, `Parallelism.Limit(n)` / `Parallelism.Options`, used by every `Parallel.*` in the analysis). The analysis after Stop keeps all cores.
+  - **Mono GC:** `Properties/GcEnvironment.txt` sets `MONO_GC_PARAMS=nursery-size=16m,major=marksweep-conc` (an `AndroidEnvironment` item; `-p:TimbratuneGcEnv=false` leaves the defaults). **32 MB makes the runtime fail at startup** (LinkageError).
+  - **Allocations** (desktop live analysis 69 → 12 MB/s):
+    - pooled Burg scratch buffers (`BurgLpc.Scratch`, `FormantAnalyzer.FrameScratch`);
+    - one forward FFT shared by both formant ceilings (`FormantAnalyzer.BurgAll` = `ResampleForCeilings` + `BurgResampled`; `LiveFormantTracker.UpdateAll`);
+    - pooled low-pass buffers in `Resampler`;
+    - double-buffered live series lists in `LiveAnalyzer.BuildSeries`;
+    - views instead of copies: the stitched formant track, `RecentWindow.From`;
+    - in-place `RecentWindow.Polish`.
+  - **Charts:** `LineEasing` blends into a reused buffer; cached pens and brushes; points closer than 0.75 px are thinned.
+  - **Fixed-width live values** (`TextBlock.live-value`: Width 140, Height 28, right-aligned), so text changes don't re-lay out the card.
+
+**Result, Pixel 9:** 50 fps / 11–12 % janky → **57.6–58.4 fps / 2.3–3.1 % janky**, 3–6 frames over 50 ms per 30 s, stop-to-saved 2.4–2.7 s. The intermediate steps were: low-priority 2-core analysis 54–56 fps; plus the GC settings 56.6–57.6 fps; plus the allocation work 57.5–58 fps.
+
+**Results unchanged:** all 108 tests pass. An old-vs-new comparison against `bc1ce48` found all 118,536 saved-analysis values identical. The live lines are identical apart from last-digit rounding (max 3e-8 in HNR, F2, F3, weight and jitter).
+
+### Profiling build and how to measure
+- **Build:** `dotnet publish src/Reyfen.Timbratune.Android -c Release -r android-arm64 -o <dir> -p:TimbratuneProfiling=true -p:AndroidSdkDirectory=… -p:JavaSdkDirectory=…`, then `adb install -r <apk>`. Never uninstall: that deletes the user's takes.
+- **What it adds** (`PROFILING` define). Regular builds keep the `Perf` calls, but with no sink and no flags they cost nothing measurable:
+  - a profileable manifest (`Properties/AndroidManifest.Profiling.xml`);
+  - `Diagnostics/Perf` probes to logcat (`adb logcat -s Timbratune`, lines `PERF <step> <ms>`);
+  - a UI stall watch (`ui.stall` > 32 ms) and a GC watch.
+- **Experiment switches:** words in `/sdcard/Android/data/com.reyfen.timbratune/files/perf-flags.txt`, read at startup:
+  - probes and logging: `noprobes` (no logging);
+  - rendering: `egl` (OpenGL instead of Vulkan), `overlay` (Avalonia frame-time overlay);
+  - look: `noshadow`, `flatbg`, `grad2`, `bmpbg`;
+  - live analysis: `fullcpu`, `lowprioN`;
+  - live UI: `noease`, `slowcharts` (charts at most every 200 ms), `nolivetake` (no take-card refresh), `liveslow`;
+  - FFT: `fftbench`.
+
+  Delete the file afterwards.
+- **Fake mic:** push a WAV to `files/fake-mic.wav` in the same folder. Takes then go to `files/profiling-data`, not the user's takes. Remove both afterwards.
+- **Frame times:** `adb shell dumpsys SurfaceFlinger --latency '<layer>'` on the app's `SurfaceView(BLAST)` layer. Clear it with `--latency-clear` and sample every ~1.5 s while recording. Find the layer in `dumpsys SurfaceFlinger --list`; on Android 17 the entries look like `RequestedLayerState{<name> parentId=…}`.
+- **Driving the phones:** `adb shell input tap` with the record and stop buttons' coordinates (Pixel 4a: record 273,662, stop 348,543). On the Pixel 9, swipes high on the page land in the label TextBox and glide-type into it, so swipe lower down.
+- **Allocation by type, desktop:** an in-process `EventListener` on the runtime's `AllocationTick` events while replaying a take through `LiveAnalyzer`.
+- **Phone etiquette:** the user enables "Stay awake" themselves; don't change phone settings.
+
+### Remaining and ideas
+- About 2–3 % janky frames remain on the Pixel 9. The next candidates are incremental contour and phrase tracking (live.contour still allocates about 41 MB per take, `LiveTimelinesViewModel.Compute` about 53 MB, live.formants about 34 MB) and caching the static chart layer (bands, axes, dividers).
+- **Pixel 4a not re-measured** with `b5d73f4`; it still has a build without it.
+- **XA5300 "Android SDK directory could not be found"** with a valid SDK: a long-running MSBuild node had cached a failed lookup. `dotnet build-server shutdown` clears it. `build.bat` now publishes Android with `--disable-build-servers` (`2fa4420`).
+
+## 8e. Save menu and the .tmbr export (2026-10-08)
+
+The 💾 button on each "All recordings" card now opens a menu (`RecordingCardView.axaml`, a `Button.Flyout` with a `MenuFlyout`, styled as `MenuFlyoutPresenter.save-menu` in `Styles.axaml`):
+- **save audio (.wav):** the WAV copy as before (`RecordingItemViewModel.SaveCopyAsync`).
+- **export data (.tmbr):** `RecordingItemViewModel.ExportDataAsync` → `MainViewModel.ExportDataAsync`. The card shows "preparing the export…", then "exported to <name>" or the error.
+- **export PDF · coming soon:** disabled on purpose, in faint ink. Not implemented.
+
+**File dialogs:** `IFileDialogs.SaveAsync(title, suggestedName, typeName, extension, mimeType, write)` is the general "save a new file" call. `SaveCopyAsync` is built on it. The `.tmbr` type uses MIME `application/octet-stream`, so Android's SAF picker shouldn't rename it to `.zip`. **Not yet checked on a phone.**
+
+**Per-frame lists are now kept with each take** (the user chose this over computing them on each export):
+- The full analysis (`AcousticsAnalysisEngine.AnalyzeAsync`) builds `AnalysisResult.Series` (`Models/TakeSeries`) from its tracks with `Analysis/FrameSeriesBuilder`.
+  - That is the same code the live graphs use: `LiveAnalyzer.BuildSeries` now calls it. Live output is unchanged (all live lines identical to `b5d73f4`).
+  - Series: `pitch` (every 10 ms frame, null = unvoiced, equal to the saved contour), `loudness` (every intensity frame, 0.8/75 s), `hnr` (voiced 10 ms frames), `f1`/`f2`/`f3` (loud voiced frames with F1 in 250–1000 Hz, 5500 Hz ceiling), `weight` (corrected H1*–A3* on every measurable voiced frame, not the ≤ 250 subsample the metric uses), `jitter` (% per voiced stretch, at its end).
+  - Each series is `{unit, step_s, description, t[], values[]}`, with explicit times, so an importer needs no grid maths.
+- **Storage:** `RecordingStore` writes them to `analysis/<id>.series.json`, apart from `<id>.json`, so loading the dashboard isn't slowed.
+  - Writes are streamed and atomic (tmp, then rename). The file is deleted with the take.
+  - Values are rounded: t to 1 ms, Hz to 0.1, dB to 0.01, % to 0.001.
+  - They are saved after Stop, on `--import`, by the trends backfill, and on the first export of an older take.
+- **Memory:** the lists exist only in the `AnalysisResult` until the store has written them. Nothing in the UI holds them; export reads them from the file, writes the archive and lets them go.
+- **Cost, desktop, 39 s take:** +14 ms on a 546 ms analysis (2.5 %); series file 132 KB vs 51 KB for the detail file. The progress stages are weighted from this (measure 93.5, assemble 2, postprocess 1, series 2.5). Not yet measured on a phone.
+
+**The .tmbr format** (`Storage/TakeArchive.cs`): a zip with
+- `take.wav`: the stored WAV byte for byte (Fastest compression: 3.4 MB → 1.8 MB);
+- `take.json`: `Models/TakeExport`, snake_case, source-generated (`TimbratuneJsonContext`):
+  - `format`: "timbratune-take", `exporter_version` 1, `app_version` (`Features.Version`), `exported_at` (UTC);
+  - `take`: id, label, note, date, duration_s;
+  - `audio`: file, sample_rate, channels, bits_per_sample (read from the WAV's fmt chunk);
+  - `analysis`: the settings behind the numbers: pitch floor/ceiling/step, intensity step, HNR step, formant ceiling/count/window/step, register floor, semitone reference, trend step;
+  - `metrics`: the take's `Recording` numbers, without data-folder paths or the source file name;
+  - `detail`: the saved `RecordingDetail` (contour, phrases, register summary, trends; older takes get trends rebuilt from the contour, as the take view does);
+  - `series`: the per-frame lists.
+
+`TakeArchive.Read` returns the `TakeExport` and refuses other zips. It is the starting point for a future import; nothing in the UI uses it yet. Bump `exporter_version` when a field changes meaning or disappears.
+
+**Tests:** `ExportTests` (4) cover the series grid and values, the store keeping and deleting them, the archive round trip (WAV byte-identical, metadata, lists equal) and refusing a foreign zip.
+
+**Emoji:** the menu adds 🎵 📦 📄, so `scripts/make-emoji-font.py` was re-run (WSL, Ubuntu's Noto Color Emoji).
+
 ## 8. Current state, at the time of writing
 
-**Commits:** the user's commits run up to `6fe66f2 Add graph stability`.
+**Branches:** `dev` holds everything up to `bc1ce48`. `v0.2.0` adds the Android performance work of §8d and is pushed to `origin/v0.2.0`. The save menu and `.tmbr` export (§8e) are not committed yet.
 
-**Not committed yet:**
-- the live pitch smoothing and `LineEasing`;
-- `tools/live-steadiness`;
-- the scripts;
-- all of §8a;
-- README updates;
-- this file.
+**Tests:** 112/112 pass.
 
-**Tests:** 86/86 pass.
+**Publish:** `build.bat [win] [linux] [android]` builds into `publish/`. All three 0.2.0 builds are there; the Android APK was built from `b5d73f4`'s code.
 
-**Publish:**
-- `publish/Timbratune-linux-x64` and `publish/Timbratune-android` are current.
-- The Windows single exe is in `publish/Timbratune-win-x64.new/`. It replaces `publish/Timbratune-win-x64/`, which still holds the old multi-file build, once the user's running copy is closed.
+**Phones:** the Pixel 9 has a profiling build of `b5d73f4`'s code (probes on, no flags file, no fake mic). The Pixel 4a has an older build without the jank fixes.
 
 ## 9. Possible next steps (none requested yet)
 - Dim the provisional part of each line: the unsettled tail and the "now" extension.
@@ -455,6 +551,8 @@ Shell gotchas on this machine:
 - Finish the Mint desktop VM check (§8a).
 - Fix Android's 16 KB page alignment (§8a).
 - Use a release keystore and an AAB for the Play Store.
-- Test on a physical phone for real performance; the emulator runs at desktop speed.
+- Re-measure the Pixel 4a with the jank fixes, and push the remaining 2–3 % janky frames on the Pixel 9 down (§8d).
+- Import `.tmbr` files (`TakeArchive.Read`) and show them without re-analysis; implement the PDF export (§8e).
+- Check the `.tmbr` export through Android's file picker, and the series cost after Stop, on a phone (§8e).
 - Live charts in the light theme have pale zone bands; their contrast could be improved.
 - Port to macOS and iOS: same pattern, SoundFlow has natives for both.

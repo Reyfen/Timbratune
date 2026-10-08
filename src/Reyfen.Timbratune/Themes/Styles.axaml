@@ -279,6 +279,33 @@
     <Setter Property="Foreground" Value="{DynamicResource OnAccentBrush}" />
   </Style>
 
+  <!-- the recording cards' save menu, matching the pill dropdown's popup -->
+  <Style Selector="MenuFlyoutPresenter.save-menu">
+    <Setter Property="Background" Value="{DynamicResource CardBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource LineSoftBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="14" />
+    <Setter Property="Padding" Value="4" />
+  </Style>
+  <Style Selector="MenuFlyoutPresenter.save-menu MenuItem">
+    <Setter Property="CornerRadius" Value="10" />
+    <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
+    <Setter Property="Cursor" Value="Hand" />
+  </Style>
+  <Style Selector="MenuFlyoutPresenter.save-menu MenuItem:pointerover /template/ Border#PART_LayoutRoot">
+    <Setter Property="Background" Value="{DynamicResource ControlBgBrush}" />
+  </Style>
+  <Style Selector="MenuFlyoutPresenter.save-menu MenuItem:pointerover /template/ ContentPresenter#PART_HeaderPresenter">
+    <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
+  </Style>
+  <!-- not available yet: faint, so it reads as "coming", not as broken -->
+  <Style Selector="MenuFlyoutPresenter.save-menu MenuItem:disabled">
+    <Setter Property="Cursor" Value="Arrow" />
+  </Style>
+  <Style Selector="MenuFlyoutPresenter.save-menu MenuItem:disabled /template/ ContentPresenter#PART_HeaderPresenter">
+    <Setter Property="Foreground" Value="{DynamicResource InkFaintBrush}" />
+  </Style>
+
   <!-- recording cards: highlight the one in focus -->
   <Style Selector="Border.rec">
     <Setter Property="Background" Value="{DynamicResource CardBrush}" />

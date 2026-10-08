@@ -446,6 +446,7 @@ public static class AnalysisPostProcessor
 /// <summary>
 /// One analyzed take: <see cref="Metrics"/> carries every metric plus Register
 /// (id/label/date/audio are filled in by the store); <see cref="Detail"/> is the
-/// analysis/&lt;id&gt;.json payload.
+/// analysis/&lt;id&gt;.json payload; <see cref="Series"/> the per-frame lists saved beside
+/// it (full analysis only; the store writes them to a file and nothing keeps them after).
 /// </summary>
-public sealed record AnalysisResult(Recording Metrics, RecordingDetail Detail);
+public sealed record AnalysisResult(Recording Metrics, RecordingDetail Detail, TakeSeries? Series = null);

@@ -15,6 +15,8 @@ namespace Reyfen.Timbratune.Core.Json;
 [JsonSerializable(typeof(List<Recording>))]
 [JsonSerializable(typeof(RecordingDetail))]
 [JsonSerializable(typeof(List<ReferenceVoice>))]
+[JsonSerializable(typeof(TakeSeries))]
+[JsonSerializable(typeof(TakeExport))]
 internal partial class TimbratuneJsonContext : JsonSerializerContext;
 
 public static class TimbratuneJson
@@ -43,6 +45,18 @@ public static class TimbratuneJson
 
     public static string WriteDetail(RecordingDetail detail) =>
         JsonSerializer.Serialize(detail, Compact.RecordingDetail);
+
+    public static TakeSeries? ReadSeries(Stream json) =>
+        JsonSerializer.Deserialize(json, Compact.TakeSeries);
+
+    public static void WriteSeries(Stream json, TakeSeries series) =>
+        JsonSerializer.Serialize(json, series, Compact.TakeSeries);
+
+    public static TakeExport? ReadExport(Stream json) =>
+        JsonSerializer.Deserialize(json, Compact.TakeExport);
+
+    public static void WriteExport(Stream json, TakeExport export) =>
+        JsonSerializer.Serialize(json, export, Compact.TakeExport);
 
     public static List<ReferenceVoice> ReadReferences(string json) =>
         JsonSerializer.Deserialize(json, Compact.ListReferenceVoice) ?? [];

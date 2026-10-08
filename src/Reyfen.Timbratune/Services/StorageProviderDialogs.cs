@@ -12,24 +12,35 @@ public sealed class StorageProviderDialogs : IFileDialogs
     /// <summary>Binds to the window / view; its TopLevel is resolved lazily (views attach after load).</summary>
     public void Attach(Control control) => _pending = control;
 
-    public async Task<string?> SaveCopyAsync(string sourcePath, string suggestedName)
+    public Task<string?> SaveCopyAsync(string sourcePath, string suggestedName)
+    {
+        var ext = Path.GetExtension(sourcePath).TrimStart('.');
+        return SaveAsync("Save a copy of this take's audio", suggestedName, ext.ToUpperInvariant() + " audio", ext,
+            ext.Equals("wav", StringComparison.OrdinalIgnoreCase) ? "audio/wav" : "application/octet-stream",
+            async target =>
+            {
+                await using var source = File.OpenRead(sourcePath);
+                await source.CopyToAsync(target);
+            });
+    }
+
+    public async Task<string?> SaveAsync(string title, string suggestedName, string typeName, string extension, string mimeType,
+        Func<Stream, Task> write)
     {
         _topLevel ??= _pending as TopLevel ?? TopLevel.GetTopLevel(_pending);
         if (_topLevel is null) return null;
 
-        var ext = Path.GetExtension(sourcePath).TrimStart('.');
         var file = await _topLevel.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
-            Title = "Save a copy of this take",
+            Title = title,
             SuggestedFileName = suggestedName,
-            DefaultExtension = ext,
-            FileTypeChoices = [new FilePickerFileType(ext.ToUpperInvariant() + " audio") { Patterns = ["*." + ext] }],
+            DefaultExtension = extension,
+            FileTypeChoices = [new FilePickerFileType(typeName) { Patterns = ["*." + extension], MimeTypes = [mimeType] }],
         });
         if (file is null) return null;
 
-        await using (var source = File.OpenRead(sourcePath))
         await using (var target = await file.OpenWriteAsync())
-            await source.CopyToAsync(target);
+            await write(target);
         return file.TryGetLocalPath() ?? file.Name;
     }
 }

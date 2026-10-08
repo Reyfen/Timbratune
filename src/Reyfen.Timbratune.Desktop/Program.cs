@@ -68,7 +68,7 @@ internal static class Program
             var entry = result.Metrics;
             entry.Label = label ?? Path.GetFileNameWithoutExtension(file);
             entry.SourceFile = Path.GetFileName(file);
-            var saved = store.Add(entry, result.Detail, file);
+            var saved = store.Add(entry, result.Detail, file, result.Series);
             Console.WriteLine($"#{saved.Id} {entry.Label}: pitch ~{entry.Pitch.MeanHz} Hz, F2 {entry.Formants.F2Hz} Hz, " +
                               $"weight {entry.Weight?.H1a3cDb} dB, {entry.Register?.InRegisterPct}% in register");
         }

@@ -17,7 +17,7 @@
 | Path | Role |
 |---|---|
 | `src/Reyfen.Timbratune.Acoustics` | Pure C#, MIT, zero dependencies, trim/AOT safe: pitch (Boersma 1993), Burg LPC formants, intensity, HNR, pulses/jitter/shimmer, spectrum, resampler, WAV decoder, and live `Streaming/` trackers. |
-| `src/Reyfen.Timbratune.Core` | UI-independent domain: `Analysis/AcousticsAnalysisEngine.cs` (full analysis), `Analysis/LiveAnalyzer.cs` (live), zones, metrics, storage (`RecordingStore`, `DataPaths`). |
+| `src/Reyfen.Timbratune.Core` | UI-independent domain: `Analysis/AcousticsAnalysisEngine.cs` (full analysis), `Analysis/LiveAnalyzer.cs` (live), zones, metrics, storage (`RecordingStore`, `DataPaths`; each take is `audio/NNN.wav` + `analysis/<id>.json` + `analysis/<id>.series.json` per-frame lists), `.tmbr` export (`Storage/TakeArchive.cs`). |
 | `src/Reyfen.Timbratune.Audio.SoundFlow` | Recording/playback via SoundFlow (miniaudio). |
 | `src/Reyfen.Timbratune` | Avalonia UI library (CommunityToolkit.Mvvm). Key: `ViewModels/RecordViewModel.cs`, `ViewModels/LiveTimelinesViewModel.cs`, `ViewModels/TakeViewModel.cs`, `Analysis/RecentWindow.cs` (live smoothing/prediction), `Controls/TimelineChart.cs`, `Controls/ContourChart.cs`, `Themes/Styles.axaml`, `Features.cs` (feature flags, version, links). |
 | `src/Reyfen.Timbratune.Desktop` | Desktop head (Windows/Linux/macOS); `--import file.wav --label "…"`. Publish profiles in `Properties/PublishProfiles/`. |
