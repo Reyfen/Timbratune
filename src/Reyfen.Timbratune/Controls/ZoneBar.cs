@@ -35,6 +35,8 @@ public sealed class ZoneBar : ThemedControl
 
     public override void Render(DrawingContext ctx)
     {
+        if (!IsOnScreen) return;
+        using var perf = Diagnostics.Perf.Measure("render.ZoneBar");
         var w = Bounds.Width;
         var span = Hi - Lo;
         if (w <= 0 || span <= 0) return;

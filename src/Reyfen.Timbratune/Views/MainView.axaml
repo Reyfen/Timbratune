@@ -26,20 +26,17 @@
                   Content="🌓" ToolTip.Tip="switch light / dark" Command="{Binding ToggleThemeCommand}" />
         </Grid>
 
-        <Border Classes="card" Padding="16,10" IsVisible="{Binding HasActive}" HorizontalAlignment="Left">
-          <TextBlock>
-            <Run Text="{Binding Active.Banner, FallbackValue=''}" FontWeight="SemiBold" />
-            <Run Text="{Binding Active.Date, FallbackValue=''}" Foreground="{DynamicResource InkSoftBrush}" />
-          </TextBlock>
-        </Border>
-
         <!-- ========== record panel (RecordButton.tsx) ========== -->
         <Border Classes="card" DataContext="{Binding Record}" x:DataType="vm:RecordViewModel">
           <StackPanel Spacing="8">
             <WrapPanel IsVisible="{Binding IsIdle}">
               <TextBox Classes="label-input" Margin="0,0,10,6" Text="{Binding Label}"
-                       Watermark="what are you trying this take? ✨" />
+                       Watermark="untitled take" />
               <Button Classes="primary" Margin="0,0,10,6" Content="🎙️ record" Command="{Binding StartCommand}" />
+              <Button Classes="outline" Margin="0,0,10,6" Content="📥 import"
+                      ToolTip.Tip="add takes from audio files (.wav, .mp3, .flac) or Timbratune files (.tmbr)"
+                      Command="{Binding $parent[v:MainView].((vm:MainViewModel)DataContext).ImportCommand}"
+                      IsEnabled="{Binding !$parent[v:MainView].((vm:MainViewModel)DataContext).IsImporting}" />
               <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,6" VerticalAlignment="Center">
                 <TextBlock Classes="cap" VerticalAlignment="Center" Text="live graphs show:" />
                 <ComboBox Classes="pill" ItemsSource="{Binding WindowOptions}" SelectedItem="{Binding LiveWindow}" MinWidth="150" />
@@ -54,21 +51,26 @@
               </StackPanel>
               <ComboBox Classes="pill" ItemsSource="{Binding WindowOptions}" SelectedItem="{Binding LiveWindow}" MinWidth="150" Margin="0,0,0,6" />
             </WrapPanel>
-            <StackPanel Orientation="Horizontal" Spacing="12" IsVisible="{Binding IsAnalyzing}">
-              <ProgressBar Minimum="0" Maximum="100" Value="{Binding AnalysisProgress}" Width="140" VerticalAlignment="Center" />
+            <!-- wraps on a narrow (phone) screen instead of running off its edge -->
+            <WrapPanel IsVisible="{Binding IsAnalyzing}">
+              <ProgressBar Minimum="0" Maximum="100" Value="{Binding AnalysisProgress}" Width="140" VerticalAlignment="Center"
+                           Margin="0,0,12,4" />
               <!-- the percentage has a fixed width (and equal-width digits) so the estimate after it doesn't shift -->
-              <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+              <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center" Margin="0,0,5,4">
                 <TextBlock FontWeight="SemiBold" Text="analyzing…" />
                 <TextBlock Classes="counter" MinWidth="38" TextAlignment="Right" FontWeight="SemiBold" Text="{Binding AnalyzingPercent}" />
-                <TextBlock Classes="counter" FontWeight="SemiBold" Text="{Binding AnalyzingEstimate}" />
               </StackPanel>
-            </StackPanel>
+              <TextBlock Classes="counter" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,0,4" Text="{Binding AnalyzingEstimate}" />
+            </WrapPanel>
             <StackPanel Spacing="6" IsVisible="{Binding IsError}">
               <TextBlock Foreground="{DynamicResource DangerBrush}" FontWeight="SemiBold" Text="{Binding ErrorDetail}" />
               <Button Classes="danger" Content="try again" Command="{Binding RetryCommand}" />
             </StackPanel>
             <TextBlock Classes="sub" Foreground="{DynamicResource DangerBrush}" Text="{Binding EngineWarning}"
                        IsVisible="{Binding EngineWarning, Converter={x:Static ObjectConverters.IsNotNull}}" />
+            <TextBlock Classes="cap" TextWrapping="Wrap"
+                       Text="{Binding $parent[v:MainView].((vm:MainViewModel)DataContext).ImportStatus}"
+                       IsVisible="{Binding $parent[v:MainView].((vm:MainViewModel)DataContext).HasImportStatus}" />
           </StackPanel>
         </Border>
 
@@ -115,7 +117,7 @@
           <TextBlock Classes="section" Text="📖 All recordings" />
           <Border Classes="card" IsVisible="{Binding NoRecordings}">
             <TextBlock Classes="cap" TextAlignment="Center"
-                       Text="no recordings yet 💗&#10;record your first take above!" />
+                       Text="no recordings yet 💗&#10;record your first take above, or import one!" />
           </Border>
           <ItemsControl ItemsSource="{Binding Items}">
             <ItemsControl.ItemsPanel>
@@ -137,8 +139,14 @@
 
         <TextBlock Classes="cap" HorizontalAlignment="Center" TextAlignment="Center"
                    Text="made with 💗 · numbers are a compass, not a judge · your ears matter most" />
-        <TextBlock Classes="cap" FontSize="11" HorizontalAlignment="Center" TextAlignment="Center"
-                   Foreground="{DynamicResource InkFaintBrush}" Text="{Binding DataFolder, StringFormat='your takes live in {0}'}" />
+        <!-- the takes folder: a link that opens it, or (Android) where to find it -->
+        <WrapPanel HorizontalAlignment="Center">
+          <TextBlock Classes="footnote" Text="your takes live in " />
+          <HyperlinkButton Classes="footlink" Content="{Binding DataFolder}" Command="{Binding OpenDataFolderCommand}"
+                           IsVisible="{Binding CanOpenDataFolder}" ToolTip.Tip="open the folder · drop audio or .tmbr files in it to import them" />
+          <TextBlock Classes="footnote" Text="{Binding DataFolderHint}" TextWrapping="Wrap"
+                     IsVisible="{Binding !CanOpenDataFolder}" />
+        </WrapPanel>
         <!-- credits: name, version, developer, and where it comes from (links open the browser) -->
         <WrapPanel HorizontalAlignment="Center">
           <TextBlock Classes="footnote" Text="{x:Static e:Features.CreditsText}" />

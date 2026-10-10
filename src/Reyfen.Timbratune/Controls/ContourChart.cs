@@ -77,6 +77,8 @@ public sealed class ContourChart : ThemedControl
 
     public override void Render(DrawingContext ctx)
     {
+        if (!IsOnScreen) return;
+        using var perf = Diagnostics.Perf.Measure("render.ContourChart");
         _dots.Clear();
         var d = Detail;
         var w = Bounds.Width;
@@ -86,29 +88,29 @@ public sealed class ContourChart : ThemedControl
         var iw = w - PadL - PadR;
         var floor = d.RegisterFloorHz;
         // The contour to draw: the live smoothed line when given, otherwise the 10 ms frames.
-        IReadOnlyList<double> t;
-        IReadOnlyList<double?> hz;
-        if (LiveLine is { } live)
-        {
-            var eased = _easing.Current(live);
-            t = eased.Select(p => p.T).ToList();
-            hz = eased.Select(p => double.IsNaN(p.Value) ? (double?)null : p.Value).ToList();
-        }
-        else
-        {
-            t = d.Frames.T;
-            hz = d.Frames.Hz;
-        }
-        var dur = AxisDuration > 0 ? AxisDuration : d.DurationS > 0 ? d.DurationS : t.Count > 0 && t[^1] > 0 ? t[^1] : 1;
+        // Read in place (no copies: this runs every frame while a live line glides); NaN = unvoiced.
+        var eased = LiveLine is { } live ? _easing.Current(live) : null;
+        var frames = d.Frames;
+        var count = eased?.Count ?? Math.Min(frames.T.Count, frames.Hz.Count);
+        double TimeAt(int i) => eased is not null ? eased[i].T : frames.T[i];
+        double HzAt(int i) => eased is not null ? eased[i].Value : frames.Hz[i] ?? double.NaN;
+        var dur = AxisDuration > 0 ? AxisDuration : d.DurationS > 0 ? d.DurationS : count > 0 && TimeAt(count - 1) > 0 ? TimeAt(count - 1) : 1;
         var fem = FemThreshold;
         var zones = Zones;
 
-        var voiced = hz.Where(v => v.HasValue).Select(v => v!.Value).ToList();
         double maxHz, minHz;
         if (zones is null)
         {
-            maxHz = Math.Max(Math.Max(220, voiced.Count > 0 ? voiced.Max() : 0), fem) * 1.05;
-            minHz = Math.Min(Math.Min(80, floor - 20), voiced.Count > 0 ? voiced.Min() : double.MaxValue);
+            double top = 0, bottom = double.MaxValue;
+            for (var i = 0; i < count; i++)
+            {
+                var f = HzAt(i);
+                if (double.IsNaN(f)) continue;
+                top = Math.Max(top, f);
+                bottom = Math.Min(bottom, f);
+            }
+            maxHz = Math.Max(Math.Max(220, top), fem) * 1.05;
+            minHz = Math.Min(Math.Min(80, floor - 20), bottom);
         }
         else
         {
@@ -138,8 +140,15 @@ public sealed class ContourChart : ThemedControl
 
         var floorPen = new Pen(new SolidColorBrush(Color.Parse("#7c9fd6")), 1.5) { DashStyle = new DashStyle([5 / 1.5, 4 / 1.5], 0) };
         ctx.DrawLine(floorPen, new Point(PadL, Y(floor)), new Point(w - PadR, Y(floor)));
+        // The floor's label goes on top of the contour, on a card-coloured plate, so lines crossing it don't hide it.
         var floorLabel = Text($"register floor {floor.ToString(CultureInfo.InvariantCulture)} Hz", 11, C("ZoneMascInk"));
-        ctx.DrawText(floorLabel, new Point(w - PadR - floorLabel.Width, Y(floor) - 5 - floorLabel.Height));
+        var floorLabelAt = new Point(w - PadR - floorLabel.Width - 3, Y(floor) - 5 - floorLabel.Height);
+        void DrawFloorLabel()
+        {
+            ctx.FillRectangle(new SolidColorBrush(C("Card"), 0.85),
+                new Rect(floorLabelAt.X - 4, floorLabelAt.Y - 1, floorLabel.Width + 8, floorLabel.Height + 2), 4);
+            ctx.DrawText(floorLabel, floorLabelAt);
+        }
 
         var soft = C("InkSoft");
         var ticks = zones is null
@@ -162,21 +171,31 @@ public sealed class ContourChart : ThemedControl
         // short unvoiced gaps inside a phrase, as the live line is (it arrives already joined).
         var isLive = LiveLine is not null;
         var bridge = ViewModels.LiveTimelinesViewModel.ContourBridgeGap;
-        var belowPen = new Pen(B("ZoneMascInk"), 3, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round);
+        var belowPen = CachedPen(ref _belowPen, C("ZoneMascInk"), 1, 3);
         var abovePen = zones is null
-            ? new Pen(new SolidColorBrush(ZoneColor(ZoneColorKey.Fem), 0.9), 2.4, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round)
-            : new Pen(B("AccentEmphasis"), 2.4, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round);
-        var run = new List<Point>();
+            ? CachedPen(ref _abovePen, ZoneColor(ZoneColorKey.Fem), 0.9, 2.4)
+            : CachedPen(ref _abovePen, C("AccentEmphasis"), 1, 2.4);
+        var run = _run;
+        run.Clear();
         bool? runBelow = null;
+        // At most about one point per pixel: a point closer than MinStep px to the last one drawn
+        // is skipped, except a run's last point (kept as `pending` until the run ends). The live
+        // line has ~50 points a second, i.e. a few per pixel on a phone; drawing them all only cost time.
+        const double MinStep = 0.75;
+        Point? pending = null;
         void Flush()
         {
+            if (pending is { } last) run.Add(last);
+            pending = null;
             if (run.Count > 0 && runBelow is { } below) DrawRun(ctx, run, below ? belowPen : abovePen);
             run.Clear();
         }
         double? lastT = null; // the previous voiced frame, while a run can still continue from it
-        for (var i = 0; i < hz.Count && i < t.Count; i++)
+        for (var i = 0; i < count; i++)
         {
-            if (hz[i] is not { } f || t[i] < start)
+            var f = HzAt(i);
+            var ti = TimeAt(i);
+            if (double.IsNaN(f) || ti < start)
             {
                 // The live line marks its own breaks; raw frames are judged by the gap's length below.
                 if (isLive)
@@ -187,22 +206,27 @@ public sealed class ContourChart : ThemedControl
                 }
                 continue;
             }
-            if (!isLive && lastT is { } prev && (t[i] - prev > bridge + 0.011 || d.Phrases.Any(p => p.End > prev && p.End < t[i])))
+            if (!isLive && lastT is { } prev && (ti - prev > bridge + 0.011 || EndsPhraseBetween(d.Phrases, prev, ti)))
             {
                 Flush();
                 runBelow = null;
             }
-            var at = new Point(X(t[i]), Y(f));
+            var at = new Point(X(ti), Y(f));
             var isBelow = f < floor;
             if (runBelow != isBelow)
             {
-                var joint = run.Count > 0 ? run[^1] : (Point?)null;
+                var joint = pending ?? (run.Count > 0 ? run[^1] : (Point?)null);
                 Flush();
                 if (joint is { } j) run.Add(j);
                 runBelow = isBelow;
             }
-            run.Add(at);
-            lastT = t[i];
+            if (run.Count == 0 || at.X - run[^1].X >= MinStep)
+            {
+                run.Add(at);
+                pending = null;
+            }
+            else pending = at;
+            lastT = ti;
         }
         Flush();
 
@@ -220,22 +244,42 @@ public sealed class ContourChart : ThemedControl
         if (zones is not null)
         {
             // The current point: the latest voiced frame.
-            for (var i = Math.Min(hz.Count, t.Count) - 1; i >= 0; i--)
+            for (var i = count - 1; i >= 0; i--)
             {
-                if (hz[i] is not { } f) continue;
-                var at = new Point(X(t[i]), Y(f));
+                var f = HzAt(i);
+                if (double.IsNaN(f)) continue;
+                var at = new Point(X(TimeAt(i)), Y(f));
                 ctx.DrawEllipse(B("Card"), new Pen(B("InkStrong"), 2.5), at, 6, 6);
                 break;
             }
+            DrawFloorLabel();
             var end = Text(TimelineChart.Seconds(start + dur), 11, soft);
             ctx.DrawText(Text(TimelineChart.Seconds(start), 11, soft), new Point(PadL, H - 18));
             ctx.DrawText(end, new Point(w - PadR - end.Width, H - 18));
             return;
         }
 
+        DrawFloorLabel();
         ctx.DrawText(Text("time →", 11, soft), new Point(PadL, H - 18));
         var legend = Text("● dots = how each phrase landed", 11, soft);
         ctx.DrawText(legend, new Point(w - PadR - legend.Width, H - 18));
+    }
+
+    private readonly List<Point> _run = [];
+    private Pen? _belowPen, _abovePen;
+
+    /// <summary>A pen kept between frames (rebuilt only when its colour changes, e.g. with the theme).</summary>
+    private static Pen CachedPen(ref Pen? pen, Color color, double opacity, double thickness)
+    {
+        if (pen?.Brush is SolidColorBrush b && b.Color == color && b.Opacity == opacity && pen.Thickness == thickness) return pen;
+        return pen = new Pen(new SolidColorBrush(color, opacity), thickness, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round);
+    }
+
+    private static bool EndsPhraseBetween(List<Core.Models.Phrase> phrases, double from, double to)
+    {
+        foreach (var p in phrases)
+            if (p.End > from && p.End < to) return true;
+        return false;
     }
 
     private static void DrawRun(DrawingContext ctx, List<Point> pts, Pen pen)

@@ -2,7 +2,7 @@
 
 This file brings a new engineer or agent up to date on everything done so far: what the user asked for, what was decided and why, how the code is organised, what was measured, and what is still open.
 
-Last updated 2026-10-02.
+Last updated 2026-10-10. The newest work is §8d–§8h (v0.2.0: Android performance, export, one folder per take, import, `build.ps1`); §8 is the current state.
 
 **Name:** the project is **Timbratune — Gender Voice Analysis Tool**, by **Reyfen**.
 - **Before 2026-10-02 it was called Euphonia**, and it is a fork of [Euphonia](https://github.com/Yuuzulight/Euphonia). Older parts of this file and of the transcript say "Euphonia" and "Euphonia-CSharp"; read those as Timbratune and the repo root (the code moved from `Timbratune/` to the root on 2026-10-06).
@@ -14,14 +14,14 @@ The full conversation transcript, if you need exact wording, is at `C:\Users\mih
 
 ## 1. Ground rules
 
-- **Commit only when the user explicitly asks.** The main branch is `dev`; there is also a `main` branch. The user sometimes commits the work themselves; the recent commits "Add live update" and "Add graph stability" are theirs.
+- **Commit only when the user explicitly asks.** The main branch is `main` (it was `dev` until 2026-10-10); version work is on `dev/<version>` branches, now `dev/v0.2.0`. Releases are tagged `v<version>`. The user sometimes commits the work themselves; the recent commits "Add live update" and "Add graph stability" are theirs.
 - **Licence constraint.** Praat's algorithms are used only as inspiration, the way a human programmer would read them. Code is written from the published papers; nothing is copied from Praat's GPLv3 source, and the result is MIT-compatible. In the user's words:
 
   > "Read the algorithms of Praat only as inspiration, as any human programmer would do. Do not copy it directly. Also, keep the papers based on it. I don't want to carry the GPL v3 license because there is no way for me to deeply integrate it and stuff like this. I take all the responsibility on myself."
 
   Praat's source lives in the optional `Praat` submodule (reference only). `Praat.exe` is used **by tests only** (the oracle), fetched with `scripts/fetch-praat.ps1`.
 - **Cross-platform.** Windows comes first, but macOS, Linux, Android and iOS must stay possible, so **no Windows-only dependencies**.
-- **Don't touch the user's running app.** The user often has the published build open from `publish/Timbratune-win-x64`. It locks the folder, so `dotnet publish` fails. Check with `Get-Process | ? Path -like '*Timbratune*'` (the single-file exe's process is named `Timbratune-Desktop-v<ver>-win-x64`, Debug builds `Reyfen.Timbratune.Desktop`; the `Path` column tells you which build it is) and ask before closing it. Never kill it without asking.
+- **Don't touch the user's running app.** The user often has the published build open from `publish/Timbratune-win-x64`. It locks the folder, so `dotnet publish` fails. Check with `Get-Process | ? Path -like '*Timbratune*'` (the single-file exe's process is named `Timbratune-v<ver>-win-x64` (`Timbratune-Desktop-v<ver>-win-x64` for builds before 2026-10-08), Debug builds `Reyfen.Timbratune.Desktop`; the `Path` column tells you which build it is) and ask before closing it. Never kill it without asking.
 - **Measure before claiming.** Changes aimed at "steadier" or "faster" were verified with numbers. Some ideas measured worse and were dropped or limited (see §6). Keep doing this.
 
 ## 2. What the product is
@@ -43,7 +43,7 @@ Each metric is placed in zones (masculine / neutral / feminine, and others).
 1. Run the TypeScript app locally.
 2. Port it to C#/Avalonia (now the repo root): .NET 10, core dashboard, same metrics, same zones, same `recordings.json` format.
 3. Trends are per phrase within a single take, not across takes. The publish folder carries a platform suffix: `publish/Timbratune-win-x64`.
-4. Set up the git repo with `dev` as the main branch, and commit only when asked.
+4. Set up the git repo with `dev` as the main branch (renamed `main` on 2026-10-10), and commit only when asked.
 5. Replace Praat.exe with a pure C# module, `Reyfen.Timbratune.Acoustics`: MIT, zero dependencies, trim/AOT safe. Praat is kept for tests only.
 6. Performance questions: how long analysis takes, and an estimate for low-end Android. FFT and sinc optimizations were then added and verified to give identical results, only faster.
 7. **Live analysis while recording.** Graphs build while you speak and freeze on Stop. The axis grows in 10 s steps. Values update per frame. Live must be verified against the full analysis ("Ideally, they should match perfectly").
@@ -65,6 +65,13 @@ Each metric is placed in zones (masculine / neutral / feminine, and others).
     - an **Android version**, tested on the emulator.
 
     Also: **disable the reference voices** behind a feature flag ("maybe we will use it later").
+12. **Rename to Timbratune** and the move to `C:\Projects\Reyfen\Timbratune` (§8b).
+13. **Live numbers, time-slice trends, a real progress bar** (§8c), pitch contour bridging, loudness and pitch-variability trends.
+14. **v0.2.0 branch: Android performance on real phones** (Pixel 9, Pixel 4a; §8d). The user wanted jank gone "completely" without degrading formants or weight.
+15. **Save menu:** save audio, export data as `.tmbr` (zip of WAV + JSON with every graph's data and metadata, for a future import), PDF placeholder (§8e).
+16. **No `recordings.json`:** one folder per take, a clickable folder link, auto-import of dropped files, the import button, Android data visible over USB (§8f).
+17. **Cards and build scripts:** framed icon buttons, rename, plain "#N", import beside Record, `build.sh`, "Desktop-" dropped from artifact names, date and time beside the take title (§8g).
+18. **One `build.ps1`** instead of `.bat` + `.sh`, a pre-emptive fix for "Android SDK directory could not be found", and finding why the user's builds didn't see the SDK (§8h).
 
 ## 4. Codebase map (repo root)
 
@@ -238,9 +245,9 @@ F2's large "error" is real phonetics: F2 differs by about 700 Hz between /i/ and
 ```powershell
 cd C:\Projects\Reyfen\Timbratune
 dotnet build Timbratune.slnx
-dotnet test Timbratune.slnx                     # 86 tests; the Praat oracle tests skip without Praat
+dotnet test Timbratune.slnx                     # 121 tests; the Praat oracle tests skip without Praat
 dotnet run --project src/Reyfen.Timbratune.Desktop
-dotnet publish src/Reyfen.Timbratune.Desktop -c Release -r win-x64 --self-contained false -o publish/Timbratune-win-x64
+./build.ps1 [win] [linux] [android]             # all published builds into publish/ (§8h)
 ```
 
 Environment variables:
@@ -263,6 +270,29 @@ Shell gotchas on this machine:
 - Git Bash heredocs containing `'` inside a python `-c` can break. Write the script to a file and run it.
 - PowerShell 5.1 has no `&&`.
 - .NET file APIs in PowerShell resolve against the process's directory. Use absolute paths.
+
+### Release notes
+
+The user wants them short enough for a person to read at a glance (a longer first draft was sent back).
+- **What to cover:** what changed for users since the previous release, from `git log` since the commit the last published build was made from (the 0.1.0 builds came from 2026-10-06 ~23:40, before `7fc6bfa`).
+- **Format:** one `## Timbratune vX.Y.Z` heading, then about 6-8 bullets, one per area (speed, import/export, takes, graphs, phone fixes, builds). Each bullet is "Area: one plain sentence", with a number only where it helps (e.g. fps).
+- **Style:** no bold or other emphasis markers, no internal names (classes, files, commits), no developer-only details unless they affect users.
+- **Delivery:** in a fenced code block, so it can be copied as is.
+
+Example (v0.2.0):
+
+```markdown
+## Timbratune v0.2.0
+
+- Smoother on Android: live recording is fluid (Pixel 9: ~58 fps instead of 38), and analysis after Stop is about twice as fast.
+- Import: add .wav, .mp3, .flac or .tmbr files with the new Import button, or drop them into the takes folder.
+- Export: the save button now saves the audio or exports all of a take's data as a .tmbr file. PDF export is coming.
+- Takes as folders: each take is its own folder, so you can copy or delete takes by hand. Existing takes convert automatically. Click the folder path in the footer to open it.
+- Rename takes in place, and see when each take was recorded next to its title.
+- Graphs: new loudness and pitch-variability trends, and pitch lines no longer break up when you jump quickly.
+- Phone fixes: takes can be reached from a PC over USB, and text that was cut off or hidden on small screens now shows in full.
+- Builds: one build script for Windows and Linux, and simpler file names (Timbratune-v0.2.0-win-x64.exe).
+```
 
 ## 8a. Platforms: Windows single exe, Linux, Android (2026-10-01)
 
@@ -330,7 +360,7 @@ Shell gotchas on this machine:
   - `MainActivity : AvaloniaMainActivity<App>` wires up the services.
 - **Toolchain:**
   - the android workload (36.1.69);
-  - the SDK in `%LOCALAPPDATA%\Android\Sdk` and JDK 17 in `%LOCALAPPDATA%\Android\jdk`. Pass both via `-p:AndroidSdkDirectory=… -p:JavaSdkDirectory=…`, because the user's `JAVA_HOME` points at a Program Files JDK the tooling won't use;
+  - the SDK in `%LOCALAPPDATA%\Android\Sdk` and JDK 17 in `%LOCALAPPDATA%\Android\jdk`. Pass both via `-p:AndroidSdkDirectory=… -p:JavaSdkDirectory=…`. **Correction (2026-10-09, §8h):** these were installed from Claude's shell, so they only exist in Claude's redirected AppData and the user's own builds can't see them. The user's `JAVA_HOME` (Microsoft OpenJDK 17.0.6) does work with the tooling;
   - the emulator AVD `EuphoniaPixel` (Pixel 7, API 35, google_apis x86_64). WHPX was already usable.
   - Boot it headless: `emulator -avd EuphoniaPixel -no-window -no-snapshot -no-boot-anim -gpu swiftshader_indirect -memory 4096`.
   - Use the SDK's own `platform-tools/adb.exe`.
@@ -429,23 +459,223 @@ Shell gotchas on this machine:
 - **Resampler:** the sinc interpolation now runs in parallel chunks. Results are identical (all tests pass); the median full analysis of the 27.6 s take went from 715 to 645 ms.
 - Tests: 101 (`TrendTests` added).
 
+## 8d. v0.2.0: Android performance on real phones (2026-10-07)
+
+Branch `v0.2.0`, now `dev/v0.2.0` (from `dev`, now `main`): commits `82c5621`, `750b29a`, `2fa4420`, `b5d73f4`. The version is 0.2.0 (`Directory.Build.props`), with Android `ApplicationVersion` (versionCode) 2 and versionName 0.2.0.
+
+The user tested 0.1.0 on a **Pixel 9** and a **Pixel 4a** and found live recording far too slow and janky ("It is not acceptable"). Everything below was measured on those two phones over USB (adb), not the emulator, which runs at desktop speed.
+
+**Constraint from the user:** formants and weight must not be degraded: same algorithms, same 0.5 s formant blocks, same results. Charts and the reader may lag a little.
+
+### What caused the jank (Pixel 9, 30 s fake-mic take)
+1. **Rendering backend.** OpenGL ES gave 38 fps with 40 % janky frames (> 25 ms). Vulkan gave 50 fps with 11–12 % janky frames.
+2. **CPU contention.** Live updates ran back to back on all 8 cores (about 50 ms each on the Pixel 9, 70 ms on the 4a), starving the UI and render threads.
+3. **Garbage collection.** The live analysis allocated about 30 MB/s. Mono's 4 MB nursery then collected about 5×/s, plus about 0.5 full collections/s. Each collection stops the world and also triggers a ~10 ms Java collection through the GC bridge (logcat: "Explicit concurrent copying GC").
+4. **UI-thread work:** chart easing redraws every frame (ContourChart ~2–3 ms, TimelineChart ~1.5 ms) and live-value text changes that re-laid out their cards.
+
+The algorithm itself wasn't the problem: each update is fast enough, but it competed with the UI.
+
+### Fixes, in order (each measured)
+- **`82c5621`** (first round):
+  - Release builds use **LLVM full AOT** (`EnableLLVM`, no profiled AOT). On the Pixel 4a the analysis after Stop went from 12.7 to 6.6 s for a 30 s take, and live updates from 258 to 106 ms. It costs about 10 MB of APK and a few minutes of build time.
+  - **Mobile-only cheaper look** (set up in code in `App.Initialize`, not with `OnPlatform` in XAML, which crashed on desktop): a crisp card shadow instead of a blurred one, and a two-stop vertical page gradient. iOS should get the same when added.
+  - **Cheaper FFT:** real input as a half-size complex FFT, with pooled buffers. Results are identical.
+  - The **profiling build** (see below).
+- **`750b29a`:** `AndroidPlatformOptions.RenderingMode` = Vulkan, then Egl, then Software.
+- **`b5d73f4`** (jank round):
+  - **Scheduling:** live updates run on one dedicated thread (`Analysis/LiveWorker.cs`) at Android background priority (`AppServices.LowerThreadPriority`). At most one update starts per 100 ms, and nested parallelism is capped at 2 cores through an ambient limit (`Acoustics/Numerics/Parallelism.cs`, `Parallelism.Limit(n)` / `Parallelism.Options`, used by every `Parallel.*` in the analysis). The analysis after Stop keeps all cores.
+  - **Mono GC:** `Properties/GcEnvironment.txt` sets `MONO_GC_PARAMS=nursery-size=16m,major=marksweep-conc` (an `AndroidEnvironment` item; `-p:TimbratuneGcEnv=false` leaves the defaults). **32 MB makes the runtime fail at startup** (LinkageError).
+  - **Allocations** (desktop live analysis 69 → 12 MB/s):
+    - pooled Burg scratch buffers (`BurgLpc.Scratch`, `FormantAnalyzer.FrameScratch`);
+    - one forward FFT shared by both formant ceilings (`FormantAnalyzer.BurgAll` = `ResampleForCeilings` + `BurgResampled`; `LiveFormantTracker.UpdateAll`);
+    - pooled low-pass buffers in `Resampler`;
+    - double-buffered live series lists in `LiveAnalyzer.BuildSeries`;
+    - views instead of copies: the stitched formant track, `RecentWindow.From`;
+    - in-place `RecentWindow.Polish`.
+  - **Charts:** `LineEasing` blends into a reused buffer; cached pens and brushes; points closer than 0.75 px are thinned.
+  - **Fixed-width live values** (`TextBlock.live-value`: Width 140, Height 28, right-aligned), so text changes don't re-lay out the card.
+
+**Result, Pixel 9:** 50 fps / 11–12 % janky → **57.6–58.4 fps / 2.3–3.1 % janky**, 3–6 frames over 50 ms per 30 s, stop-to-saved 2.4–2.7 s. The intermediate steps were: low-priority 2-core analysis 54–56 fps; plus the GC settings 56.6–57.6 fps; plus the allocation work 57.5–58 fps.
+
+**Results unchanged:** all 108 tests pass. An old-vs-new comparison against `bc1ce48` found all 118,536 saved-analysis values identical. The live lines are identical apart from last-digit rounding (max 3e-8 in HNR, F2, F3, weight and jitter).
+
+### Profiling build and how to measure
+- **Build:** `dotnet publish src/Reyfen.Timbratune.Android -c Release -r android-arm64 -o <dir> -p:TimbratuneProfiling=true -p:AndroidSdkDirectory=… -p:JavaSdkDirectory=…`, then `adb install -r <apk>`. Never uninstall: that deletes the user's takes.
+- **What it adds** (`PROFILING` define). Regular builds keep the `Perf` calls, but with no sink and no flags they cost nothing measurable:
+  - a profileable manifest (`Properties/AndroidManifest.Profiling.xml`);
+  - `Diagnostics/Perf` probes to logcat (`adb logcat -s Timbratune`, lines `PERF <step> <ms>`);
+  - a UI stall watch (`ui.stall` > 32 ms) and a GC watch.
+- **Experiment switches:** words in `/sdcard/Android/data/com.reyfen.timbratune/files/perf-flags.txt`, read at startup:
+  - probes and logging: `noprobes` (no logging);
+  - rendering: `egl` (OpenGL instead of Vulkan), `overlay` (Avalonia frame-time overlay);
+  - look: `noshadow`, `flatbg`, `grad2`, `bmpbg`;
+  - live analysis: `fullcpu`, `lowprioN`;
+  - live UI: `noease`, `slowcharts` (charts at most every 200 ms), `nolivetake` (no take-card refresh), `liveslow`;
+  - FFT: `fftbench`.
+
+  Delete the file afterwards.
+- **Fake mic:** push a WAV to `files/fake-mic.wav` in the same folder. Takes then go to `files/profiling-data`, not the user's takes. Remove both afterwards.
+- **Frame times:** `adb shell dumpsys SurfaceFlinger --latency '<layer>'` on the app's `SurfaceView(BLAST)` layer. Clear it with `--latency-clear` and sample every ~1.5 s while recording. Find the layer in `dumpsys SurfaceFlinger --list`; on Android 17 the entries look like `RequestedLayerState{<name> parentId=…}`.
+- **Driving the phones:** `adb shell input tap` with the record and stop buttons' coordinates (Pixel 4a: record 273,662, stop 348,543). On the Pixel 9, swipes high on the page land in the label TextBox and glide-type into it, so swipe lower down.
+- **Allocation by type, desktop:** an in-process `EventListener` on the runtime's `AllocationTick` events while replaying a take through `LiveAnalyzer`.
+- **Phone etiquette:** the user enables "Stay awake" themselves; don't change phone settings.
+
+### Remaining and ideas
+- About 2–3 % janky frames remain on the Pixel 9. The next candidates are incremental contour and phrase tracking (live.contour still allocates about 41 MB per take, `LiveTimelinesViewModel.Compute` about 53 MB, live.formants about 34 MB) and caching the static chart layer (bands, axes, dividers).
+- **Pixel 4a not re-measured** with `b5d73f4`; it still has a build without it.
+- **XA5300 "Android SDK directory could not be found"** with a valid SDK: a long-running MSBuild node had cached a failed lookup. `dotnet build-server shutdown` clears it. `build.bat` then published Android with `--disable-build-servers` (`2fa4420`). The deeper cause turned out to be the SDK existing only in Claude's redirected AppData (§8h).
+
+## 8e. Save menu and the .tmbr export (2026-10-08)
+
+The 💾 button on each "All recordings" card now opens a menu (`RecordingCardView.axaml`, a `Button.Flyout` with a `MenuFlyout`, styled as `MenuFlyoutPresenter.save-menu` in `Styles.axaml`):
+- **save audio (.wav):** the WAV copy as before (`RecordingItemViewModel.SaveCopyAsync`).
+- **export data (.tmbr):** `RecordingItemViewModel.ExportDataAsync` → `MainViewModel.ExportDataAsync`. The card shows "preparing the export…", then "exported to <name>" or the error.
+- **export PDF · coming soon:** disabled on purpose, in faint ink. Not implemented.
+
+**File dialogs:** `IFileDialogs.SaveAsync(title, suggestedName, typeName, extension, mimeType, write)` is the general "save a new file" call. `SaveCopyAsync` is built on it. The `.tmbr` type uses MIME `application/octet-stream`, so Android's SAF picker shouldn't rename it to `.zip`. **Not yet checked on a phone.**
+
+**Per-frame lists are now kept with each take** (the user chose this over computing them on each export):
+- The full analysis (`AcousticsAnalysisEngine.AnalyzeAsync`) builds `AnalysisResult.Series` (`Models/TakeSeries`) from its tracks with `Analysis/FrameSeriesBuilder`.
+  - That is the same code the live graphs use: `LiveAnalyzer.BuildSeries` now calls it. Live output is unchanged (all live lines identical to `b5d73f4`).
+  - Series: `pitch` (every 10 ms frame, null = unvoiced, equal to the saved contour), `loudness` (every intensity frame, 0.8/75 s), `hnr` (voiced 10 ms frames), `f1`/`f2`/`f3` (loud voiced frames with F1 in 250–1000 Hz, 5500 Hz ceiling), `weight` (corrected H1*–A3* on every measurable voiced frame, not the ≤ 250 subsample the metric uses), `jitter` (% per voiced stretch, at its end).
+  - Each series is `{unit, step_s, description, t[], values[]}`, with explicit times, so an importer needs no grid maths.
+- **Storage (superseded by §8f, now `series.json` in the take's folder):** `RecordingStore` writes them to `analysis/<id>.series.json`, apart from `<id>.json`, so loading the dashboard isn't slowed.
+  - Writes are streamed and atomic (tmp, then rename). The file is deleted with the take.
+  - Values are rounded: t to 1 ms, Hz to 0.1, dB to 0.01, % to 0.001.
+  - They are saved after Stop, on `--import`, by the trends backfill, and on the first export of an older take.
+- **Memory:** the lists exist only in the `AnalysisResult` until the store has written them. Nothing in the UI holds them; export reads them from the file, writes the archive and lets them go.
+- **Cost, desktop, 39 s take:** +14 ms on a 546 ms analysis (2.5 %); series file 132 KB vs 51 KB for the detail file. The progress stages are weighted from this (measure 93.5, assemble 2, postprocess 1, series 2.5). Not yet measured on a phone.
+
+**The .tmbr format** (`Storage/TakeArchive.cs`): a zip with
+- `take.wav`: the stored WAV byte for byte (Fastest compression: 3.4 MB → 1.8 MB);
+- `take.json`: `Models/TakeExport`, snake_case, source-generated (`TimbratuneJsonContext`):
+  - `format`: "timbratune-take", `exporter_version` 1, `app_version` (`Features.Version`), `exported_at` (UTC);
+  - `take`: id, label, note, date, duration_s;
+  - `audio`: file, sample_rate, channels, bits_per_sample (read from the WAV's fmt chunk);
+  - `analysis`: the settings behind the numbers: pitch floor/ceiling/step, intensity step, HNR step, formant ceiling/count/window/step, register floor, semitone reference, trend step;
+  - `metrics`: the take's `Recording` numbers, without data-folder paths or the source file name;
+  - `detail`: the saved `RecordingDetail` (contour, phrases, register summary, trends; older takes get trends rebuilt from the contour, as the take view does);
+  - `series`: the per-frame lists.
+
+`TakeArchive.Read` / `Extract` return the `TakeExport` and refuse other zips and files from a newer exporter version; import uses them (§8f). Bump `exporter_version` when a field changes meaning or disappears.
+
+**Tests:** `ExportTests` (4) cover the series grid and values, the store keeping and deleting them, the archive round trip (WAV byte-identical, metadata, lists equal) and refusing a foreign zip.
+
+**Emoji:** the menu adds 🎵 📦 📄, so `scripts/make-emoji-font.py` was re-run (WSL, Ubuntu's Noto Color Emoji).
+
+## 8f. One folder per take, folder link, import (2026-10-08)
+
+The user asked to drop `recordings.json`, so takes can be added and removed by hand, the folder line to become a link, and import of audio and `.tmbr` files. Their choices: one folder per take, auto-import of files dropped into the folder, WAV + MP3 + FLAC + `.tmbr`, and on Android the USB-visible app folder.
+
+**Layout** (`DataPaths`, `RecordingStore`):
+- `takes/NNN label/` holds `take.wav`, `take.json`, `detail.json` and `series.json`.
+- `take.json` is the `.tmbr` export's `TakeExport` shape without `detail`/`series` (they're in their own files): take info including `source_file`, audio format, analysis settings and metrics. It's small, so startup stays fast: listing 36 takes takes ~5 ms.
+- **No index:** `Load()` lists `takes/*/take.json`.
+  - A folder without `take.json` isn't a take, which is why `take.json` is written last.
+  - An unreadable `take.json` is reported in the load error line (`Store.Unreadable`).
+  - A duplicate or missing id (a folder copied from another device) gets the next free id, written back to its `take.json`.
+- The folder name is cosmetic: id and safe label (≤ 40 chars) when created. The id is in `take.json`.
+- `Recording.Audio` / `Detail` hold the folder-relative paths in memory, so `Paths.Resolve` works as before. `FolderOf(recording)` gives the folder, and `Delete` removes the whole folder (only ever directly inside `takes/`).
+
+**Converting the old layout:** `recordings.json` + `audio/` + `analysis/` is converted take by take on the first `Load()`.
+- Files are moved; ids are kept unless already used.
+- `recordings.json` is then renamed `recordings.json.migrated`, and the empty `audio/` and `analysis/` folders are removed.
+- Tried on a copy of the user's real data: 36/36 takes, labels, dates and metrics identical, 0.9 s once.
+- **Note:** the published 0.2.0 build from before this change no longer sees takes after the conversion. If it records again it writes a new `recordings.json`, which the next start converts too (ids that clash get new ones).
+
+**Import** (`Storage/TakeImporter.cs`):
+- **Audio:** WAV is analyzed as is. MP3 / FLAC (or a WAV the decoder can't read) is first decoded to a 44.1 kHz mono PCM16 WAV by `SoundFlowAudio.DecodeToWav` (miniaudio, streamed; `IAudioDecoder` in Core, `AppServices.Decoder`). Label = file name, date = the file's last-write date, `source_file` kept.
+  - A FLAC of a fixture gives exactly the WAV's metrics.
+- **`.tmbr`:** unpacked as it is (`TakeArchive.Extract` → `RecordingStore.AddImported`), with a new id and no analysis.
+- **Import button** ("📥 import" beside "All recordings"): `IFileDialogs.OpenFilesAsync` (multi-select; `PickedFile` with a stream, because Android gives no path). The file is copied to `<root>/.import/`, imported, then the copy is deleted. A status line under the header shows "importing 2 of 3 · name · 45%", then the result.
+- **Dropped files:** `MainViewModel.StartAsync` (called by `App`) loads, cleans `.import/`, then imports audio and `.tmbr` files lying directly in `takes/`.
+  - A WAV or `.tmbr` is then deleted (its contents are in the new folder).
+  - An MP3 / FLAC original is moved into the take's folder as `source.mp3` / `source.flac`.
+- CLI `--import` uses the same importer, so it now also takes mp3, flac and tmbr.
+
+**Folder link:** the footer's "your takes live in …" is a `HyperlinkButton` opening `takes/` through Avalonia's `Launcher.LaunchDirectoryInfoAsync` (`IFileDialogs.OpenFolderAsync`). Checked on Windows: Explorer opens the folder.
+- **Android:** `MainActivity.DataFolder()` now uses `GetExternalFilesDir(null)` (`Android/data/com.reyfen.timbratune/files`), which a PC sees over USB. Like private storage, it's removed on uninstall.
+  - Takes in private storage are moved there once (`DataPaths.MoveContents`: file by file across volumes, a `.moving` marker for interrupted moves, never merging two folders that both have takes).
+  - Android can't open that folder in a file manager, so `AppServices.DataFolderHint` replaces the link with a text saying where it is.
+  - **Not yet tried on a phone.**
+
+**Tests:** 119 pass.
+- New store tests: folders, hand-copied and hand-removed folders, unreadable `take.json`, converting the old layout, never merging data folders.
+- `ImportTests` (4): audio, `.tmbr` round trip without analysis, dropped files, no-decoder limits.
+
+**Emoji:** 📥 added; the font was regenerated.
+
+## 8g. Card buttons, rename, build.sh, phone layout fixes (2026-10-08)
+
+- **`build.sh`** (Linux counterpart of `build.bat`, same `win` / `linux` / `android` options). Tested in WSL `Ubuntu-24.04` as `tester`, with the .NET 10 SDK installed to `~/.dotnet` (dotnet-install.sh, no sudo, `.bashrc` untouched), on a copy of the tree in `~/tt` so Linux builds don't touch the Windows `obj/` folders.
+  - The `.exe` and the `.deb` / AppImage built there run: the AppImage on Ubuntu and the exe on Windows both gave the same import results as before.
+  - Android isn't installed there; the script says which piece is missing.
+  - **Both scripts check for the .NET 10 SDK first** and say so with the download link.
+  - Through `wsl.exe … bash -c '…'`, `$?` must be written `\$?`, or it's expanded before the command reaches bash.
+- **Take cards** (`RecordingCardView.axaml`):
+  - "#N" is plain accent text (the pink number circle looked like a button; `Border.num` removed).
+  - Rename, delete and save are square framed `Button.icon` buttons (34 px, radius 8). The header row reads [✏️ rename] date [🗑️ delete].
+  - The label wraps to two lines before it's cut short (phones).
+- **Rename:** ✏️ swaps the header for a text box (focused, text selected); Enter or ✓ saves, Escape or ✕ cancels.
+  - `RecordingStore.Rename` rewrites `take.json` and renames the folder to "NNN new label".
+  - The folder keeps its old name while its audio is playing or if the move fails; the name in `take.json` is what counts.
+  - `MainViewModel.RenameAsync` reloads after renaming.
+- **Import** moved beside Record (`Button.outline`, a framed pill); its status line is now in the record panel and is cleared when a recording starts.
+- **Text boxes** keep the app's input colour when hovered or focused (Fluent made them black in the dark theme).
+- **Phone layout, checked on the `EuphoniaPixel` emulator** (Debug APK, fake mic, light and dark themes):
+  - The "analyzing… 42% · about 4 s left" row ran off the right edge; it's now a `WrapPanel`.
+  - The contour chart's "register floor" label was drawn under the pitch lines; it's now drawn last, on a card-coloured plate.
+  - Nothing else was missing or misaligned in the take view, live view, trends, cards or footer.
+  - Auto-import of files dropped into `Android/data/com.reyfen.timbratune/files/takes` works there.
+- **Emoji:** ✏ ✓ added; the font was regenerated.
+- **Tests:** 120 pass, including a new rename test.
+- **Take title with date and time:** the "💗 #N · label · date" bubble under the hero is gone. The take's title reads "Latest take · <date time>" / "Take #N · <date time>" (`TakeViewModel.When`: `RecordedAt` in the device's "g" format, at 14 px in soft ink, like the bubble's date).
+  - Takes now keep `recorded_at` (ISO 8601 with offset) in `take.json` / `Recording.RecordedAt`: set on Stop, on import (the file's time) and carried by `.tmbr` files.
+  - Older takes use their `take.wav` time when it falls on the take's date (moving files keeps their time), otherwise only the date shows.
+  - The empty label box says *untitled take* in italics.
+- **Artifact names** lost "Desktop-": `Timbratune-v<ver>-win-x64.exe`, `Timbratune-v<ver>-linux-x64.deb` / `.AppImage.tar.gz`, `Timbratune-v<ver>-android.apk` (csproj target, `package-linux.sh`, both build scripts). Inside the .deb the binary is `/opt/timbratune/Timbratune`; the command is still `timbratune`. (The build scripts became one `build.ps1`, §8h.)
+
+## 8h. One build script: build.ps1 (2026-10-08)
+
+- **`build.ps1` replaces `build.bat` and `build.sh`.** One script for Windows PowerShell 5.1 and PowerShell 7, the latter on Linux too.
+  - It keeps both earlier scripts' behaviour: platform arguments, the .NET 10 SDK check, the running-app check (Windows), Linux packing in WSL or directly, and Android SDK/JDK lookup.
+  - Keep it ASCII-only: Windows PowerShell reads a BOM-less script as ANSI.
+  - Started from Explorer (double-click with PowerShell as the .ps1 handler, which the user set, or "Run with PowerShell") it waits for Enter at the end. That's detected by the parent process being `explorer`; matching the command line missed double-clicks.
+- **XA5300 prevention**, before the Android build, after the user hit it twice in a day:
+  - `dotnet build-server shutdown`;
+  - `ANDROID_HOME` / `ANDROID_SDK_ROOT` / `AndroidSdkDirectory` / `JavaSdkDirectory` / `JAVA_HOME` set in the environment for every MSBuild process;
+  - the `-p:` properties;
+  - `--disable-build-servers`.
+- **The final list shows only what this run built:** the expected files (`Timbratune-v<Version>-…`) of the platforms that succeeded. A file-time filter missed up-to-date builds, e.g. an unchanged APK.
+- **Android SDK lookup:** an SDK counts if it has `platform-tools`, `build-tools` or `platforms`. When none is found, every place is printed with the reason ("not set", "doesn't exist", not an SDK, access error); the JDK the same way. The search order is below.
+  - **Cause of "no Android SDK" / XA5300 on the user's builds (2026-10-09):** the SDK and JDK installed on 2026-10-01 were installed from Claude's shell. The Claude desktop app is an MSIX package, so they went to `%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Local\Android\{Sdk,jdk}` (4.9 + 0.3 GB). Claude's shells see them at `%LOCALAPPDATA%\Android`; Explorer and the user's own builds don't.
+    - The intermittent XA5300 was MSBuild nodes started on one side being reused by the other.
+    - The user chose not to move them. Instead `build.ps1` looks where real installs go and reports each place:
+      - `ANDROID_SDK` / `ANDROID_HOME` / `ANDROID_SDK_ROOT`;
+      - `%LOCALAPPDATA%\Android\Sdk` (Android Studio, README);
+      - `Program Files (x86)\Android\android-sdk` (Visual Studio), `Program Files\Android\android-sdk`, `C:\Android\Sdk`;
+      - Linux: `~/Android/Sdk`, `~/Library/Android/sdk`, `/usr/lib/android-sdk`, `/opt/android-sdk`.
+    - JDK: `ANDROID_JDK`, `JAVA_HOME`, `%LOCALAPPDATA%\Android\jdk`, Android Studio's `jbr`, `Program Files\Microsoft\jdk-*`, `Eclipse Adoptium\jdk-*`, `/usr/lib/jvm/*`. Each is checked for `javac` and a Java version of 17-21 (from its `release` file).
+    - The user's `JAVA_HOME` (Microsoft OpenJDK 17.0.6) qualifies, so on the user's side only the SDK is missing. They can install it with Android Studio or the README command run from their own terminal.
+- **Tested:**
+  - Windows PowerShell 5.1, all three platforms, 262 s;
+  - WSL Ubuntu with PowerShell 7.6.6 in `~/.powershell` (tester, no sudo): win + linux built, android stopped with the workload message;
+  - an unknown platform and a missing `dotnet` both give a message and exit 1.
+- **The take title's date and time** now has a dot between them: "08-Oct-26 · 14:03" (the device's short date and short time).
+
 ## 8. Current state, at the time of writing
 
-**Commits:** the user's commits run up to `6fe66f2 Add graph stability`.
+**Branches (2026-10-10):** the user renamed them on GitHub: `dev` became `main` (everything up to `bc1ce48`, tagged `v0.1.0`), and `v0.2.0` became `dev/v0.2.0` (§8d–§8h, up to `8e88ea6`; not merged into `main` yet). The local branches were renamed to match and track `origin/main` and `origin/dev/v0.2.0`. The old `v0.2.0` branch name clashed with a `v0.2.0` tag; `dev/…` names can't coexist with a branch called `dev`. Commit `9c752e6`'s subject starts with a stray UTF-8 BOM from PowerShell 5.1's `Out-File`; write commit messages without a BOM.
 
-**Not committed yet:**
-- the live pitch smoothing and `LineEasing`;
-- `tools/live-steadiness`;
-- the scripts;
-- all of §8a;
-- README updates;
-- this file.
+**Tests:** 121/121 pass.
 
-**Tests:** 86/86 pass.
+**Publish:** `./build.ps1 [win] [linux] [android]` builds into `publish/` (it replaced `build.bat` and `build.sh`, §8h). The 0.2.0 builds there were made from `9c752e6`'s code plus §8h. `publish/` also still holds older `Timbratune-Desktop-v…` files, which the user can delete.
 
-**Publish:**
-- `publish/Timbratune-linux-x64` and `publish/Timbratune-android` are current.
-- The Windows single exe is in `publish/Timbratune-win-x64.new/`. It replaces `publish/Timbratune-win-x64/`, which still holds the old multi-file build, once the user's running copy is closed.
+**Android SDK on the user's side:** missing (§8h). Their builds need a real install (Android Studio, or the README command run from their own terminal). Claude's shells still see the hidden copy, so Claude's Android builds keep working.
+
+**Phones:** the Pixel 9 has a profiling build of `b5d73f4`'s code (probes on, no flags file, no fake mic). The Pixel 4a has an older build without the jank fixes. Neither has the one-folder-per-take build yet; the emulator does (Debug).
+
+**WSL test setup:** in `Ubuntu-24.04` the user `tester` has the .NET 10 SDK in `~/.dotnet` and PowerShell 7.6.6 in `~/.powershell`, neither on PATH by default. A copy of the tree is in `~/tt` for Linux build tests.
 
 ## 9. Possible next steps (none requested yet)
 - Dim the provisional part of each line: the unsettled tail and the "now" extension.
@@ -455,6 +685,9 @@ Shell gotchas on this machine:
 - Finish the Mint desktop VM check (§8a).
 - Fix Android's 16 KB page alignment (§8a).
 - Use a release keystore and an AAB for the Play Store.
-- Test on a physical phone for real performance; the emulator runs at desktop speed.
+- Re-measure the Pixel 4a with the jank fixes, and push the remaining 2–3 % janky frames on the Pixel 9 down (§8d).
+- Implement the PDF export (§8e), and use `TakeArchive.Read` for previews or a richer import.
+- Install a real Android SDK on the user's side, and optionally clear the hidden copy in Claude's AppData (§8h).
+- On a phone: the `.tmbr` export and import through Android's file pickers, the move to the USB-visible folder, and the series cost after Stop (§8e, §8f).
 - Live charts in the light theme have pale zone bands; their contrast could be improved.
 - Port to macOS and iOS: same pattern, SoundFlow has natives for both.

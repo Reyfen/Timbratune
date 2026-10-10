@@ -13,14 +13,34 @@ public static class BurgLpc
     /// x[n] ≈ Σ a[j]·x[n − j]. Stops early (remaining coefficients 0) if the
     /// error power vanishes.
     /// </returns>
-    public static double[] Coefficients(ReadOnlySpan<double> x, int order)
+    public static double[] Coefficients(ReadOnlySpan<double> x, int order) =>
+        Coefficients(x, order, new Scratch(x.Length, order));
+
+    /// <summary>Working arrays for <see cref="Coefficients(ReadOnlySpan{double}, int, Scratch)"/>, reusable across frames of up to <c>maxLength</c> samples.</summary>
+    public sealed class Scratch(int maxLength, int order)
+    {
+        internal readonly double[] Forward = new double[maxLength];
+        internal readonly double[] Backward = new double[maxLength];
+        internal readonly double[] A = new double[order + 1];
+        internal readonly double[] Previous = new double[order + 1];
+    }
+
+    /// <summary>
+    /// The same, working in <paramref name="scratch"/> (the formant analysis runs thousands of
+    /// frames; fresh arrays for each were most of the live analysis' garbage). The returned
+    /// coefficients live in the scratch: valid until its next use.
+    /// </summary>
+    public static double[] Coefficients(ReadOnlySpan<double> x, int order, Scratch scratch)
     {
         var n = x.Length;
-        var a = new double[order + 1];
+        var a = scratch.A;
+        Array.Clear(a);
         if (n <= order) return a;
-        var forward = x.ToArray();  // f_k[i]
-        var backward = x.ToArray(); // b_k[i]
-        var previous = new double[order + 1];
+        var forward = scratch.Forward;   // f_k[i]
+        var backward = scratch.Backward; // b_k[i]
+        x.CopyTo(forward);
+        x.CopyTo(backward);
+        var previous = scratch.Previous;
 
         for (var k = 1; k <= order; k++)
         {

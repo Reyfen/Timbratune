@@ -17,9 +17,12 @@ public static class Features
 #endif
 
     /// <summary>"v0.1.0": the build's version (Directory.Build.props), without any "+commit" suffix.</summary>
-    public static string VersionText { get; } = "v" + (System.Reflection.CustomAttributeExtensions
+    public static string VersionText => "v" + Version;
+
+    /// <summary>"0.1.0": the build's version (Directory.Build.props), without any "+commit" suffix.</summary>
+    public static string Version { get; } = System.Reflection.CustomAttributeExtensions
         .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(typeof(Features).Assembly)
-        ?.InformationalVersion.Split('+')[0] ?? "0.0.0");
+        ?.InformationalVersion.Split('+')[0] ?? "0.0.0";
 
     /// <summary>Footer credit: "Timbratune v0.1.0 · by Reyfen".</summary>
     public static string CreditsText => $"Timbratune {VersionText} · by Reyfen";

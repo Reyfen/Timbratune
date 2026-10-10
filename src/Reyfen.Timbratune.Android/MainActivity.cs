@@ -32,19 +32,77 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
 
     protected override void OnCreate(Bundle? savedInstanceState)
     {
+#if PROFILING
+        // Experiment switches are read first: some (e.g. "vulkan") apply while the app is built.
+        var flagsFile = System.IO.Path.Combine(GetExternalFilesDir(null)!.AbsolutePath, "perf-flags.txt");
+        if (System.IO.File.Exists(flagsFile))
+            Diagnostics.Perf.Flags = System.IO.File.ReadAllText(flagsFile).Split((char[])[' ', ',', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries).ToHashSet();
+#endif
         s_audio ??= new SoundFlowAudio();
-        s_recorder ??= FakeMic() is { } fakeMic ? new FileReplayRecorder(fakeMic) : s_audio.CreateRecorder();
+        var fakeMic = FakeMic();
+        s_recorder ??= fakeMic is not null ? new FileReplayRecorder(fakeMic) : s_audio.CreateRecorder();
         var audio = s_audio;
         var recorder = s_recorder;
+        var paths = DataFolder();
+#if PROFILING
+        // Test takes recorded from the fake mic go to their own folder, not the user's takes.
+        if (fakeMic is not null) paths = new DataPaths(System.IO.Path.Combine(GetExternalFilesDir(null)!.AbsolutePath, "profiling-data"));
+#endif
         App.ServicesFactory = dialogs => new AppServices(
-            Store: new RecordingStore(DataPaths.Default()),
+            Store: new RecordingStore(paths),
             Engine: new AcousticsAnalysisEngine(),
             Recorder: recorder,
             Playback: new PlaybackService(audio.CreatePlayer()),
             Dialogs: dialogs,
-            RequestMicrophone: RequestMicrophoneAsync);
+            RequestMicrophone: RequestMicrophoneAsync,
+            LowerThreadPriority: () => global::Android.OS.Process.SetThreadPriority(global::Android.OS.ThreadPriority.Background),
+            Decoder: audio,
+            DataFolderHint: FolderHint(paths));
+#if PROFILING
+        // "noprobes": keep the fake mic and switches but log nothing (the probes' own cost out of the measurement).
+        if (!Diagnostics.Perf.Flags.Contains("noprobes")) Diagnostics.Perf.Sink = line => global::Android.Util.Log.Info("Timbratune", line);
+#endif
         base.OnCreate(savedInstanceState);
+#if PROFILING
+        if (Avalonia.Application.Current is { } app)
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => Diagnostics.Perf.ApplyExperiments(app,
+                (app.ApplicationLifetime as Avalonia.Controls.ApplicationLifetimes.ISingleViewApplicationLifetime)?.MainView is { } v
+                    ? Avalonia.Controls.TopLevel.GetTopLevel(v) : null));
+        Diagnostics.Perf.StartStallWatch();
+        if (Diagnostics.Perf.Flags.Contains("fftbench")) System.Threading.Tasks.Task.Run(FftBench.Run);
+        Diagnostics.Perf.Note($"started on {Build.Model}, Android {Build.VERSION.Release}, {System.Environment.ProcessorCount} cores");
+#endif
     }
+
+    /// <summary>
+    /// The app's folder in shared storage (Android/data/com.reyfen.timbratune/files): a PC sees
+    /// it over USB, and so do some file managers. Like private storage it's removed with the
+    /// app. Takes kept in private storage by earlier versions are moved there once. Without
+    /// shared storage (not mounted) private storage is used as before.
+    /// </summary>
+    private DataPaths DataFolder()
+    {
+        var old = DataPaths.Default();
+        var external = GetExternalFilesDir(null)?.AbsolutePath;
+        if (external is null) return old;
+        var paths = new DataPaths(external);
+        try
+        {
+            DataPaths.MoveContents(old.Root, paths.Root);
+        }
+        catch (Exception e)
+        {
+            global::Android.Util.Log.Warn("Timbratune", $"couldn't move the takes to {paths.Root}: {e.Message}");
+            return old;
+        }
+        return paths;
+    }
+
+    /// <summary>Android can't open the app's folder in a file manager: say where it is instead.</summary>
+    private static string? FolderHint(DataPaths paths) =>
+        paths.TakesDir.Contains("/Android/data/", StringComparison.Ordinal)
+            ? "Android/data/com.reyfen.timbratune/files/takes on this phone · open it from a PC over USB to add or copy takes"
+            : null;
 
     /// <summary>
     /// Debug builds only: files/fake-mic.wav in the app's private folder replays as if it were
@@ -56,6 +114,11 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
     {
 #if DEBUG
         var path = System.IO.Path.Combine(FilesDir!.AbsolutePath, "fake-mic.wav");
+        return System.IO.File.Exists(path) ? path : null;
+#elif PROFILING
+        // Release builds can't be written into over USB; the external app folder can:
+        // adb push take.wav /sdcard/Android/data/com.reyfen.timbratune/files/fake-mic.wav
+        var path = System.IO.Path.Combine(GetExternalFilesDir(null)!.AbsolutePath, "fake-mic.wav");
         return System.IO.File.Exists(path) ? path : null;
 #else
         return null;
@@ -72,7 +135,23 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
             .With(new FontManagerOptions
             {
                 FontFallbacks = [new FontFallback { FontFamily = new FontFamily("fonts:TimbratuneEmoji#Noto Color Emoji") }],
-            });
+            })
+            .With(new AndroidPlatformOptions { RenderingMode = RenderingModes() });
+
+    /// <summary>
+    /// Vulkan first, then OpenGL ES, then software. Measured scrolling: on a Pixel 9 (Android 17,
+    /// where OpenGL ES runs through a translation layer on Vulkan) OpenGL ES held it to ~33 fps
+    /// with the GPU mostly idle, Vulkan gave ~56 fps; on a Pixel 4a 52 → 56 fps, and live
+    /// recording ran smoother on both. If Vulkan can't start, Avalonia falls back to the next.
+    /// </summary>
+    private static IReadOnlyList<AndroidRenderingMode> RenderingModes()
+    {
+#if PROFILING
+        // A/B switch: "egl" renders through OpenGL ES as before.
+        if (Diagnostics.Perf.Flags.Contains("egl")) return [AndroidRenderingMode.Egl, AndroidRenderingMode.Software];
+#endif
+        return [AndroidRenderingMode.Vulkan, AndroidRenderingMode.Egl, AndroidRenderingMode.Software];
+    }
 
     /// <summary>Asks for the microphone the first time; true when recording is allowed.</summary>
     private Task<bool> RequestMicrophoneAsync()

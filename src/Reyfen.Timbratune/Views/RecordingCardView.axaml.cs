@@ -7,7 +7,20 @@ namespace Reyfen.Timbratune.Views;
 
 public partial class RecordingCardView : UserControl
 {
-    public RecordingCardView() => InitializeComponent();
+    public RecordingCardView()
+    {
+        InitializeComponent();
+        // Renaming starts with the name selected in a focused box.
+        RenameRow.PropertyChanged += (_, e) =>
+        {
+            if (e.Property != IsVisibleProperty || !RenameRow.IsVisible) return;
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                RenameBox.Focus();
+                RenameBox.SelectAll();
+            });
+        };
+    }
 
     // Clicking the card background (not one of its buttons / the waveform)
     // selects this take, like the wrapping div's onClick in App.tsx.

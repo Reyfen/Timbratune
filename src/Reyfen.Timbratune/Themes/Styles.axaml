@@ -49,6 +49,10 @@
     <Setter Property="Foreground" Value="{DynamicResource InkHeadingBrush}" />
     <Setter Property="FontFeatures" Value="+tnum" />
     <Setter Property="VerticalAlignment" Value="Center" />
+    <!-- A fixed box: the value changes ~10×/s while recording, and a size change would re-lay out its card. -->
+    <Setter Property="Width" Value="140" />
+    <Setter Property="Height" Value="28" />
+    <Setter Property="TextAlignment" Value="Right" />
   </Style>
   <Style Selector="TextBlock.unit">
     <Setter Property="FontSize" Value="14" />
@@ -73,6 +77,7 @@
     <Setter Property="Padding" Value="18,16" />
     <Setter Property="BorderThickness" Value="1" />
     <Setter Property="BorderBrush" Value="{DynamicResource LineSoftBrush}" />
+    <!-- On phones App.Initialize swaps this for a crisp, unblurred edge (see MobileLook). -->
     <Setter Property="BoxShadow" Value="0 8 24 0 #22BA8EC4" />
   </Style>
   <Style Selector="Border.inset">
@@ -165,6 +170,68 @@
   <Style Selector="Button.ghost:pointerover /template/ ContentPresenter#PART_ContentPresenter">
     <Setter Property="Background" Value="{DynamicResource Card2Brush}" />
     <Setter Property="Foreground" Value="{DynamicResource InkStrongBrush}" />
+  </Style>
+  <!-- square, framed icon buttons: the take cards' rename / delete / save -->
+  <Style Selector="Button.icon">
+    <Setter Property="Background" Value="{DynamicResource ControlBgBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource LineSoftBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="Width" Value="34" />
+    <Setter Property="Height" Value="34" />
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="FontSize" Value="15" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Cursor" Value="Hand" />
+  </Style>
+  <Style Selector="Button.icon:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource Card2Brush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource InkStrongBrush}" />
+  </Style>
+  <Style Selector="Button.icon:disabled /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource ControlBgBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource LineSoftBrush}" />
+    <Setter Property="Opacity" Value="0.5" />
+  </Style>
+  <!-- a pill with a frame, the same height as the record button: import -->
+  <Style Selector="Button.outline">
+    <Setter Property="Background" Value="{DynamicResource ControlBgBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource LineSoftBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="999" />
+    <Setter Property="Padding" Value="20,9" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Cursor" Value="Hand" />
+  </Style>
+  <Style Selector="Button.outline:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource ControlBgBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource InkStrongBrush}" />
+  </Style>
+  <!-- the placeholder in italics: "untitled take" is what an unnamed take is called -->
+  <Style Selector="TextBox.label-input /template/ TextBlock#PART_Watermark">
+    <Setter Property="FontStyle" Value="Italic" />
+  </Style>
+  <!-- keep the app's input colour while typing (Fluent turns it black / white on focus) -->
+  <Style Selector="TextBox.label-input:pointerover /template/ Border#PART_BorderElement">
+    <Setter Property="Background" Value="{DynamicResource ControlBgBrush}" />
+  </Style>
+  <Style Selector="TextBox.label-input:focus /template/ Border#PART_BorderElement">
+    <Setter Property="Background" Value="{DynamicResource ControlBgBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+  </Style>
+  <Style Selector="TextBox.label-input:focus">
+    <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
+  </Style>
+  <Style Selector="TextBox.rename">
+    <Setter Property="MinWidth" Value="0" />
+    <Setter Property="Padding" Value="12,6" />
   </Style>
   <Style Selector="Button.danger">
     <Setter Property="Background" Value="{DynamicResource DangerBgBrush}" />
@@ -274,6 +341,33 @@
     <Setter Property="Foreground" Value="{DynamicResource OnAccentBrush}" />
   </Style>
 
+  <!-- the recording cards' save menu, matching the pill dropdown's popup -->
+  <Style Selector="MenuFlyoutPresenter.save-menu">
+    <Setter Property="Background" Value="{DynamicResource CardBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource LineSoftBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="14" />
+    <Setter Property="Padding" Value="4" />
+  </Style>
+  <Style Selector="MenuFlyoutPresenter.save-menu MenuItem">
+    <Setter Property="CornerRadius" Value="10" />
+    <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
+    <Setter Property="Cursor" Value="Hand" />
+  </Style>
+  <Style Selector="MenuFlyoutPresenter.save-menu MenuItem:pointerover /template/ Border#PART_LayoutRoot">
+    <Setter Property="Background" Value="{DynamicResource ControlBgBrush}" />
+  </Style>
+  <Style Selector="MenuFlyoutPresenter.save-menu MenuItem:pointerover /template/ ContentPresenter#PART_HeaderPresenter">
+    <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
+  </Style>
+  <!-- not available yet: faint, so it reads as "coming", not as broken -->
+  <Style Selector="MenuFlyoutPresenter.save-menu MenuItem:disabled">
+    <Setter Property="Cursor" Value="Arrow" />
+  </Style>
+  <Style Selector="MenuFlyoutPresenter.save-menu MenuItem:disabled /template/ ContentPresenter#PART_HeaderPresenter">
+    <Setter Property="Foreground" Value="{DynamicResource InkFaintBrush}" />
+  </Style>
+
   <!-- recording cards: highlight the one in focus -->
   <Style Selector="Border.rec">
     <Setter Property="Background" Value="{DynamicResource CardBrush}" />
@@ -286,14 +380,6 @@
   <Style Selector="Border.rec.active">
     <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
   </Style>
-  <Style Selector="Border.num">
-    <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
-    <Setter Property="CornerRadius" Value="999" />
-    <Setter Property="MinWidth" Value="30" />
-    <Setter Property="Height" Value="30" />
-    <Setter Property="Padding" Value="8,0" />
-  </Style>
-
   <Style Selector="Expander">
     <Setter Property="Background" Value="{DynamicResource CardBrush}" />
     <Setter Property="CornerRadius" Value="{StaticResource CardRadius}" />

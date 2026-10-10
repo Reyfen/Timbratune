@@ -2,7 +2,9 @@ using System.Diagnostics;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Reyfen.Timbratune.Analysis;
 using Reyfen.Timbratune.Core.Analysis;
+using Reyfen.Timbratune.Diagnostics;
 using Reyfen.Timbratune.Core.Audio;
 using Reyfen.Timbratune.Core.Domain;
 using Reyfen.Timbratune.Core.Models;
@@ -34,15 +36,20 @@ public sealed partial class RecordViewModel : ObservableObject
     private bool _liveBusy;
 
     private readonly Func<Task<bool>>? _requestMicrophone;
+    private readonly Action? _lowerThreadPriority;
+    private LiveWorker? _worker;
+    private long _liveStarted;
 
     /// <param name="requestMicrophone">
     /// Platforms that ask for microphone access at run time (Android) pass this: it asks if
     /// needed and returns whether recording is allowed. Desktop platforms pass null.
     /// </param>
+    /// <param name="lowerThreadPriority">Lowers the calling thread's OS priority (the live analysis' thread), where the platform can.</param>
     public RecordViewModel(IAudioRecorder recorder, IAnalysisEngine engine, RecordingStore store, Func<Task> onRecorded,
-        Func<Task<bool>>? requestMicrophone = null)
+        Func<Task<bool>>? requestMicrophone = null, Action? lowerThreadPriority = null)
     {
         _requestMicrophone = requestMicrophone;
+        _lowerThreadPriority = lowerThreadPriority;
         _recorder = recorder;
         _engine = engine;
         _store = store;
@@ -64,6 +71,7 @@ public sealed partial class RecordViewModel : ObservableObject
     private double _analysisProgress;
 
     private readonly Stopwatch _analysisClock = new();
+    private readonly Stopwatch _sinceLastLive = new();
 
     /// <summary>"42%".</summary>
     public string AnalyzingPercent => $"{AnalysisProgress:0}%";
@@ -113,6 +121,9 @@ public sealed partial class RecordViewModel : ObservableObject
     // Redraw straight away with the new window instead of waiting for the next audio.
     partial void OnLiveWindowChanged(LiveWindowOption value)
     {
+        // While recording the next update (≤ 100 ms) applies it: the snapshot's series lists are
+        // refilled by the live analysis and are only read on its thread.
+        if (State == RecordState.Recording) return;
         if (_lastSnapshot is { } snapshot && LiveTimelines is { } timelines)
             timelines.Apply(LiveTimelinesViewModel.Compute(snapshot, value?.Seconds));
     }
@@ -155,11 +166,29 @@ public sealed partial class RecordViewModel : ObservableObject
         try
         {
             var window = LiveWindow?.Seconds;
-            var (snapshot, timelines) = await Task.Run(() =>
+            if (Perf.Flags.Contains("liveslow") && _sinceLastLive.IsRunning && _sinceLastLive.ElapsedMilliseconds < 500) return;
+            _sinceLastLive.Restart();
+            // The analysis runs on its own low-priority thread with its loops limited to a few
+            // cores, at most one update started per 100 ms, so the UI and the renderer always have
+            // CPU left. Running it back to back on every core made a Pixel 9 drop frames while
+            // recording (51 → 54.6 fps, frames over 50 ms 21 → 9 per 30 s). Results are identical.
+            // Profiling builds: "fullcpu" runs it as before, "lowprioN" picks N cores.
+            var lowPriority = LowPriorityCores();
+            if (lowPriority > 0)
             {
-                var s = live.Update();
-                return (s, LiveTimelinesViewModel.Compute(s, window));
-            });
+                if (_liveStarted != 0 && Stopwatch.GetElapsedTime(_liveStarted).TotalMilliseconds < 100) return;
+                _worker ??= new LiveWorker(lowPriority, _lowerThreadPriority);
+            }
+            _liveStarted = Stopwatch.GetTimestamp();
+            // The whole-take statistics are only needed when the take's cards refresh.
+            var full = LiveTake is null || Stopwatch.GetElapsedTime(_liveTakeShown) >= LiveTakeInterval;
+            Func<(LiveSnapshot, LiveTimelinesViewModel.Frame)> work = () =>
+            {
+                LiveSnapshot s;
+                using (Perf.Measure(full ? "live.update" : "live.update-quick")) s = live.Update(full: full);
+                using (Perf.Measure("live.compute")) return (s, LiveTimelinesViewModel.Compute(s, window));
+            };
+            var (snapshot, timelines) = _worker is { } worker && lowPriority > 0 ? await worker.Run(work) : await Task.Run(work);
             if (State == RecordState.Recording) Show(snapshot, timelines);
         }
         catch (Exception)
@@ -175,10 +204,42 @@ public sealed partial class RecordViewModel : ObservableObject
     private void Show(LiveSnapshot snapshot, LiveTimelinesViewModel.Frame? frame = null)
     {
         _lastSnapshot = snapshot;
-        LiveTimelines?.Apply(frame ?? LiveTimelinesViewModel.Compute(snapshot, LiveWindow?.Seconds));
-        if (snapshot.Result is { } result)
-            LiveTake = new TakeViewModel(result.Metrics, result.Detail, isLatest: true, NoModal, liveElapsed: snapshot.Elapsed);
+        // Experiment (profiling builds): "slowcharts" moves the graphs at most every 200 ms.
+        var applyCharts = !Perf.Flags.Contains("slowcharts") || snapshot.IsFinal || Stopwatch.GetElapsedTime(_chartsApplied).TotalMilliseconds >= 200;
+        if (applyCharts)
+        {
+            _chartsApplied = Stopwatch.GetTimestamp();
+            using (Perf.Measure("live.apply")) LiveTimelines?.Apply(frame ?? LiveTimelinesViewModel.Compute(snapshot, LiveWindow?.Seconds));
+        }
+        if (snapshot.Result is not { } result || Perf.Flags.Contains("nolivetake") && !snapshot.IsFinal) return;
+        // The take's cards follow once a second (only full updates carry a result): the live
+        // graphs above carry the moment-to-moment feedback, and refreshing the cards' texts and
+        // charts on every update kept a phone's UI thread busy most of the time.
+        _liveTakeShown = Stopwatch.GetTimestamp();
+        using (Perf.Measure("live.takeview"))
+        {
+            // Updated in place: the view keeps its controls and only re-lays out what changed.
+            if (LiveTake is { } take) take.Update(result.Metrics, result.Detail, snapshot.Elapsed);
+            else LiveTake = new TakeViewModel(result.Metrics, result.Detail, isLatest: true, NoModal, liveElapsed: snapshot.Elapsed);
+        }
     }
+
+    private long _chartsApplied;
+
+    /// <summary>Cores the live analysis may use (0 = all, on thread-pool threads at normal priority).</summary>
+    private const int LiveAnalysisCores = 2;
+
+    private static int LowPriorityCores()
+    {
+        if (Perf.Flags.Contains("fullcpu")) return 0;
+        foreach (var n in new[] { 1, 2, 3, 4 })
+            if (Perf.Flags.Contains("lowprio" + n)) return n;
+        return LiveAnalysisCores;
+    }
+
+    /// <summary>How often the live take's cards are rebuilt while recording.</summary>
+    private static readonly TimeSpan LiveTakeInterval = TimeSpan.FromSeconds(1);
+    private long _liveTakeShown;
 
     [RelayCommand]
     private async Task StopAsync()
@@ -206,21 +267,26 @@ public sealed partial class RecordViewModel : ObservableObject
                 var recorded = (int)((new FileInfo(wav).Length - 44) / 2);
                 var length = live.AlignedLength(Math.Min(recorded, live.SampleCount));
                 WavWriter.Truncate(wav, length);
+                var finalStart = Stopwatch.GetTimestamp();
                 Show(await Task.Run(() => live.Update(final: true, length: length)));
+                Perf.Report("stop.final-live", Stopwatch.GetElapsedTime(finalStart).TotalMilliseconds);
             }
             AnalysisProgress = 100 * liveShare;
 
+            var analyzeStart = Stopwatch.GetTimestamp();
             var result = await _engine.AnalyzeAsync(wav,
                 // Max: a late-arriving report must not move the bar back.
                 progress: new ThrottledProgress(f => AnalysisProgress = Math.Max(AnalysisProgress, 100 * (liveShare + analysisShare * f))));
             AnalysisProgress = 100 * (liveShare + analysisShare);
+            Perf.Report("stop.analyze", Stopwatch.GetElapsedTime(analyzeStart).TotalMilliseconds);
             var entry = result.Metrics;
             entry.Label = string.IsNullOrWhiteSpace(Label) ? "untitled take" : Label.Trim();
             entry.Note = "";
             entry.Date = DateTime.Now.ToString("yyyy-MM-dd");
+            entry.RecordedAt = Recording.Timestamp(DateTime.Now);
             entry.SourceFile = Path.GetFileName(wav);
             var sourceWav = wav;
-            await Task.Run(() => _store.Add(entry, result.Detail, sourceWav));
+            using (Perf.Measure("stop.save")) await Task.Run(() => _store.Add(entry, result.Detail, sourceWav, result.Series));
             AnalysisProgress = 100;
 
             Label = "";

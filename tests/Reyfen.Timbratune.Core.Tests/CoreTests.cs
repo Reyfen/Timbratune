@@ -82,29 +82,157 @@ public sealed class RecordingStoreTests : IDisposable
     }
 
     [Fact]
-    public void AddAssignsIdsCopiesAudioAndDeleteRemovesEverything()
+    public void AddMakesOneFolderPerTakeAndDeleteRemovesIt()
     {
         var store = new RecordingStore(new DataPaths(_root));
         Assert.Empty(store.Load());
 
         var wav = Path.Combine(AppContext.BaseDirectory, "Fixtures", "vctk_f339.wav");
         var first = store.Add(new Recording { Label = "a" }, new RecordingDetail(), wav);
-        var second = store.Add(new Recording { Label = "b" }, new RecordingDetail(), wav);
+        var second = store.Add(new Recording { Label = "b: c/d" }, new RecordingDetail(), wav);
 
         Assert.Equal(1, first.Id);
         Assert.Equal(2, second.Id);
-        Assert.Equal("audio/002.wav", second.Audio);
-        Assert.True(File.Exists(Path.Combine(_root, "audio", "002.wav")));
-        Assert.True(File.Exists(Path.Combine(_root, "analysis", "2.json")));
+        Assert.Equal("takes/002 b_ c_d/take.wav", second.Audio);
+        var folder = Path.Combine(_root, "takes", "002 b_ c_d");
+        foreach (var file in new[] { "take.wav", "take.json", "detail.json" }) Assert.True(File.Exists(Path.Combine(folder, file)), file);
         Assert.NotNull(store.LoadDetail(second));
+        Assert.Equal(["a", "b: c/d"], store.Load().Select(r => r.Label));
 
         store.Delete(1);
-        var left = store.Load();
-        Assert.Equal([2], left.Select(r => r.Id));
-        Assert.False(File.Exists(Path.Combine(_root, "audio", "001.wav")));
+        Assert.Equal([2], store.Load().Select(r => r.Id));
+        Assert.False(Directory.Exists(Path.Combine(_root, "takes", "001 a")));
 
-        // ids keep counting from the max, like analyze.py
+        // ids keep counting from the max
         Assert.Equal(3, store.Add(new Recording(), new RecordingDetail(), wav).Id);
+    }
+
+    [Fact]
+    public void TakeFoldersCanBeRemovedAndCopiedInByHand()
+    {
+        var store = new RecordingStore(new DataPaths(_root));
+        var wav = Path.Combine(AppContext.BaseDirectory, "Fixtures", "vctk_f339.wav");
+        var a = store.Add(new Recording { Label = "a" }, new RecordingDetail(), wav);
+        store.Add(new Recording { Label = "b" }, new RecordingDetail(), wav);
+
+        // a copy of take 1's folder (e.g. from another device) gets the next free id
+        CopyFolder(store.FolderOf(a), Path.Combine(_root, "takes", "001 a copy"));
+        var takes = store.Load();
+        Assert.Equal([1, 2, 3], takes.Select(r => r.Id));
+        Assert.Equal(["a", "b", "a"], takes.Select(r => r.Label));
+        Assert.Equal([1, 2, 3], store.Load().Select(r => r.Id)); // the new id is kept
+
+        // removing a folder by hand removes the take; a folder without take.json isn't one
+        Directory.Delete(Path.Combine(_root, "takes", "002 b"), true);
+        Directory.CreateDirectory(Path.Combine(_root, "takes", "notes"));
+        Assert.Equal([1, 3], store.Load().Select(r => r.Id));
+
+        // an unreadable take.json is reported, not fatal
+        Directory.CreateDirectory(Path.Combine(_root, "takes", "broken"));
+        File.WriteAllText(Path.Combine(_root, "takes", "broken", "take.json"), "{ not json");
+        Assert.Equal([1, 3], store.Load().Select(r => r.Id));
+        Assert.Equal(["broken"], store.Unreadable);
+    }
+
+    [Fact]
+    public void TakesKeepWhenTheyWereRecorded()
+    {
+        var store = new RecordingStore(new DataPaths(_root));
+        var wav = Path.Combine(AppContext.BaseDirectory, "Fixtures", "vctk_f339.wav");
+        var stamped = store.Add(new Recording { Label = "a", Date = "2026-10-07", RecordedAt = "2026-10-07T14:03:12+03:00" },
+            new RecordingDetail(), wav);
+        Assert.Equal("2026-10-07T14:03:12+03:00", store.Load().Single(r => r.Id == stamped.Id).RecordedAt);
+
+        // An older take without a time: its audio file's time, when that's on the take's date.
+        var older = store.Add(new Recording { Label = "b", Date = "2026-09-01" }, new RecordingDetail(), wav);
+        var audio = store.Paths.Resolve(older.Audio)!;
+        File.SetLastWriteTime(audio, new DateTime(2026, 9, 1, 9, 30, 0));
+        Assert.Equal(Recording.Timestamp(new DateTime(2026, 9, 1, 9, 30, 0)), store.Load().Single(r => r.Id == older.Id).RecordedAt);
+        File.SetLastWriteTime(audio, new DateTime(2026, 9, 5, 9, 30, 0));
+        Assert.Null(store.Load().Single(r => r.Id == older.Id).RecordedAt); // another day: no time is better than a wrong one
+    }
+
+    [Fact]
+    public void RenamingChangesTheLabelAndTheFolderName()
+    {
+        var store = new RecordingStore(new DataPaths(_root));
+        var wav = Path.Combine(AppContext.BaseDirectory, "Fixtures", "vctk_f339.wav");
+        var take = store.Add(new Recording { Label = "untitled take", Pitch = new Pitch { MeanHz = 200 } }, new RecordingDetail(), wav);
+
+        var renamed = store.Rename(take, "  rainbow: passage  ");
+        Assert.Equal("rainbow: passage", renamed.Label);
+        Assert.Equal("takes/001 rainbow_ passage/take.wav", renamed.Audio);
+        var loaded = Assert.Single(store.Load());
+        Assert.Equal(("rainbow: passage", 1, 200.0), (loaded.Label, loaded.Id, loaded.Pitch.MeanHz));
+        Assert.False(Directory.Exists(Path.Combine(_root, "takes", "001 untitled take")));
+
+        // without renaming the folder (e.g. while its audio plays) only the label changes
+        var kept = store.Rename(loaded, "second name", renameFolder: false);
+        Assert.Equal("second name", Assert.Single(store.Load()).Label);
+        Assert.Equal("takes/001 rainbow_ passage/take.wav", kept.Audio);
+    }
+
+    [Fact]
+    public void TheOldLayoutIsConvertedToTakeFolders()
+    {
+        // recordings.json + audio/ + analysis/, as versions before 0.2.0 wrote them
+        var paths = new DataPaths(_root);
+        Directory.CreateDirectory(paths.AudioDir);
+        Directory.CreateDirectory(paths.AnalysisDir);
+        var wav = Path.Combine(AppContext.BaseDirectory, "Fixtures", "vctk_f339.wav");
+        File.Copy(wav, Path.Combine(paths.AudioDir, "004.wav"));
+        var detail = new RecordingDetail { DurationS = 1.5, RegisterFloorHz = 140 };
+        File.WriteAllText(Path.Combine(paths.AnalysisDir, "4.json"), TimbratuneJson.WriteDetail(detail));
+        File.WriteAllText(Path.Combine(paths.AnalysisDir, "4.series.json"), "{\"version\":1,\"series\":{}}");
+        var old = new Recording
+        {
+            Id = 4, Label = "old take", Note = "n", Date = "2026-09-01", Audio = "audio/004.wav", Detail = "analysis/4.json",
+            DurationS = 1.5, Pitch = new Pitch { MeanHz = 201.5 },
+        };
+        File.WriteAllText(paths.RecordingsJson, TimbratuneJson.WriteRecordings([old, new Recording { Id = 7, Label = "no audio" }]));
+
+        var store = new RecordingStore(paths);
+        var takes = store.Load();
+
+        Assert.Equal([4, 7], takes.Select(r => r.Id));
+        var take = takes[0];
+        Assert.Equal(("old take", "n", "2026-09-01", 201.5), (take.Label, take.Note, take.Date, take.Pitch.MeanHz));
+        Assert.Equal(File.ReadAllBytes(wav), File.ReadAllBytes(paths.Resolve(take.Audio)!));
+        Assert.Equal(140, store.LoadDetail(take)!.RegisterFloorHz);
+        Assert.True(store.HasSeries(take));
+        Assert.Null(takes[1].Audio);
+
+        Assert.False(File.Exists(paths.RecordingsJson));
+        Assert.True(File.Exists(paths.RecordingsJson + ".migrated"));
+        Assert.False(Directory.Exists(paths.AudioDir));
+        Assert.False(Directory.Exists(paths.AnalysisDir));
+        Assert.Equal([4, 7], store.Load().Select(r => r.Id)); // converting is done once
+    }
+
+    [Fact]
+    public void MovingTheDataFolderNeverMergesTwoFoldersWithTakes()
+    {
+        var wav = Path.Combine(AppContext.BaseDirectory, "Fixtures", "vctk_f339.wav");
+        var from = Path.Combine(_root, "private");
+        var to = Path.Combine(_root, "shared");
+        new RecordingStore(new DataPaths(from)).Add(new Recording { Label = "a" }, new RecordingDetail(), wav);
+
+        DataPaths.MoveContents(from, to);
+        Assert.Equal(["a"], new RecordingStore(new DataPaths(to)).Load().Select(r => r.Label));
+        Assert.False(Directory.Exists(Path.Combine(from, "takes")));
+        Assert.False(File.Exists(Path.Combine(to, ".moving")));
+
+        // takes in both: left alone
+        new RecordingStore(new DataPaths(from)).Add(new Recording { Label = "b" }, new RecordingDetail(), wav);
+        DataPaths.MoveContents(from, to);
+        Assert.Single(new RecordingStore(new DataPaths(from)).Load());
+        Assert.Single(new RecordingStore(new DataPaths(to)).Load());
+    }
+
+    private static void CopyFolder(string from, string to)
+    {
+        Directory.CreateDirectory(to);
+        foreach (var file in Directory.GetFiles(from)) File.Copy(file, Path.Combine(to, Path.GetFileName(file)));
     }
 
     [Fact]

@@ -11,6 +11,16 @@ public sealed class Recording
     public string Label { get; set; } = "";
     public string Note { get; set; } = "";
     public string Date { get; set; } = "";
+    /// <summary>
+    /// When it was recorded (or imported: the file's time), ISO 8601 with the UTC offset, e.g.
+    /// "2026-10-07T14:03:12+03:00". Null for takes saved before it was kept (then only <see cref="Date"/>).
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? RecordedAt { get; set; }
+
+    /// <summary>"2026-10-07T14:03:12+03:00" for a local time.</summary>
+    public static string Timestamp(DateTime local) =>
+        new DateTimeOffset(local).ToString("yyyy-MM-ddTHH:mm:sszzz", System.Globalization.CultureInfo.InvariantCulture);
     public string SourceFile { get; set; } = "";
     /// <summary>Relative to the data root, e.g. "audio/001.wav". Null when no audio was kept.</summary>
     public string? Audio { get; set; }

@@ -80,6 +80,58 @@ public static class FormantAnalyzer
 {
     private const double SafetyMarginHz = 50;
 
+    /// <summary>
+    /// <see cref="Burg"/> at several formant ceilings at once (e.g. 5500 and 5000 Hz): the
+    /// resampling they all start with shares its forward transform (<see cref="Resampler.ResampleAll"/>),
+    /// then each ceiling's frames run in parallel. Each contour is identical to <see cref="Burg"/>'s.
+    /// </summary>
+    public static FormantContour[] BurgAll(Sound sound, IReadOnlyList<double> formantCeilings, double timeStep, double maxFormants,
+        double windowLength, double preEmphasisFrom, Action<double>? progress = null)
+    {
+        const double resampleShare = 0.85;
+        var resampled = ResampleForCeilings(sound, formantCeilings, progress is null ? null : f => progress(resampleShare * f));
+        return BurgResampled(resampled, formantCeilings, timeStep, maxFormants, windowLength, preEmphasisFrom,
+            progress is null ? null : f => progress(resampleShare + (1 - resampleShare) * f));
+    }
+
+    /// <summary>The channel average at 2 × each ceiling (the first half of <see cref="BurgAll"/>; shared forward transform).</summary>
+    public static Sound[] ResampleForCeilings(Sound sound, IReadOnlyList<double> formantCeilings, Action<double>? progress = null)
+    {
+        // As in Burg: the channel average first, then each ceiling's 2 × ceiling sampling rate.
+        var mono = new Sound([sound.ToMono()], sound.Grid);
+        var nyquist = 0.5 * sound.SamplingFrequency;
+        var needed = formantCeilings.Select((c, i) => (c, i)).Where(x => Math.Abs(x.c / nyquist - 1) >= 1e-12).ToList();
+        var resampled = Resampler.ResampleAll(mono, needed.Select(x => 2 * x.c).ToList(), 50, progress);
+        var result = new Sound[formantCeilings.Count];
+        for (var i = 0; i < result.Length; i++) result[i] = mono;
+        for (var k = 0; k < needed.Count; k++) result[needed[k].i] = resampled[k];
+        return result;
+    }
+
+    /// <summary>The second half of <see cref="BurgAll"/>: each ceiling's frames (in parallel) on its resampled sound.</summary>
+    public static FormantContour[] BurgResampled(Sound[] resampled, IReadOnlyList<double> formantCeilings, double timeStep,
+        double maxFormants, double windowLength, double preEmphasisFrom, Action<double>? progress = null)
+    {
+        const double resampleShare = 0.85;
+        var results = new FormantContour[formantCeilings.Count];
+        var stages = new double[formantCeilings.Count];
+        Parallel.For(0, formantCeilings.Count, Parallelism.Options, i =>
+        {
+            // Already at 2 × ceiling, so Burg goes straight to the frames.
+            results[i] = Burg(resampled[i], timeStep, maxFormants, formantCeilings[i], windowLength, preEmphasisFrom,
+                progress is null ? null : f =>
+                {
+                    lock (stages)
+                    {
+                        // Burg counts its (here skipped) resampling as the first 85%: only its frames are left.
+                        stages[i] = Math.Clamp((f - resampleShare) / (1 - resampleShare), 0, 1);
+                        progress(stages.Average());
+                    }
+                });
+        });
+        return results;
+    }
+
     /// <param name="timeStep">0 = a quarter of the window length.</param>
     /// <param name="maxFormants">Formants sought per frame (poles = 2 × this), e.g. 5.</param>
     /// <param name="formantCeiling">Highest formant frequency (Hz), e.g. 5500 for most female voices.</param>
@@ -124,14 +176,16 @@ public static class FormantAnalyzer
 
         var frames = new FormantValue[frameCount][];
         var counter = new FrameProgress(frameCount, frameProgress);
-        Parallel.For(0, frameCount, f =>
+        // One set of working arrays per worker thread, reused for all its frames.
+        var maxLength = Math.Max(windowSamples, 2 * halfWindowSamples) + 2;
+        Parallel.For(0, frameCount, Parallelism.Options, () => new FrameScratch(maxLength, poles), (f, _, scratch) =>
         {
             var t = first + f * dt;
             var leftSample = (int)Math.Floor((t - grid.First) / dx + 1); // 1-based
             var start = Math.Max(1, leftSample + 1 - halfWindowSamples);
             var end = Math.Min(grid.Count, leftSample + halfWindowSamples);
             var length = end - start + 1;
-            var frame = new double[length];
+            var frame = scratch.Frame.AsSpan(0, length);
             var peak = 0.0;
             for (var j = 0; j < length; j++)
             {
@@ -139,9 +193,10 @@ public static class FormantAnalyzer
                 peak = Math.Max(peak, s * s);
                 frame[j] = s * window[j];
             }
-            frames[f] = peak == 0 ? [] : FrameFormants(frame, poles, newNyquist);
+            frames[f] = peak == 0 ? [] : FrameFormants(frame, poles, newNyquist, scratch);
             counter.Done();
-        });
+            return scratch;
+        }, _ => { });
         progress?.Invoke(1);
         return new FormantContour(new TimeGrid(sound.Grid.XMin, sound.Grid.XMax, frameCount, dt, first), frames);
     }
@@ -164,11 +219,22 @@ public static class FormantAnalyzer
         return w;
     }
 
-    /// <summary>Resonances of one frame: roots of z^p − a₁z^(p−1) − … − a_p inside the unit circle.</summary>
-    internal static FormantValue[] FrameFormants(double[] frame, int poles, double nyquist)
+    /// <summary>Per-thread working arrays for the frames of <see cref="Burg"/>.</summary>
+    internal sealed class FrameScratch(int maxLength, int poles)
     {
-        var a = BurgLpc.Coefficients(frame, poles);
-        var coefficients = new double[poles + 1]; // ascending powers
+        public readonly double[] Frame = new double[maxLength];
+        public readonly BurgLpc.Scratch Burg = new(maxLength, poles);
+        public readonly double[] Coefficients = new double[poles + 1];
+    }
+
+    /// <summary>Resonances of one frame: roots of z^p − a₁z^(p−1) − … − a_p inside the unit circle.</summary>
+    internal static FormantValue[] FrameFormants(double[] frame, int poles, double nyquist) =>
+        FrameFormants(frame, poles, nyquist, new FrameScratch(frame.Length, poles));
+
+    internal static FormantValue[] FrameFormants(ReadOnlySpan<double> frame, int poles, double nyquist, FrameScratch scratch)
+    {
+        var a = BurgLpc.Coefficients(frame, poles, scratch.Burg);
+        var coefficients = scratch.Coefficients; // ascending powers
         coefficients[poles] = 1.0;
         for (var j = 1; j <= poles; j++) coefficients[poles - j] = -a[j];
 

@@ -1,3 +1,4 @@
+using Reyfen.Timbratune.Acoustics.Numerics;
 using Reyfen.Timbratune.Acoustics;
 using Reyfen.Timbratune.Acoustics.Formants;
 using Reyfen.Timbratune.Acoustics.Intensity;
@@ -67,13 +68,7 @@ public static class RawAnalysisAssembler
             ["intensity_max"] = intensity.Maximum(),
         };
 
-        // analyze_register() uses a 10 ms step; the pitch track has exactly that step.
-        var contour = new List<(double, double)>(pitch.FrameCount);
-        for (var i = 0; i < pitch.FrameCount; i++)
-        {
-            var hz = pitch.ValueInFrame(i);
-            contour.Add((pitch.Grid.IndexToX(i), double.IsNaN(hz) ? 0 : hz));
-        }
+        var contour = Contour(pitch);
 
         return new RawAnalysis
         {
@@ -99,6 +94,18 @@ public static class RawAnalysisAssembler
         return frames;
     }
 
+    /// <summary>The 10 ms pitch track as (time, Hz), 0 Hz where unvoiced (analyze_register() uses a 10 ms step; the track has exactly that step).</summary>
+    public static List<(double T, double Hz)> Contour(PitchContour pitch)
+    {
+        var contour = new List<(double, double)>(pitch.FrameCount);
+        for (var i = 0; i < pitch.FrameCount; i++)
+        {
+            var hz = pitch.ValueInFrame(i);
+            contour.Add((pitch.Grid.IndexToX(i), double.IsNaN(hz) ? 0 : hz));
+        }
+        return contour;
+    }
+
     /// <summary>Sounding stretches of speech (silence detection on the intensity contour).</summary>
     public static IReadOnlyList<(double Start, double End)> SoundingIntervals(IntensityContour intensity) =>
         SilenceDetector.Detect(intensity, -25, 0.1, 0.05).Where(i => i.IsSounding).Select(i => (i.Start, i.End)).ToList();
@@ -115,12 +122,15 @@ public static class RawAnalysisAssembler
         return points;
     }
 
-    public static List<(double T, double F0)> VoicedFrames(PitchContour pitch)
+    public static List<(double T, double F0)> VoicedFrames(PitchContour pitch) => VoicedFrames(pitch, []);
+
+    /// <summary>The same, filling <paramref name="into"/> (cleared first) so the live analysis can reuse one list.</summary>
+    public static List<(double T, double F0)> VoicedFrames(PitchContour pitch, List<(double T, double F0)> into)
     {
-        var voiced = new List<(double, double)>();
+        into.Clear();
         for (var i = 0; i < pitch.FrameCount; i++)
-            if (pitch.IsVoiced(i)) voiced.Add((pitch.Grid.IndexToX(i), pitch.ValueInFrame(i)));
-        return voiced;
+            if (pitch.IsVoiced(i)) into.Add((pitch.Grid.IndexToX(i), pitch.ValueInFrame(i)));
+        return into;
     }
 
     /// <summary>
@@ -147,11 +157,18 @@ public static class RawAnalysisAssembler
     }
 
     /// <summary>Times of voiced frames within 10 dB of the loudest intensity frame.</summary>
-    public static List<double> LoudVoicedTimes(List<(double T, double F0)> voiced, IntensityContour intensity)
+    public static List<double> LoudVoicedTimes(List<(double T, double F0)> voiced, IntensityContour intensity) =>
+        LoudVoicedTimes(voiced, intensity, []);
+
+    /// <summary>The same, filling <paramref name="candidates"/> (cleared first).</summary>
+    public static List<double> LoudVoicedTimes(List<(double T, double F0)> voiced, IntensityContour intensity, List<double> candidates)
     {
         var db = intensity.Db;
-        var loudFloor = db.Where(v => !double.IsNaN(v)).DefaultIfEmpty(double.NaN).Max() - 10;
-        var candidates = new List<double>();
+        var loudFloor = double.NaN;
+        foreach (var v in db)
+            if (!double.IsNaN(v) && !(v <= loudFloor)) loudFloor = v;
+        loudFloor -= 10;
+        candidates.Clear();
         var p = 0;
         foreach (var (t, _) in voiced)
         {
@@ -166,7 +183,7 @@ public static class RawAnalysisAssembler
     {
         var frames = Subsample(voiced, 250);
         var rows = new RawAnalysis.WeightRow?[frames.Count];
-        Parallel.For(0, frames.Count, k => rows[k] = weightRow(frames[k].T, frames[k].F0));
+        Parallel.For(0, frames.Count, Parallelism.Options, k => rows[k] = weightRow(frames[k].T, frames[k].F0));
         return rows.Where(r => r.HasValue).Select(r => r!.Value).ToList();
     }
 

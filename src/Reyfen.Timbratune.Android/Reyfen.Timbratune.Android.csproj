@@ -10,13 +10,35 @@
     <RootNamespace>Reyfen.Timbratune.Android</RootNamespace>
     <ApplicationId>com.reyfen.timbratune</ApplicationId>
     <ApplicationTitle>Timbratune</ApplicationTitle>
-    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationVersion>2</ApplicationVersion>
     <ApplicationDisplayVersion>$(Version)</ApplicationDisplayVersion>
     <AndroidPackageFormat>apk</AndroidPackageFormat>
     <RuntimeIdentifiers>android-arm64;android-x64</RuntimeIdentifiers>
   </PropertyGroup>
+  <!-- Release: everything compiled ahead of time with LLVM. Mono's own code generator is far
+       slower for the analysis maths: on a Pixel 4a LLVM halved the analysis after Stop
+       (12.7 → 6.6 s for a 30 s take) and live updates (258 → 106 ms). Costs ~10 MB of APK
+       and a few minutes of build time. -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <AndroidEnableProfiledAot>false</AndroidEnableProfiledAot>
+    <EnableLLVM>true</EnableLLVM>
+  </PropertyGroup>
+  <!-- Profiling build: dotnet publish … -p:TimbratuneProfiling=true. Timing probes go to logcat
+       (adb logcat -s Timbratune), the APK is profileable, and a fake mic file can be used. -->
+  <PropertyGroup Condition="'$(TimbratuneProfiling)' == 'true'">
+    <DefineConstants>$(DefineConstants);PROFILING</DefineConstants>
+    <AndroidManifest>Properties\AndroidManifest.Profiling.xml</AndroidManifest>
+  </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia.Android" />
+  </ItemGroup>
+  <!-- Mono garbage collector: a 16 MB nursery (default 4 MB) and concurrent marking for full
+       collections (Properties/GcEnvironment.txt). While recording, the live analysis and the
+       charts allocate ~15-20 MB/s; with the defaults the collections' stop-the-world pauses
+       were most of the remaining dropped frames on a Pixel 9 (UI stalls per 30 s ~15 -> 3-5).
+       32 MB makes the runtime fail to start. -p:TimbratuneGcEnv=false leaves the defaults. -->
+  <ItemGroup Condition="'$(TimbratuneGcEnv)' != 'false'">
+    <AndroidEnvironment Include="Properties\GcEnvironment.txt" />
   </ItemGroup>
   <ItemGroup>
     <!-- Emoji subset of Noto Color Emoji (SIL OFL 1.1, licence alongside): see MainActivity. -->
@@ -26,7 +48,7 @@
     <ProjectReference Include="..\Reyfen.Timbratune\Reyfen.Timbratune.csproj" />
     <ProjectReference Include="..\Reyfen.Timbratune.Audio.SoundFlow\Reyfen.Timbratune.Audio.SoundFlow.csproj" />
   </ItemGroup>
-  <!-- Publish output: just the signed APK, named Timbratune-v0.1.0-android.apk. -->
+  <!-- Publish output: just the signed APK, named Timbratune-v<Version>-android.apk. -->
   <Target Name="NameApkForRelease" AfterTargets="Publish">
     <PropertyGroup>
       <_TimbratuneApk>$(PublishDir)$(ApplicationId)-Signed.apk</_TimbratuneApk>

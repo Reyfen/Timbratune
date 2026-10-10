@@ -29,7 +29,8 @@ internal static class Program
                 Recorder: recorder,
                 Playback: playback = new PlaybackService(audio.CreatePlayer()),
                 Dialogs: dialogs,
-                ReferenceDir: Features.ReferenceVoices ? Path.Combine(AppContext.BaseDirectory, "reference") : null);
+                ReferenceDir: Features.ReferenceVoices ? Path.Combine(AppContext.BaseDirectory, "reference") : null,
+                Decoder: audio);
 
             return BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
         }
@@ -40,8 +41,8 @@ internal static class Program
     }
 
     /// <summary>
-    /// <c>Reyfen.Timbratune.Desktop --import take.wav [more.wav…] [--label "…"]</c> —
-    /// analyzes WAV files and adds them as takes, like
+    /// <c>Reyfen.Timbratune.Desktop --import take.wav [more.mp3 / .flac / .tmbr…] [--label "…"]</c> —
+    /// analyzes audio files (or unpacks .tmbr files) and adds them as takes, like
     /// <c>uv run analyze.py clip.wav --label …</c> did for the React app.
     /// Honors TIMBRATUNE_DATA_DIR.
     /// </summary>
@@ -56,19 +57,18 @@ internal static class Program
         }
         if (files.Count == 0)
         {
-            Console.Error.WriteLine("usage: Reyfen.Timbratune.Desktop --import <file.wav> [more.wav…] [--label \"text\"]");
+            Console.Error.WriteLine("usage: Reyfen.Timbratune.Desktop --import <file.wav|.mp3|.flac|.tmbr> [more…] [--label \"text\"]");
             return 2;
         }
 
-        var engine = new AcousticsAnalysisEngine();
+        using var audio = new SoundFlowAudio();
         var store = new RecordingStore(DataPaths.Default());
+        store.Load(); // converts an older data folder first
+        var importer = new TakeImporter(store, new AcousticsAnalysisEngine(), audio);
         foreach (var file in files)
         {
-            var result = await engine.AnalyzeAsync(file);
-            var entry = result.Metrics;
-            entry.Label = label ?? Path.GetFileNameWithoutExtension(file);
-            entry.SourceFile = Path.GetFileName(file);
-            var saved = store.Add(entry, result.Detail, file);
+            var saved = await importer.ImportAsync(file, label: label);
+            var entry = saved;
             Console.WriteLine($"#{saved.Id} {entry.Label}: pitch ~{entry.Pitch.MeanHz} Hz, F2 {entry.Formants.F2Hz} Hz, " +
                               $"weight {entry.Weight?.H1a3cDb} dB, {entry.Register?.InRegisterPct}% in register");
         }

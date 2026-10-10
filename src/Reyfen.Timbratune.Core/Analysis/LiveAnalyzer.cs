@@ -1,8 +1,11 @@
+using Reyfen.Timbratune.Acoustics.Numerics;
 using System.Collections.Concurrent;
 using Reyfen.Timbratune.Acoustics.Formants;
 using Reyfen.Timbratune.Acoustics.Spectral;
 using Reyfen.Timbratune.Acoustics.Streaming;
 using Reyfen.Timbratune.Acoustics.Voice;
+using Reyfen.Timbratune.Core.Diagnostics;
+using Reyfen.Timbratune.Core.Models;
 
 namespace Reyfen.Timbratune.Core.Analysis;
 
@@ -31,6 +34,12 @@ public sealed record LiveSeries
 public sealed record LiveSnapshot(double Elapsed, AnalysisResult? Result, LiveSeries Series, bool IsFinal)
 {
     public static readonly LiveSnapshot Empty = new(0, null, LiveSeries.Empty, false);
+
+    /// <summary>
+    /// The pitch frames and phrases so far (what the live graphs draw): the result's detail
+    /// after a full update, or just this after a quick one (<see cref="Result"/> null then).
+    /// </summary>
+    public RecordingDetail? Contour { get; init; }
 }
 
 /// <summary>
@@ -111,28 +120,36 @@ public sealed class LiveAnalyzer
     /// <paramref name="length"/> the take is treated as ending after that many samples
     /// (see <see cref="AlignedLength"/>).
     /// </summary>
-    public LiveSnapshot Update(bool final = false, int? length = null)
+    /// <param name="full">
+    /// False = a quick update for the live graphs: frames, series, pitch contour and phrases,
+    /// without assembling and post-processing the whole take (statistics, formant and weight
+    /// selection, trends) — that is only needed when the take's cards are refreshed.
+    /// The last update (<paramref name="final"/>) is always full.
+    /// </param>
+    public LiveSnapshot Update(bool final = false, int? length = null, bool full = true)
     {
         lock (_updateGate)
         {
             var view = length is { } n ? _signal.View(n) : _signal.View();
             if (view.Duration < 0.1) return LiveSnapshot.Empty with { Elapsed = view.Duration, IsFinal = final };
 
-            Parallel.Invoke(
-                () => _pitch.Update(view, final),
-                () => _harmonicity.Update(view, final),
-                () => _intensity.Update(view, final),
-                () => _formants5500.Update(view, final),
-                () => _formants5000.Update(view, final));
+            Parallel.Invoke(Parallelism.Options,
+                () => { using (Timing.Measure("live.pitch")) _pitch.Update(view, final); },
+                () => { using (Timing.Measure("live.hnr")) _harmonicity.Update(view, final); },
+                () => { using (Timing.Measure("live.intensity")) _intensity.Update(view, final); },
+                // Both ceilings share each block's segment and resampling.
+                () => { using (Timing.Measure("live.formants")) LiveFormantTracker.UpdateAll([_formants5500, _formants5000], view, final); });
             if (_pitch.FrameCount == 0 || _intensity.FrameCount == 0)
                 return LiveSnapshot.Empty with { Elapsed = view.Duration, IsFinal = final };
 
-            var pitch = _pitch.Contour(view);
+            Acoustics.Pitch.PitchContour pitch;
+            using (Timing.Measure("live.pitchpath")) pitch = _pitch.Contour(view);
             var intensity = _intensity.Contour(view);
-            var harmonicity = _harmonicity.HarmonicityContour(view);
+            Acoustics.Pitch.HarmonicityContour harmonicity;
+            using (Timing.Measure("live.hnrpath")) harmonicity = _harmonicity.HarmonicityContour(view);
             var sound = view.AsSound();
             var lastFrame = pitch.FrameCount > 0 ? pitch.Grid.IndexToX(pitch.FrameCount - 1) : 0;
-            _pulses.Update(view, pitch, lastFrame - PulseStability, final);
+            using (Timing.Measure("live.pulses")) _pulses.Update(view, pitch, lastFrame - PulseStability, final);
             var pulses = _pulses.Pulses;
 
             var track5500 = _formants5500.Track();
@@ -166,43 +183,40 @@ public sealed class LiveAnalyzer
                 Harmonicity = harmonicity,
                 Pulses = pulses,
             };
-            var result = AnalysisPostProcessor.Process(RawAnalysisAssembler.Assemble(tracks), _registerFloorHz);
-            return new LiveSnapshot(view.Duration, result, BuildSeries(tracks, harmonicity, WeightRow), final);
+            AnalysisResult? result = null;
+            RecordingDetail contour;
+            if (full || final)
+            {
+                RawAnalysis raw;
+                using (Timing.Measure("live.assemble")) raw = RawAnalysisAssembler.Assemble(tracks);
+                using (Timing.Measure("live.postprocess")) result = AnalysisPostProcessor.Process(raw, _registerFloorHz);
+                contour = result.Detail;
+            }
+            else
+            {
+                using (Timing.Measure("live.contour"))
+                    contour = AnalysisPostProcessor.AnalyzeRegister(RawAnalysisAssembler.Contour(pitch), tracks.Sounding, view.Duration,
+                        _registerFloorHz).Detail;
+            }
+            LiveSeries series;
+            using (Timing.Measure("live.series")) series = BuildSeries(tracks, harmonicity, WeightRow);
+            return new LiveSnapshot(view.Duration, result, series, final) { Contour = contour };
         }
     }
+
+    /// <summary>
+    /// The series lists, two sets used in turn: each update refills one, so the previous
+    /// snapshot's lists stay intact while the next is built, and no whole-take lists are
+    /// allocated per update (they were a large share of the live analysis' garbage).
+    /// </summary>
+    private readonly FrameSeriesBuffers[] _series = [new(), new()];
+    private int _seriesTurn;
 
     private LiveSeries BuildSeries(FrameTracks t, Acoustics.Pitch.HarmonicityContour harmonicity,
         Func<double, double, RawAnalysis.WeightRow?> weightRow)
     {
-        var loudness = new List<TimedValue>(t.Intensity.Db.Count);
-        for (var i = 0; i < t.Intensity.Db.Count; i++) loudness.Add(new(t.Intensity.Grid.IndexToX(i), t.Intensity.Db[i]));
-
-        var hnr = new List<TimedValue>();
-        for (var i = 0; i < harmonicity.Db.Count; i++)
-            if (harmonicity.Db[i] != Acoustics.Pitch.HarmonicityContour.Unvoiced) hnr.Add(new(harmonicity.Grid.IndexToX(i), harmonicity.Db[i]));
-
-        var voiced = RawAnalysisAssembler.VoicedFrames(t.Pitch);
-        var f2 = new List<TimedValue>();
-        var f3 = new List<TimedValue>();
-        foreach (var time in RawAnalysisAssembler.LoudVoicedTimes(voiced, t.Intensity))
-        {
-            double v1 = t.Formants5500.ValueAtTime(1, time), v2 = t.Formants5500.ValueAtTime(2, time), v3 = t.Formants5500.ValueAtTime(3, time);
-            if (!(v1 >= 250 && v1 <= 1000 && v2 > 0 && v3 > 0)) continue;
-            f2.Add(new(time, v2));
-            f3.Add(new(time, v3));
-        }
-
-        var rows = new RawAnalysis.WeightRow?[voiced.Count];
-        Parallel.For(0, voiced.Count, k => rows[k] = weightRow(voiced[k].T, voiced[k].F0));
-        var weight = new List<TimedValue>();
-        foreach (var row in rows)
-        {
-            if (row is not { } w) continue;
-            var value = AnalysisPostProcessor.CorrectedH1A3(w, t.SamplingFrequency);
-            if (double.IsFinite(value)) weight.Add(new(w.T, value));
-        }
-
-        var jitter = _pulses.StretchJitter.Where(s => double.IsFinite(s.Jitter)).Select(s => new TimedValue(s.End, s.Jitter * 100)).ToList();
-        return new LiveSeries { Loudness = loudness, Hnr = hnr, F2 = f2, F3 = f3, Weight = weight, Jitter = jitter };
+        var b = _series[_seriesTurn ^= 1];
+        FrameSeriesBuilder.Build(t, harmonicity, weightRow, _pulses.StretchJitter, b);
+        return new LiveSeries { Loudness = b.Loudness, Hnr = b.Hnr, F2 = b.F2, F3 = b.F3, Weight = b.Weight, Jitter = b.Jitter };
     }
 }

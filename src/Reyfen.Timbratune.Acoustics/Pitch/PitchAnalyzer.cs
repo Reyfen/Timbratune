@@ -65,7 +65,7 @@ public static class PitchAnalyzer
         else
         {
             var counter = new FrameProgress(frames.Count, progress);
-            Parallel.For(0, frames.Count, analyzer.CreateBuffers,
+            Parallel.For(0, frames.Count, Parallelism.Options, analyzer.CreateBuffers,
                 (i, _, buffers) =>
                 {
                     result[i] = analyzer.AnalyzeFrame(channels, grid, frames.IndexToX(i), buffers);
@@ -191,6 +191,18 @@ internal sealed class PitchFrameAnalyzer
     /// <summary>Per-thread scratch space.</summary>
     public FrameBuffers CreateBuffers() => new(this, _channelCount);
 
+    // Scratch buffers kept between calls. Each frame overwrites what it uses (the full analysis
+    // already runs thousands of frames through one set per worker), so reusing them changes
+    // nothing — but the live trackers start a parallel loop for a handful of frames ten times a
+    // second, and fresh sets each time (~0.75 MB for cross-correlation) were most of the live
+    // analysis' garbage (over 1.5 GB per 30 s take).
+    private readonly System.Collections.Concurrent.ConcurrentBag<FrameBuffers> _spareBuffers = new();
+
+    /// <summary>A scratch set from the pool (or a new one); give it back with <see cref="ReturnBuffers"/>.</summary>
+    public FrameBuffers RentBuffers() => _spareBuffers.TryTake(out var buffers) ? buffers : CreateBuffers();
+
+    public void ReturnBuffers(FrameBuffers buffers) => _spareBuffers.Add(buffers);
+
     internal sealed class FrameBuffers(PitchFrameAnalyzer a, int channels)
     {
         public readonly double[][] Frame = Enumerable.Range(0, channels).Select(_ => new double[a.WindowSamples]).ToArray();
@@ -209,22 +221,23 @@ internal sealed class PitchFrameAnalyzer
         public readonly double[] ProductIm = new double[a.CrossFftLength];
     }
 
-    /// <summary>Unnormalized autocorrelation of (the sum over channels of) zero-padded signals, via |FFT|².</summary>
+    /// <summary>
+    /// Unnormalized autocorrelation of (the sum over channels of) zero-padded signals, via |FFT|²,
+    /// in <paramref name="re"/> (valid until the next frame). The signals are real, so half-length
+    /// real transforms do it (bins 0..n/2 of the power spectrum, which is real and even).
+    /// </summary>
     private static double[] Autocorrelate(double[][] signals, int n, double[] re, double[] im, double[] power)
     {
-        Array.Clear(power);
+        var bins = n / 2 + 1;
+        Array.Clear(power, 0, bins);
         foreach (var signal in signals)
         {
-            Array.Clear(re);
-            Array.Clear(im);
-            signal.AsSpan().CopyTo(re);
-            Fft.ForwardInPlace(re, im);
-            for (var k = 0; k < n; k++) power[k] += re[k] * re[k] + im[k] * im[k];
+            Fft.RealForwardHalf(signal, n, re, im);
+            for (var k = 0; k < bins; k++) power[k] += re[k] * re[k] + im[k] * im[k];
         }
-        power.AsSpan().CopyTo(re);
-        Array.Clear(im);
-        Fft.InverseInPlace(re, im);
-        return (double[])re.Clone();
+        Array.Clear(im, 0, bins);
+        Fft.RealInverseHalf(power, im, n, re);
+        return re;
     }
 
     /// <summary>
@@ -364,18 +377,26 @@ internal sealed class PitchFrameAnalyzer
             Array.Clear(b.CrossIm);
             Array.Clear(b.SpanRe);
             Array.Clear(b.SpanIm);
+            // Both signals are real: one transform of window + i·span gives both spectra,
+            // X[k] = (Z[k] + conj Z[n−k]) / 2 and S[k] = (Z[k] − conj Z[n−k]) / 2i.
             for (var j = 0; j < WindowSamples; j++) b.CrossRe[j] = z[offset + j] - mean;
-            for (var j = 0; j < span; j++) b.SpanRe[j] = z[offset + j] - mean;
+            for (var j = 0; j < span; j++) b.CrossIm[j] = z[offset + j] - mean;
             Fft.ForwardInPlace(b.CrossRe, b.CrossIm);
-            Fft.ForwardInPlace(b.SpanRe, b.SpanIm);
-            for (var k = 0; k < n; k++)
+            for (var k = 0; k <= n / 2; k++)
             {
+                var mk = (n - k) & (n - 1);
+                double zr = b.CrossRe[k], zi = b.CrossIm[k], cr = b.CrossRe[mk], ci = -b.CrossIm[mk];
+                double xr = 0.5 * (zr + cr), xi = 0.5 * (zi + ci);
+                double sr = 0.5 * (zi - ci), si = -0.5 * (zr - cr);
                 // conj(X)·S
-                b.ProductRe[k] += b.CrossRe[k] * b.SpanRe[k] + b.CrossIm[k] * b.SpanIm[k];
-                b.ProductIm[k] += b.CrossRe[k] * b.SpanIm[k] - b.CrossIm[k] * b.SpanRe[k];
+                b.ProductRe[k] += xr * sr + xi * si;
+                b.ProductIm[k] += xr * si - xi * sr;
             }
         }
-        Fft.InverseInPlace(b.ProductRe, b.ProductIm); // ProductRe[lag] = Σ_j x[j]·y[j + lag]
+        // The cross-correlation is real, so its spectrum's bins 0..n/2 determine it.
+        b.ProductIm[0] = 0;
+        b.ProductIm[n / 2] = 0;
+        Fft.RealInverseHalf(b.ProductRe, b.ProductIm, n, b.SpanRe); // SpanRe[lag] = Σ_j x[j]·y[j + lag]
 
         var sumY2 = sumX2;
         r[zero] = 1.0;
@@ -392,7 +413,7 @@ internal sealed class PitchFrameAnalyzer
             // The running energy can reach 0 (or a rounding-level negative) over digital
             // silence; there is no correlation to measure there.
             var energy = sumX2 * sumY2;
-            r[zero + lag] = r[zero - lag] = energy > 0 ? b.ProductRe[lag] / Math.Sqrt(energy) : 0;
+            r[zero + lag] = r[zero - lag] = energy > 0 ? b.SpanRe[lag] / Math.Sqrt(energy) : 0;
         }
         // Lags beyond the end of the sound stay at their previous values in the
         // reference; zero them so frames are independent of processing order.
