@@ -271,6 +271,29 @@ Shell gotchas on this machine:
 - PowerShell 5.1 has no `&&`.
 - .NET file APIs in PowerShell resolve against the process's directory. Use absolute paths.
 
+### Release notes
+
+The user wants them short enough for a person to read at a glance (a longer first draft was sent back).
+- **What to cover:** what changed for users since the previous release, from `git log` since the commit the last published build was made from (the 0.1.0 builds came from 2026-10-06 ~23:40, before `7fc6bfa`).
+- **Format:** one `## Timbratune vX.Y.Z` heading, then about 6-8 bullets, one per area (speed, import/export, takes, graphs, phone fixes, builds). Each bullet is "Area: one plain sentence", with a number only where it helps (e.g. fps).
+- **Style:** no bold or other emphasis markers, no internal names (classes, files, commits), no developer-only details unless they affect users.
+- **Delivery:** in a fenced code block, so it can be copied as is.
+
+Example (v0.2.0):
+
+```markdown
+## Timbratune v0.2.0
+
+- Smoother on Android: live recording is fluid (Pixel 9: ~58 fps instead of 38), and analysis after Stop is about twice as fast.
+- Import: add .wav, .mp3, .flac or .tmbr files with the new Import button, or drop them into the takes folder.
+- Export: the save button now saves the audio or exports all of a take's data as a .tmbr file. PDF export is coming.
+- Takes as folders: each take is its own folder, so you can copy or delete takes by hand. Existing takes convert automatically. Click the folder path in the footer to open it.
+- Rename takes in place, and see when each take was recorded next to its title.
+- Graphs: new loudness and pitch-variability trends, and pitch lines no longer break up when you jump quickly.
+- Phone fixes: takes can be reached from a PC over USB, and text that was cut off or hidden on small screens now shows in full.
+- Builds: one build script for Windows and Linux, and simpler file names (Timbratune-v0.2.0-win-x64.exe).
+```
+
 ## 8a. Platforms: Windows single exe, Linux, Android (2026-10-01)
 
 **Reference voices:**
