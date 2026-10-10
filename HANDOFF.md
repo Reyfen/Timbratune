@@ -14,7 +14,7 @@ The full conversation transcript, if you need exact wording, is at `C:\Users\mih
 
 ## 1. Ground rules
 
-- **Commit only when the user explicitly asks.** The main branch is `dev`; there is also a `main` branch. The user sometimes commits the work themselves; the recent commits "Add live update" and "Add graph stability" are theirs.
+- **Commit only when the user explicitly asks.** The main branch is `main` (it was `dev` until 2026-10-10); version work is on `dev/<version>` branches, now `dev/v0.2.0`. Releases are tagged `v<version>`. The user sometimes commits the work themselves; the recent commits "Add live update" and "Add graph stability" are theirs.
 - **Licence constraint.** Praat's algorithms are used only as inspiration, the way a human programmer would read them. Code is written from the published papers; nothing is copied from Praat's GPLv3 source, and the result is MIT-compatible. In the user's words:
 
   > "Read the algorithms of Praat only as inspiration, as any human programmer would do. Do not copy it directly. Also, keep the papers based on it. I don't want to carry the GPL v3 license because there is no way for me to deeply integrate it and stuff like this. I take all the responsibility on myself."
@@ -43,7 +43,7 @@ Each metric is placed in zones (masculine / neutral / feminine, and others).
 1. Run the TypeScript app locally.
 2. Port it to C#/Avalonia (now the repo root): .NET 10, core dashboard, same metrics, same zones, same `recordings.json` format.
 3. Trends are per phrase within a single take, not across takes. The publish folder carries a platform suffix: `publish/Timbratune-win-x64`.
-4. Set up the git repo with `dev` as the main branch, and commit only when asked.
+4. Set up the git repo with `dev` as the main branch (renamed `main` on 2026-10-10), and commit only when asked.
 5. Replace Praat.exe with a pure C# module, `Reyfen.Timbratune.Acoustics`: MIT, zero dependencies, trim/AOT safe. Praat is kept for tests only.
 6. Performance questions: how long analysis takes, and an estimate for low-end Android. FFT and sinc optimizations were then added and verified to give identical results, only faster.
 7. **Live analysis while recording.** Graphs build while you speak and freeze on Stop. The axis grows in 10 s steps. Values update per frame. Live must be verified against the full analysis ("Ideally, they should match perfectly").
@@ -461,7 +461,7 @@ Example (v0.2.0):
 
 ## 8d. v0.2.0: Android performance on real phones (2026-10-07)
 
-Branch `v0.2.0` (from `dev`): commits `82c5621`, `750b29a`, `2fa4420`, `b5d73f4`. The version is 0.2.0 (`Directory.Build.props`), with Android `ApplicationVersion` (versionCode) 2 and versionName 0.2.0.
+Branch `v0.2.0`, now `dev/v0.2.0` (from `dev`, now `main`): commits `82c5621`, `750b29a`, `2fa4420`, `b5d73f4`. The version is 0.2.0 (`Directory.Build.props`), with Android `ApplicationVersion` (versionCode) 2 and versionName 0.2.0.
 
 The user tested 0.1.0 on a **Pixel 9** and a **Pixel 4a** and found live recording far too slow and janky ("It is not acceptable"). Everything below was measured on those two phones over USB (adb), not the emulator, which runs at desktop speed.
 
@@ -665,7 +665,7 @@ The user asked to drop `recordings.json`, so takes can be added and removed by h
 
 ## 8. Current state, at the time of writing
 
-**Branches:** `dev` holds everything up to `bc1ce48`. `v0.2.0` adds §8d–§8g (pushed; latest `9c752e6`, whose subject line starts with a stray UTF-8 BOM from PowerShell 5.1's `Out-File`; write commit messages without a BOM). §8h (`build.ps1`, removing `build.bat` / `build.sh`, the date · time dot) is not committed yet.
+**Branches (2026-10-10):** the user renamed them on GitHub: `dev` became `main` (everything up to `bc1ce48`, tagged `v0.1.0`), and `v0.2.0` became `dev/v0.2.0` (§8d–§8h, up to `8e88ea6`; not merged into `main` yet). The local branches were renamed to match and track `origin/main` and `origin/dev/v0.2.0`. The old `v0.2.0` branch name clashed with a `v0.2.0` tag; `dev/…` names can't coexist with a branch called `dev`. Commit `9c752e6`'s subject starts with a stray UTF-8 BOM from PowerShell 5.1's `Out-File`; write commit messages without a BOM.
 
 **Tests:** 121/121 pass.
 
