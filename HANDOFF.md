@@ -2,7 +2,7 @@
 
 This file brings a new engineer or agent up to date on everything done so far: what the user asked for, what was decided and why, how the code is organised, what was measured, and what is still open.
 
-Last updated 2026-10-07 (see §8d for the v0.2.0 Android performance work).
+Last updated 2026-10-10. The newest work is §8d–§8h (v0.2.0: Android performance, export, one folder per take, import, `build.ps1`); §8 is the current state.
 
 **Name:** the project is **Timbratune — Gender Voice Analysis Tool**, by **Reyfen**.
 - **Before 2026-10-02 it was called Euphonia**, and it is a fork of [Euphonia](https://github.com/Yuuzulight/Euphonia). Older parts of this file and of the transcript say "Euphonia" and "Euphonia-CSharp"; read those as Timbratune and the repo root (the code moved from `Timbratune/` to the root on 2026-10-06).
@@ -65,6 +65,13 @@ Each metric is placed in zones (masculine / neutral / feminine, and others).
     - an **Android version**, tested on the emulator.
 
     Also: **disable the reference voices** behind a feature flag ("maybe we will use it later").
+12. **Rename to Timbratune** and the move to `C:\Projects\Reyfen\Timbratune` (§8b).
+13. **Live numbers, time-slice trends, a real progress bar** (§8c), pitch contour bridging, loudness and pitch-variability trends.
+14. **v0.2.0 branch: Android performance on real phones** (Pixel 9, Pixel 4a; §8d). The user wanted jank gone "completely" without degrading formants or weight.
+15. **Save menu:** save audio, export data as `.tmbr` (zip of WAV + JSON with every graph's data and metadata, for a future import), PDF placeholder (§8e).
+16. **No `recordings.json`:** one folder per take, a clickable folder link, auto-import of dropped files, the import button, Android data visible over USB (§8f).
+17. **Cards and build scripts:** framed icon buttons, rename, plain "#N", import beside Record, `build.sh`, "Desktop-" dropped from artifact names, date and time beside the take title (§8g).
+18. **One `build.ps1`** instead of `.bat` + `.sh`, a pre-emptive fix for "Android SDK directory could not be found", and finding why the user's builds didn't see the SDK (§8h).
 
 ## 4. Codebase map (repo root)
 
@@ -238,9 +245,9 @@ F2's large "error" is real phonetics: F2 differs by about 700 Hz between /i/ and
 ```powershell
 cd C:\Projects\Reyfen\Timbratune
 dotnet build Timbratune.slnx
-dotnet test Timbratune.slnx                     # 108 tests; the Praat oracle tests skip without Praat
+dotnet test Timbratune.slnx                     # 121 tests; the Praat oracle tests skip without Praat
 dotnet run --project src/Reyfen.Timbratune.Desktop
-dotnet publish src/Reyfen.Timbratune.Desktop -c Release -r win-x64 --self-contained false -o publish/Timbratune-win-x64
+./build.ps1 [win] [linux] [android]             # all published builds into publish/ (§8h)
 ```
 
 Environment variables:
@@ -330,7 +337,7 @@ Shell gotchas on this machine:
   - `MainActivity : AvaloniaMainActivity<App>` wires up the services.
 - **Toolchain:**
   - the android workload (36.1.69);
-  - the SDK in `%LOCALAPPDATA%\Android\Sdk` and JDK 17 in `%LOCALAPPDATA%\Android\jdk`. Pass both via `-p:AndroidSdkDirectory=… -p:JavaSdkDirectory=…`, because the user's `JAVA_HOME` points at a Program Files JDK the tooling won't use;
+  - the SDK in `%LOCALAPPDATA%\Android\Sdk` and JDK 17 in `%LOCALAPPDATA%\Android\jdk`. Pass both via `-p:AndroidSdkDirectory=… -p:JavaSdkDirectory=…`. **Correction (2026-10-09, §8h):** these were installed from Claude's shell, so they only exist in Claude's redirected AppData and the user's own builds can't see them. The user's `JAVA_HOME` (Microsoft OpenJDK 17.0.6) does work with the tooling;
   - the emulator AVD `EuphoniaPixel` (Pixel 7, API 35, google_apis x86_64). WHPX was already usable.
   - Boot it headless: `emulator -avd EuphoniaPixel -no-window -no-snapshot -no-boot-anim -gpu swiftshader_indirect -memory 4096`.
   - Use the SDK's own `platform-tools/adb.exe`.
@@ -493,7 +500,7 @@ The algorithm itself wasn't the problem: each update is fast enough, but it comp
 ### Remaining and ideas
 - About 2–3 % janky frames remain on the Pixel 9. The next candidates are incremental contour and phrase tracking (live.contour still allocates about 41 MB per take, `LiveTimelinesViewModel.Compute` about 53 MB, live.formants about 34 MB) and caching the static chart layer (bands, axes, dividers).
 - **Pixel 4a not re-measured** with `b5d73f4`; it still has a build without it.
-- **XA5300 "Android SDK directory could not be found"** with a valid SDK: a long-running MSBuild node had cached a failed lookup. `dotnet build-server shutdown` clears it. `build.bat` now publishes Android with `--disable-build-servers` (`2fa4420`).
+- **XA5300 "Android SDK directory could not be found"** with a valid SDK: a long-running MSBuild node had cached a failed lookup. `dotnet build-server shutdown` clears it. `build.bat` then published Android with `--disable-build-servers` (`2fa4420`). The deeper cause turned out to be the SDK existing only in Claude's redirected AppData (§8h).
 
 ## 8e. Save menu and the .tmbr export (2026-10-08)
 
@@ -603,17 +610,49 @@ The user asked to drop `recordings.json`, so takes can be added and removed by h
   - Takes now keep `recorded_at` (ISO 8601 with offset) in `take.json` / `Recording.RecordedAt`: set on Stop, on import (the file's time) and carried by `.tmbr` files.
   - Older takes use their `take.wav` time when it falls on the take's date (moving files keeps their time), otherwise only the date shows.
   - The empty label box says *untitled take* in italics.
-- **Artifact names** lost "Desktop-": `Timbratune-v<ver>-win-x64.exe`, `Timbratune-v<ver>-linux-x64.deb` / `.AppImage.tar.gz`, `Timbratune-v<ver>-android.apk` (csproj target, `package-linux.sh`, both build scripts). Inside the .deb the binary is `/opt/timbratune/Timbratune`; the command is still `timbratune`. Keep `build.bat` and `build.sh` in step whenever either changes.
+- **Artifact names** lost "Desktop-": `Timbratune-v<ver>-win-x64.exe`, `Timbratune-v<ver>-linux-x64.deb` / `.AppImage.tar.gz`, `Timbratune-v<ver>-android.apk` (csproj target, `package-linux.sh`, both build scripts). Inside the .deb the binary is `/opt/timbratune/Timbratune`; the command is still `timbratune`. (The build scripts became one `build.ps1`, §8h.)
+
+## 8h. One build script: build.ps1 (2026-10-08)
+
+- **`build.ps1` replaces `build.bat` and `build.sh`.** One script for Windows PowerShell 5.1 and PowerShell 7, the latter on Linux too.
+  - It keeps both earlier scripts' behaviour: platform arguments, the .NET 10 SDK check, the running-app check (Windows), Linux packing in WSL or directly, and Android SDK/JDK lookup.
+  - Keep it ASCII-only: Windows PowerShell reads a BOM-less script as ANSI.
+  - Started from Explorer (double-click with PowerShell as the .ps1 handler, which the user set, or "Run with PowerShell") it waits for Enter at the end. That's detected by the parent process being `explorer`; matching the command line missed double-clicks.
+- **XA5300 prevention**, before the Android build, after the user hit it twice in a day:
+  - `dotnet build-server shutdown`;
+  - `ANDROID_HOME` / `ANDROID_SDK_ROOT` / `AndroidSdkDirectory` / `JavaSdkDirectory` / `JAVA_HOME` set in the environment for every MSBuild process;
+  - the `-p:` properties;
+  - `--disable-build-servers`.
+- **The final list shows only what this run built:** the expected files (`Timbratune-v<Version>-…`) of the platforms that succeeded. A file-time filter missed up-to-date builds, e.g. an unchanged APK.
+- **Android SDK lookup:** an SDK counts if it has `platform-tools`, `build-tools` or `platforms`. When none is found, every place is printed with the reason ("not set", "doesn't exist", not an SDK, access error); the JDK the same way. The search order is below.
+  - **Cause of "no Android SDK" / XA5300 on the user's builds (2026-10-09):** the SDK and JDK installed on 2026-10-01 were installed from Claude's shell. The Claude desktop app is an MSIX package, so they went to `%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Local\Android\{Sdk,jdk}` (4.9 + 0.3 GB). Claude's shells see them at `%LOCALAPPDATA%\Android`; Explorer and the user's own builds don't.
+    - The intermittent XA5300 was MSBuild nodes started on one side being reused by the other.
+    - The user chose not to move them. Instead `build.ps1` looks where real installs go and reports each place:
+      - `ANDROID_SDK` / `ANDROID_HOME` / `ANDROID_SDK_ROOT`;
+      - `%LOCALAPPDATA%\Android\Sdk` (Android Studio, README);
+      - `Program Files (x86)\Android\android-sdk` (Visual Studio), `Program Files\Android\android-sdk`, `C:\Android\Sdk`;
+      - Linux: `~/Android/Sdk`, `~/Library/Android/sdk`, `/usr/lib/android-sdk`, `/opt/android-sdk`.
+    - JDK: `ANDROID_JDK`, `JAVA_HOME`, `%LOCALAPPDATA%\Android\jdk`, Android Studio's `jbr`, `Program Files\Microsoft\jdk-*`, `Eclipse Adoptium\jdk-*`, `/usr/lib/jvm/*`. Each is checked for `javac` and a Java version of 17-21 (from its `release` file).
+    - The user's `JAVA_HOME` (Microsoft OpenJDK 17.0.6) qualifies, so on the user's side only the SDK is missing. They can install it with Android Studio or the README command run from their own terminal.
+- **Tested:**
+  - Windows PowerShell 5.1, all three platforms, 262 s;
+  - WSL Ubuntu with PowerShell 7.6.6 in `~/.powershell` (tester, no sudo): win + linux built, android stopped with the workload message;
+  - an unknown platform and a missing `dotnet` both give a message and exit 1.
+- **The take title's date and time** now has a dot between them: "08-Oct-26 · 14:03" (the device's short date and short time).
 
 ## 8. Current state, at the time of writing
 
-**Branches:** `dev` holds everything up to `bc1ce48`. `v0.2.0` adds §8d and §8e (pushed, `c08da28`). §8f is not committed yet.
+**Branches:** `dev` holds everything up to `bc1ce48`. `v0.2.0` adds §8d–§8g (pushed; latest `9c752e6`, whose subject line starts with a stray UTF-8 BOM from PowerShell 5.1's `Out-File`; write commit messages without a BOM). §8h (`build.ps1`, removing `build.bat` / `build.sh`, the date · time dot) is not committed yet.
 
-**Tests:** 120/120 pass.
+**Tests:** 121/121 pass.
 
-**Publish:** `build.bat [win] [linux] [android]` builds into `publish/`. All three 0.2.0 builds are there; the Android APK was built from `b5d73f4`'s code.
+**Publish:** `./build.ps1 [win] [linux] [android]` builds into `publish/` (it replaced `build.bat` and `build.sh`, §8h). The 0.2.0 builds there were made from `9c752e6`'s code plus §8h. `publish/` also still holds older `Timbratune-Desktop-v…` files, which the user can delete.
 
-**Phones:** the Pixel 9 has a profiling build of `b5d73f4`'s code (probes on, no flags file, no fake mic). The Pixel 4a has an older build without the jank fixes.
+**Android SDK on the user's side:** missing (§8h). Their builds need a real install (Android Studio, or the README command run from their own terminal). Claude's shells still see the hidden copy, so Claude's Android builds keep working.
+
+**Phones:** the Pixel 9 has a profiling build of `b5d73f4`'s code (probes on, no flags file, no fake mic). The Pixel 4a has an older build without the jank fixes. Neither has the one-folder-per-take build yet; the emulator does (Debug).
+
+**WSL test setup:** in `Ubuntu-24.04` the user `tester` has the .NET 10 SDK in `~/.dotnet` and PowerShell 7.6.6 in `~/.powershell`, neither on PATH by default. A copy of the tree is in `~/tt` for Linux build tests.
 
 ## 9. Possible next steps (none requested yet)
 - Dim the provisional part of each line: the unsettled tail and the "now" extension.
@@ -624,7 +663,8 @@ The user asked to drop `recordings.json`, so takes can be added and removed by h
 - Fix Android's 16 KB page alignment (§8a).
 - Use a release keystore and an AAB for the Play Store.
 - Re-measure the Pixel 4a with the jank fixes, and push the remaining 2–3 % janky frames on the Pixel 9 down (§8d).
-- Implement the PDF export (§8e).
+- Implement the PDF export (§8e), and use `TakeArchive.Read` for previews or a richer import.
+- Install a real Android SDK on the user's side, and optionally clear the hidden copy in Claude's AppData (§8h).
 - On a phone: the `.tmbr` export and import through Android's file pickers, the move to the USB-visible folder, and the series cost after Stop (§8e, §8f).
 - Live charts in the light theme have pale zone bands; their contrast could be improved.
 - Port to macOS and iOS: same pattern, SoundFlow has natives for both.

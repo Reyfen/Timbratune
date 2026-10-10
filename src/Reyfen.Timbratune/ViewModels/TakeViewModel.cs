@@ -164,13 +164,13 @@ public sealed partial class TakeViewModel : ObservableObject
     [ObservableProperty, NotifyPropertyChangedFor(nameof(HasWhen))] private string _when = "";
     public bool HasWhen => When.Length > 0;
 
-    /// <summary>The take's date and time in the device's format ("g"), or just its date for takes without a time.</summary>
+    /// <summary>"08-Oct-26 · 14:03": the take's date and time in the device's formats, or just its date for takes without a time.</summary>
     public static string WhenText(Recording r)
     {
         var culture = System.Globalization.CultureInfo.CurrentCulture;
         if (DateTimeOffset.TryParse(r.RecordedAt, System.Globalization.CultureInfo.InvariantCulture,
                 System.Globalization.DateTimeStyles.None, out var at))
-            return at.LocalDateTime.ToString("g", culture);
+            return $"{at.LocalDateTime.ToString("d", culture)} · {at.LocalDateTime.ToString("t", culture)}";
         if (DateTime.TryParseExact(r.Date, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture,
                 System.Globalization.DateTimeStyles.None, out var day))
             return day.ToString("d", culture);

@@ -5,7 +5,7 @@ live while you speak. Runs on Windows, Linux and Android from one C#/Avalonia co
 
 **Timbratune is a fork of [Euphonia](https://github.com/Yuuzulight/Euphonia)** (Electron/React with a Python and
 Praat analysis). It started as a C# port with the same metrics, zones and `recordings.json` data format, and has grown
-from there: live analysis, a native analysis engine and more platforms. The original is available as an optional
+from there: live analysis, a native analysis engine, more platforms, one folder per take, import and export. The original is available as an optional
 submodule in [`Euphonia-TypeScript`](Euphonia-TypeScript) (see [Optional submodules](#optional-submodules)).
 
 The voice analysis is **pure C#** (`Reyfen.Timbratune.Acoustics`). It needs no Praat, Python, ffmpeg or anything else
@@ -26,26 +26,23 @@ To build something you can run without the SDK, publish it. Each platform gets *
 executable**, with no .NET install needed on the target. The output folder is named per platform:
 
 ```powershell
-dotnet publish src/Reyfen.Timbratune.Desktop -p:PublishProfile=win-x64     # → publish\Timbratune-win-x64\Timbratune-v0.1.0-win-x64.exe  (~47 MB)
-dotnet publish src/Reyfen.Timbratune.Desktop -p:PublishProfile=linux-x64   # → publish/Timbratune-linux-x64/Timbratune-v0.1.0-linux-x64     (~47 MB)
+dotnet publish src/Reyfen.Timbratune.Desktop -p:PublishProfile=win-x64     # → publish\Timbratune-win-x64\Timbratune-v0.2.0-win-x64.exe  (~47 MB)
+dotnet publish src/Reyfen.Timbratune.Desktop -p:PublishProfile=linux-x64   # → publish/Timbratune-linux-x64/Timbratune-v0.2.0-linux-x64     (~47 MB)
 ```
 
 Every published file is named `<app>-v<version>-<platform>`, with the version taken from `<Version>` in
-`Directory.Build.props`. The app shows the same version in its footer.
-
-```text
-```
+`Directory.Build.props`. The app shows the same version in its footer. `build.ps1` (below) makes all of them at once.
 
 On Linux, package that binary for users. Run this on Linux or in WSL; it needs `dpkg-deb`, ImageMagick and
 `appimagetool`:
 
 ```bash
-scripts/package-linux.sh      # → …-v0.1.0-linux-x64.deb and …-v0.1.0-linux-x64.AppImage.tar.gz (replaces the binary)
+scripts/package-linux.sh      # → …-v0.2.0-linux-x64.deb and …-v0.2.0-linux-x64.AppImage.tar.gz (replaces the binary)
 ```
 
-- **`.deb` (~41 MB), for Mint, Ubuntu and Debian:** double-click it, then Install. Timbratune then appears in the app
+- **`.deb` (~39 MB), for Mint, Ubuntu and Debian:** double-click it, then Install. Timbratune then appears in the app
   menu with its icon, and `timbratune` works in a terminal. There's no permission step.
-- **`.AppImage.tar.gz` (~42 MB), for any distribution:** double-click it and choose Extract, then double-click the
+- **`.AppImage.tar.gz` (~40 MB), for any distribution:** double-click it and choose Extract, then double-click the
   AppImage. It runs from a terminal too. The AppImage ships inside an archive because downloads and Windows drives drop
   a bare file's "run as program" flag; the archive keeps it.
 
@@ -58,17 +55,22 @@ The profiles are in `src/Reyfen.Timbratune.Desktop/Properties/PublishProfiles/`.
 
 ### All builds at once
 
-`build.bat` (Windows) and `./build.sh` (Linux) build every published file into `publish/`, or only the platforms
-named: `build.bat win android`, `./build.sh linux`. Both need the .NET 10 SDK or newer and say so if it's missing.
-On Windows the Linux packages are made in WSL (`Ubuntu-24.04`); on Linux `scripts/package-linux.sh` runs directly
-(needs `dpkg-deb`, ImageMagick and appimagetool). `build.sh` finds the Android SDK and JDK through `ANDROID_SDK` /
-`ANDROID_HOME` and `ANDROID_JDK` / `JAVA_HOME`.
+`build.ps1` builds every published file into `publish/`, or only the platforms named: `./build.ps1 win android`.
+It runs in Windows PowerShell 5.1 and in PowerShell 7 (`pwsh`, also on Linux); on Windows it can also be started
+by double-click or right-click → Run with PowerShell (the window then stays open at the end). It needs the .NET 10
+SDK or newer and says so if it's missing, and at the end lists the files of the platforms it built. On Windows the Linux packages are made in WSL (`Ubuntu-24.04`); on Linux
+`scripts/package-linux.sh` runs directly (needs `dpkg-deb`, ImageMagick and appimagetool). The Android SDK and a
+JDK 17–21 are found through `ANDROID_SDK` / `ANDROID_HOME` / `ANDROID_SDK_ROOT` and `ANDROID_JDK` / `JAVA_HOME`, or in
+the usual install folders (Android Studio, Visual Studio, the setup below, Linux packages). If either is missing, the
+script lists every place it looked.
 
 ### Android
 
 Prerequisites, once:
 1. `dotnet workload install android` (admin).
-2. Install the SDK and a JDK into user folders, which also accepts Google's SDK licences:
+2. An Android SDK and a JDK 17–21. Installing Android Studio gives both (the SDK lands in `%LOCALAPPDATA%\Android\Sdk`).
+   Or install them into user folders with this, which also accepts Google's SDK licences (run it from your own
+   terminal):
 
 ```powershell
 dotnet build src/Reyfen.Timbratune.Android -t:InstallAndroidDependencies -f net10.0-android `
@@ -76,14 +78,14 @@ dotnet build src/Reyfen.Timbratune.Android -t:InstallAndroidDependencies -f net1
   -p:AcceptAndroidSDKLicenses=True
 ```
 
-Build an APK. The Release build is sideloadable and signed with the local debug key; a store release needs its own
-keystore:
+Build an APK with `./build.ps1 android`, which finds the SDK and JDK itself, or by hand. The Release build is
+sideloadable and signed with the local debug key; a store release needs its own keystore:
 
 ```powershell
 dotnet publish src/Reyfen.Timbratune.Android -c Release -f net10.0-android -o publish/Timbratune-android `
   "-p:AndroidSdkDirectory=$env:LOCALAPPDATA\Android\Sdk" "-p:JavaSdkDirectory=$env:LOCALAPPDATA\Android\jdk"
-# → publish\Timbratune-android\Timbratune-v0.1.0-android.apk  (~32 MB, arm64 + x86_64; Android 8.0+)
-adb install -r publish\Timbratune-android\Timbratune-v0.1.0-android.apk
+# → publish\Timbratune-android\Timbratune-v0.2.0-android.apk  (~42 MB, arm64 + x86_64, LLVM AOT; Android 8.0+)
+adb install -r publish\Timbratune-android\Timbratune-v0.2.0-android.apk
 ```
 
 - **Solution:** `Reyfen.Timbratune.Android` is not in `Timbratune.slnx`, so the desktop solution and its tests build without
@@ -96,7 +98,7 @@ adb install -r publish\Timbratune-android\Timbratune-v0.1.0-android.apk
 - **Fake mic on Android** (Debug builds only): copy a WAV to `files/fake-mic.wav` in the app's private folder:
   `adb push take.wav /data/local/tmp/` then `adb shell run-as com.reyfen.timbratune cp /data/local/tmp/take.wav
   files/fake-mic.wav`.
-- **Emoji:** the app carries a 54 KB subset of Noto Color Emoji (OFL), built by `scripts/make-emoji-font.py`. Android's
+- **Emoji:** the app carries a 56 KB subset of Noto Color Emoji (OFL), built by `scripts/make-emoji-font.py`. Android's
   own emoji font is COLRv1, which this Skia can't draw. Re-run the script after adding emoji to the UI.
 
 Other useful commands:
@@ -112,7 +114,7 @@ $env:TIMBRATUNE_DATA_DIR = "C:\temp\timbratune-test"
 dotnet build -p:TimbratuneReferenceVoices=true
 ```
 
-Takes are stored in `%APPDATA%\Timbratune	akes\` (on Linux `~/.config/Timbratune/takes/`; on Android
+Takes are stored in `%APPDATA%\Timbratune\takes\` (on Linux `~/.config/Timbratune/takes/`; on Android
 `Android/data/com.reyfen.timbratune/files/takes`, visible from a PC over USB). The footer link opens the folder.
 Each take is one folder, found by listing the folder (there is no index), so takes can be copied in or deleted by hand:
 
@@ -256,10 +258,15 @@ using the microphone.
 - resonance (F2/F3 gauges)
 - register & phrasing: contour chart, stat tiles, drop-position bars and the tip
 - **trends within the take** (this differs from the React app, whose trend charts plot one point per take across
-  all recordings). The take is split into phrases at the pauses, and five charts plot one point per phrase: pitch,
-  in-register melody, ending pitch, F2 and weight. The values are stored as `phrase_metrics` in
-  the take's `detail.json`. Takes analyzed before this existed are re-analyzed once in the background from their WAV.
-- the recordings list: waveform player, save menu (audio copy, `.tmbr` export), delete with confirmation, import
+  all recordings). The take is cut into equal slices of whole seconds (at most 10 points), and ten charts plot one
+  point per slice: pitch, pitch variability, in-register melody, phrase endings, loudness, F2, F3, weight, clarity
+  (HNR) and steadiness (jitter). They are stored as `trends` in the take's `detail.json`; takes analyzed before a
+  measure existed are re-analyzed once in the background from their WAV.
+- the take's title with when it was recorded, in the device's date and time format ("Latest take · 08-Oct-26 · 14:03")
+- the recordings list: waveform player, rename in place, delete with confirmation, and a save menu: **save audio**
+  (`.wav`), **export data** (`.tmbr`: a zip with the WAV and `take.json` holding the metrics, contour, trends and the
+  per-frame lists with their frame spacing, for a later import) and **export PDF** (shown, not implemented yet)
+- **import** of `.wav`, `.mp3`, `.flac` and `.tmbr` files (button beside Record, or drop them into the takes folder)
 - the take switcher
 - the cheat sheet
 - light (blossom) and dark (dusk-plum) themes that follow the OS, with a toggle
@@ -272,9 +279,18 @@ using the microphone.
 | Linux | Ubuntu 24.04 in WSL 2 (WSLg) | same as Windows; results identical to Windows to every digit |
 | Android 15 | Pixel 7 emulator (x86_64) | Debug and Release; the microphone permission prompt; real AAudio capture (the virtual mic's 100 Hz tone measured 100.01 Hz); phone layout |
 
+**Since then (0.2.0):**
+
+| Platform | Where it ran | What was checked |
+|---|---|---|
+| Android | Pixel 9 (Android 17) and Pixel 4a, over USB | live recording speed and smoothness (Pixel 9: ~58 fps, 2–3 % slow frames), analysis time, scrolling |
+| Android | Pixel 7 emulator, 2026-10-08 | phone layout of the take, live view, trends and cards in both themes; importing files dropped into the takes folder |
+| Windows / Linux | single-file exe; Ubuntu 24.04 in WSL | `build.ps1` builds; the exe built on Linux runs on Windows; import, export, rename and the folder link |
+
 **Not yet ported:**
 - template and Gemini insights
-- the settings screen: API key, export, delete-all
+- the settings screen: API key, delete-all
+- PDF export (the menu item is there, greyed out)
 - the other six themes
 - the installer and auto-update
 - migrating data from the Electron app (its takes are `.webm`, which would need a decoder)
