@@ -1,7 +1,9 @@
 using Android;
 using Android.App;
 using Android.Content.PM;
+using Android.Content.Res;
 using Android.OS;
+using Android.Views;
 using Avalonia;
 using Avalonia.Android;
 using Avalonia.Media;
@@ -30,8 +32,24 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
     private static IAudioRecorder? s_recorder;
     private TaskCompletionSource<bool>? _microphone;
 
+    // Renderer switching (see RendererSwitch): the backend the next OnCreate has to build, set
+    // just before Recreate(); and whether Vulkan failed to start, so we stop trying it.
+    private static bool? s_switchTo;
+    private static bool s_vulkanUnavailable;
+
     protected override void OnCreate(Bundle? savedInstanceState)
     {
+        // A renderer switch: the old Activity and its view are gone by now (Recreate destroys
+        // before it creates), so Avalonia's graphics can be rebuilt before the new view exists.
+        if (s_switchTo is { } toVulkan)
+        {
+            s_switchTo = null;
+            if (!RendererSwitch.TryRebuild(toVulkan, out var error))
+            {
+                global::Android.Util.Log.Warn("Timbratune", $"couldn't switch to {(toVulkan ? "Vulkan" : "OpenGL ES")}: {error}");
+                if (toVulkan) s_vulkanUnavailable = true;
+            }
+        }
 #if PROFILING
         // Experiment switches are read first: some (e.g. "vulkan") apply while the app is built.
         var flagsFile = System.IO.Path.Combine(GetExternalFilesDir(null)!.AbsolutePath, "perf-flags.txt");
@@ -63,6 +81,9 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
         if (!Diagnostics.Perf.Flags.Contains("noprobes")) Diagnostics.Perf.Sink = line => global::Android.Util.Log.Info("Timbratune", line);
 #endif
         base.OnCreate(savedInstanceState);
+        global::Android.Util.Log.Info("Timbratune", $"renderer: {RendererSwitch.Describe()}, multi-window: {IsInMultiWindowMode}");
+        // Vulkan was wanted but Avalonia fell back: don't keep trying to switch to it.
+        if (ForcedRenderer() is null && !IsInMultiWindowMode && !RendererSwitch.IsVulkan) s_vulkanUnavailable = true;
 #if PROFILING
         if (Avalonia.Application.Current is { } app)
             Avalonia.Threading.Dispatcher.UIThread.Post(() => Diagnostics.Perf.ApplyExperiments(app,
@@ -139,18 +160,123 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
             .With(new AndroidPlatformOptions { RenderingMode = RenderingModes() });
 
     /// <summary>
-    /// Vulkan first, then OpenGL ES, then software. Measured scrolling: on a Pixel 9 (Android 17,
-    /// where OpenGL ES runs through a translation layer on Vulkan) OpenGL ES held it to ~33 fps
-    /// with the GPU mostly idle, Vulkan gave ~56 fps; on a Pixel 4a 52 → 56 fps, and live
-    /// recording ran smoother on both. If Vulkan can't start, Avalonia falls back to the next.
+    /// OpenGL ES, then software. Vulkan is faster (measured scrolling: on a Pixel 9, Android 17,
+    /// where OpenGL ES runs through a translation layer on Vulkan, ~33 fps with OpenGL ES against
+    /// ~56 fps; on a Pixel 4a 52 → 56 fps), but with Vulkan the picture goes black or partly black
+    /// when the window is resized in split screen (Pixel 9, next to Discord; gone with OpenGL ES).
+    /// The renderer can't change while the app runs, so Vulkan is opt-in: "vulkan" in renderer.txt.
     /// </summary>
-    private static IReadOnlyList<AndroidRenderingMode> RenderingModes()
+    private IReadOnlyList<AndroidRenderingMode> RenderingModes()
     {
 #if PROFILING
         // A/B switch: "egl" renders through OpenGL ES as before.
         if (Diagnostics.Perf.Flags.Contains("egl")) return [AndroidRenderingMode.Egl, AndroidRenderingMode.Software];
 #endif
-        return [AndroidRenderingMode.Vulkan, AndroidRenderingMode.Egl, AndroidRenderingMode.Software];
+        switch (ForcedRenderer())
+        {
+            case "vulkan": return [AndroidRenderingMode.Vulkan, AndroidRenderingMode.Egl, AndroidRenderingMode.Software];
+            case "egl": return [AndroidRenderingMode.Egl, AndroidRenderingMode.Software];
+            case "software": return [AndroidRenderingMode.Software];
+        }
+        // Vulkan, except in split screen / multi-window, where it goes black or partly black
+        // when the window is resized (Pixel 9, Android 17): OpenGL ES there. Entering or leaving
+        // multi-window while running switches (OnMultiWindowModeChanged).
+        return IsInMultiWindowMode
+            ? [AndroidRenderingMode.Egl, AndroidRenderingMode.Software]
+            : [AndroidRenderingMode.Vulkan, AndroidRenderingMode.Egl, AndroidRenderingMode.Software];
+    }
+
+    /// <summary>
+    /// renderer.txt in the app's folder ("vulkan", "egl" or "software"; adb push, then restart
+    /// the app) fixes the renderer, with no switching. Null: automatic.
+    /// </summary>
+    private string? ForcedRenderer()
+    {
+        try
+        {
+            var file = System.IO.Path.Combine(GetExternalFilesDir(null)!.AbsolutePath, "renderer.txt");
+            if (System.IO.File.Exists(file))
+            {
+                var text = System.IO.File.ReadAllText(file).Trim().ToLowerInvariant();
+                if (text is "vulkan" or "egl" or "software") return text;
+            }
+        }
+        catch (Exception)
+        {
+            // Unreadable override: automatic.
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Makes the renderer match the window: Vulkan full-screen, OpenGL ES in multi-window.
+    /// While a take is being recorded it waits (the switch re-creates the Activity).
+    /// </summary>
+    private void ApplyRendererPolicy()
+    {
+        if (IsFinishing || IsDestroyed || ForcedRenderer() is not null || !RendererSwitch.Supported) return;
+        var wantVulkan = !IsInMultiWindowMode;
+        if (RendererSwitch.IsVulkan == wantVulkan || (wantVulkan && s_vulkanUnavailable)) return;
+        if (s_recorder?.IsRecording == true)
+        {
+            new Handler(Looper.MainLooper!).PostDelayed(ApplyRendererPolicy, 1000);
+            return;
+        }
+        s_switchTo = wantVulkan;
+        Recreate();
+    }
+
+    // Split screen: the activity handles its own configuration changes (no re-creation), so
+    // when the window is resized, or moved into or out of multi-window, nothing makes the
+    // render surface follow and it can stay black or partly drawn. Kick layout and a repaint
+    // right away and once more after the system has settled the new bounds.
+    public override void OnConfigurationChanged(Configuration newConfig)
+    {
+        base.OnConfigurationChanged(newConfig);
+        RefreshSurface();
+    }
+
+    public override void OnMultiWindowModeChanged(bool isInMultiWindowMode, Configuration? newConfig)
+    {
+        base.OnMultiWindowModeChanged(isInMultiWindowMode, newConfig);
+        RefreshSurface();
+        // Let the system settle the new bounds first.
+        new Handler(Looper.MainLooper!).PostDelayed(ApplyRendererPolicy, 250);
+    }
+
+    private void RefreshSurface()
+    {
+        Refresh();
+        var handler = new Handler(Looper.MainLooper!);
+        handler.PostDelayed(Refresh, 100);
+        handler.PostDelayed(Refresh, 400);
+    }
+
+    private void Refresh()
+    {
+        try
+        {
+            if (IsFinishing || IsDestroyed) return;
+            Invalidate(Window?.DecorView);
+            if (Avalonia.Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.ISingleViewApplicationLifetime { MainView: { } view })
+            {
+                view.InvalidateMeasure();
+                view.InvalidateVisual();
+            }
+        }
+        catch (Exception e)
+        {
+            global::Android.Util.Log.Warn("Timbratune", $"surface refresh failed: {e.Message}");
+        }
+    }
+
+    private static void Invalidate(View? view)
+    {
+        if (view is null) return;
+        view.RequestLayout();
+        view.Invalidate();
+        if (view is not ViewGroup group) return;
+        for (var i = 0; i < group.ChildCount; i++) Invalidate(group.GetChildAt(i));
     }
 
     /// <summary>Asks for the microphone the first time; true when recording is allowed.</summary>

@@ -488,7 +488,28 @@ The algorithm itself wasn't the problem: each update is fast enough, but it comp
   - **Mobile-only cheaper look** (set up in code in `App.Initialize`, not with `OnPlatform` in XAML, which crashed on desktop): a crisp card shadow instead of a blurred one, and a two-stop vertical page gradient. iOS should get the same when added.
   - **Cheaper FFT:** real input as a half-size complex FFT, with pooled buffers. Results are identical.
   - The **profiling build** (see below).
-- **`750b29a`:** `AndroidPlatformOptions.RenderingMode` = Vulkan, then Egl, then Software.
+- **`750b29a`:** `AndroidPlatformOptions.RenderingMode` = Vulkan, then Egl, then Software. **v0.2.1: OpenGL ES in multi-window, switched at runtime.** With Vulkan the picture went black or partly black when the window was resized in split screen (Pixel 9, Android 17, next to Discord). Refreshing layout/invalidating on `OnConfigurationChanged`/`OnMultiWindowModeChanged` didn't help; OpenGL ES fixed it. So:
+  - **Policy** (`MainActivity`): Vulkan full screen, OpenGL ES in multi-window. At launch `RenderingModes()` picks by `IsInMultiWindowMode`. Entering or leaving multi-window calls `ApplyRendererPolicy()` (250 ms after `OnMultiWindowModeChanged`). It waits while a take is recording and gives up on Vulkan if it once failed to start.
+  - **Switch** (`RendererSwitch.cs`): Avalonia 11.3.22 builds its graphics once, in `AndroidPlatform.Initialize`. It produces an internal static `Compositor` on the chosen `IPlatformGraphics`, which `TopLevelImpl.Compositor` reads on every use. The switch sets the target and calls `Recreate()`. The old Activity's `OnDestroy` detaches the main view and disposes its `AvaloniaView`. Then, in the new `OnCreate` before `base.OnCreate`, reflection builds the new graphics (`EglPlatformGraphics.TryCreate` / `VulkanSupport.TryInitialize`) and a new `Compositor(graphics, false)`. It stores them in `AndroidPlatform.Compositor` and the locator. The new view re-attaches the same main view (static `SingleViewLifetime`). The process, services, recorder and view models keep running.
+  - **Limits:**
+    - The switch is gated to Avalonia 11.3.x; re-check `AndroidPlatform`, `AvaloniaMainActivity` and `TopLevelImpl` (decompile) on upgrade.
+    - The old compositor and graphics are left to the GC (no teardown API).
+    - `renderer.txt` (`vulkan`, `egl` or `software`) in the app's external files folder fixes the renderer and disables switching.
+  - **Measured** (Pixel 9, Release profiling build, 15 s of scrolling, 60 Hz):
+
+    | | fps while drawing | janky |
+    |---|---|---|
+    | full screen, Vulkan | 52.8 | 13.6 % |
+    | split top pane, OpenGL ES | 42.8 | 33.7 % |
+    | back to full screen, Vulkan | 53.8 | 10.5 % |
+
+    All in one process. Full-screen OpenGL ES on the same build measured about 62 % janky when scrolling, against about 15 % for Vulkan. Live recording was 9–10 % vs 2 % janky.
+  - **Not yet checked:**
+    - many switches in a row (memory);
+    - Home and back again;
+    - rotation after a switch;
+    - entering split screen while recording;
+    - the Pixel 4a.
 - **`b5d73f4`** (jank round):
   - **Scheduling:** live updates run on one dedicated thread (`Analysis/LiveWorker.cs`) at Android background priority (`AppServices.LowerThreadPriority`). At most one update starts per 100 ms, and nested parallelism is capped at 2 cores through an ambient limit (`Acoustics/Numerics/Parallelism.cs`, `Parallelism.Limit(n)` / `Parallelism.Options`, used by every `Parallel.*` in the analysis). The analysis after Stop keeps all cores.
   - **Mono GC:** `Properties/GcEnvironment.txt` sets `MONO_GC_PARAMS=nursery-size=16m,major=marksweep-conc` (an `AndroidEnvironment` item; `-p:TimbratuneGcEnv=false` leaves the defaults). **32 MB makes the runtime fail at startup** (LinkageError).
