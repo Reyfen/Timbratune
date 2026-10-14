@@ -341,31 +341,49 @@
     <Setter Property="Foreground" Value="{DynamicResource OnAccentBrush}" />
   </Style>
 
-  <!-- the recording cards' save menu, matching the pill dropdown's popup -->
-  <Style Selector="MenuFlyoutPresenter.save-menu">
-    <Setter Property="Background" Value="{DynamicResource CardBrush}" />
-    <Setter Property="BorderBrush" Value="{DynamicResource LineSoftBrush}" />
-    <Setter Property="BorderThickness" Value="1" />
-    <Setter Property="CornerRadius" Value="14" />
-    <Setter Property="Padding" Value="4" />
-  </Style>
-  <Style Selector="MenuFlyoutPresenter.save-menu MenuItem">
-    <Setter Property="CornerRadius" Value="10" />
+  <!-- a take card's label: plain text you can click to rename (underlined on hover) -->
+  <Style Selector="Button.label-link">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="VerticalAlignment" Value="Center" />
     <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
     <Setter Property="Cursor" Value="Hand" />
   </Style>
-  <Style Selector="MenuFlyoutPresenter.save-menu MenuItem:pointerover /template/ Border#PART_LayoutRoot">
-    <Setter Property="Background" Value="{DynamicResource ControlBgBrush}" />
+  <Style Selector="Button.label-link:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.label-link:pressed /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
   </Style>
-  <Style Selector="MenuFlyoutPresenter.save-menu MenuItem:pointerover /template/ ContentPresenter#PART_HeaderPresenter">
+  <Style Selector="Button.label-link:pointerover TextBlock">
+    <Setter Property="TextDecorations" Value="Underline" />
+  </Style>
+
+  <!-- a take dialog's choices (save / export): full-width rows -->
+  <Style Selector="Button.choice">
+    <Setter Property="Background" Value="{DynamicResource ControlBgBrush}" />
     <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource LineSoftBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="14" />
+    <Setter Property="Padding" Value="16,12" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Left" />
+    <Setter Property="Cursor" Value="Hand" />
+  </Style>
+  <Style Selector="Button.choice:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource ControlBgBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource InkStrongBrush}" />
   </Style>
   <!-- not available yet: faint, so it reads as "coming", not as broken -->
-  <Style Selector="MenuFlyoutPresenter.save-menu MenuItem:disabled">
+  <Style Selector="Button.choice:disabled">
     <Setter Property="Cursor" Value="Arrow" />
+    <Setter Property="Opacity" Value="0.5" />
   </Style>
-  <Style Selector="MenuFlyoutPresenter.save-menu MenuItem:disabled /template/ ContentPresenter#PART_HeaderPresenter">
-    <Setter Property="Foreground" Value="{DynamicResource InkFaintBrush}" />
+  <Style Selector="Button.choice:disabled /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource ControlBgBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource LineSoftBrush}" />
   </Style>
 
   <!-- recording cards: highlight the one in focus -->

@@ -33,6 +33,8 @@ public sealed record PickedFile(string Name, Func<Task<Stream>> OpenRead);
 /// <paramref name="Decoder"/> reads MP3 / FLAC for import (null: WAV and .tmbr only).
 /// <paramref name="DataFolderHint"/>, where the takes folder can't be opened from the app
 /// (Android), says where to find it instead of offering a link.
+/// <paramref name="Sharer"/>: the share sheet (Android). Where it's set, a take's audio and data
+/// are shared instead of saved.
 /// </summary>
 public sealed record AppServices(
     Core.Storage.RecordingStore Store,
@@ -44,4 +46,5 @@ public sealed record AppServices(
     Func<Task<bool>>? RequestMicrophone = null,
     Action? LowerThreadPriority = null,
     Core.Audio.IAudioDecoder? Decoder = null,
-    string? DataFolderHint = null);
+    string? DataFolderHint = null,
+    IFileSharer? Sharer = null);

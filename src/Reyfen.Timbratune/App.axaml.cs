@@ -21,7 +21,7 @@ public sealed class App : Application
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
-        if (OperatingSystem.IsAndroid() || OperatingSystem.IsIOS()) UseMobileLook();
+        if (Features.IsMobile) UseMobileLook();
     }
 
     /// <summary>

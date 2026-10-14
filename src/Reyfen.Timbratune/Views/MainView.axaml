@@ -162,5 +162,10 @@
     <Panel IsVisible="{Binding IsModalOpen}">
       <v:MetricModalView DataContext="{Binding Modal}" />
     </Panel>
+
+    <!-- ========== a take's dialog: save / export, rename, delete ========== -->
+    <Panel IsVisible="{Binding IsTakeDialogOpen}">
+      <v:TakeDialogView DataContext="{Binding TakeDialog}" />
+    </Panel>
   </Grid>
 </UserControl>

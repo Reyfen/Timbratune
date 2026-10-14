@@ -37,6 +37,11 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
     private static bool? s_switchTo;
     private static bool s_vulkanUnavailable;
 
+    // The live Activity. The app's services are built once per process, but the Activity can be
+    // re-created (the renderer switch), so anything needing it (permission requests, the share
+    // sheet) goes through this rather than holding on to the first one.
+    private static MainActivity? s_current;
+
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         // A renderer switch: the old Activity and its view are gone by now (Recreate destroys
@@ -72,10 +77,12 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
             Recorder: recorder,
             Playback: new PlaybackService(audio.CreatePlayer()),
             Dialogs: dialogs,
-            RequestMicrophone: RequestMicrophoneAsync,
+            RequestMicrophone: () => s_current?.RequestMicrophoneAsync() ?? Task.FromResult(false),
             LowerThreadPriority: () => global::Android.OS.Process.SetThreadPriority(global::Android.OS.ThreadPriority.Background),
             Decoder: audio,
-            DataFolderHint: FolderHint(paths));
+            DataFolderHint: FolderHint(paths),
+            Sharer: new AndroidFileSharer(() => s_current));
+        s_current = this;
 #if PROFILING
         // "noprobes": keep the fake mic and switches but log nothing (the probes' own cost out of the measurement).
         if (!Diagnostics.Perf.Flags.Contains("noprobes")) Diagnostics.Perf.Sink = line => global::Android.Util.Log.Info("Timbratune", line);
@@ -277,6 +284,12 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
         view.Invalidate();
         if (view is not ViewGroup group) return;
         for (var i = 0; i < group.ChildCount; i++) Invalidate(group.GetChildAt(i));
+    }
+
+    protected override void OnDestroy()
+    {
+        if (s_current == this) s_current = null;
+        base.OnDestroy();
     }
 
     /// <summary>Asks for the microphone the first time; true when recording is allowed.</summary>

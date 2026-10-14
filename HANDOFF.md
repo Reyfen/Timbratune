@@ -555,12 +555,36 @@ The algorithm itself wasn't the problem: each update is fast enough, but it comp
 
 ## 8e. Save menu and the .tmbr export (2026-10-08)
 
-The 💾 button on each "All recordings" card now opens a menu (`RecordingCardView.axaml`, a `Button.Flyout` with a `MenuFlyout`, styled as `MenuFlyoutPresenter.save-menu` in `Styles.axaml`):
+The 💾 button on each "All recordings" card now opens a menu with three choices. It was first a `MenuFlyout`; since 2026-10-14 it is the take dialog, see below.
+
+**Take dialogs (2026-10-14):** save / export (💾, with a cancel button), rename (click the take's name; there's no ✏️ button any more) and delete (🗑️) open one dialog over the whole page, with the same scrim and card as the metric modal. They used to be a flyout menu and inline rows in the card.
+- **View:** `Views/TakeDialogView.axaml`, shown by `MainView` while `MainViewModel.TakeDialog` is set. Each card keeps its own state (`IsSaveMenuOpen`, `IsRenaming`, `IsConfirmingDelete`, together `IsDialogOpen`), and `MainViewModel.OnItemChanged` keeps one dialog open at a time.
+- **Share on Android:** where the platform gives a share sheet (`AppServices.Sharer`, an `IFileSharer`; only Android sets one), the card shows a share button instead of 💾. There are two buttons and `CanSave` / `CanShare` pick one; the share sign is three linked dots in the accent colour, drawn in `RecordingCardView.axaml`, with no icon font or emoji.
+  - The same dialog then reads "share", and its choices hand the WAV (`audio/wav`) or the `.tmbr` (`application/octet-stream`) to the share sheet instead of the save picker. `MainViewModel.ExportDataAsync(take, audio, share)` builds the `.tmbr` either way.
+  - Android side, `AndroidFileSharer.cs`: the file is written to `cache/share/` and handed out as a `content://` URI by `ShareFileProvider` (an AndroidX `FileProvider`, declared by attribute so both manifests get it; paths in `Resources/xml/share_paths.xml`), with read permission granted through `ClipData`. Then `Intent.CreateChooser`.
+  - Shared files are kept an hour (the receiving app may still be uploading), then deleted on the next share.
+  - Checked on the Pixel 9: the sheet opens with `voice-take-N.tmbr` / `.wav`. Sending to an app wasn't tried.
+- **Current Activity:** `MainActivity.s_current` is what the share sheet and the microphone request use. The services are built once per process, and they used to hold the first Activity, which the renderer switch (§8d) can replace.
+- **The name:** it is a `Button.label-link` (plain text, accent and underlined on hover), so clicking it renames without selecting the take. `RecordingCardView.OnCardClicked` skips buttons; the rest of the card still selects it.
+- **Closing:** the background (scrim, or the scroller over it outside the card: `OnBackgroundPressed`), ✕, cancel, Esc, and Android's back button (`MainView.OnBackRequested`, which also closes the metric modal) close it as cancel.
+- **Styles:** the save choices are `Button.choice` in `Styles.axaml`; "coming soon" is disabled and faded.
+- **Rename focus:** the name box is focused with the name selected, which brings up a phone's keyboard. This is triggered by the take's `IsRenaming`, not by the box's visibility: with no dialog open the view has no DataContext, so the `IsVisible` binding falls back to true and never changes. Focus is retried every 50 ms (up to 10 times) until the box is laid out.
+- **On-screen keyboard:** `TopLevel.InputPane` gives the scroller around the card a bottom margin, and the card scrolls when what's left is too short (landscape).
+- **Checked on the Pixel 9 (debug build):**
+  - save / export opens and Back closes it;
+  - rename with focus, keyboard and Enter;
+  - delete of a throwaway take;
+  - export data opens the system picker.
+- **File pickers** (`StorageProviderDialogs`):
+  - The TopLevel is now looked up on every call. It was cached, which would break after the Activity is re-created by the renderer switch (§8d).
+  - On Android the extension is taken off the suggested name, because the picker adds it again (it showed `voice-take-15.tmbr.tmbr`).
+
+The choices:
 - **save audio (.wav):** the WAV copy as before (`RecordingItemViewModel.SaveCopyAsync`).
 - **export data (.tmbr):** `RecordingItemViewModel.ExportDataAsync` → `MainViewModel.ExportDataAsync`. The card shows "preparing the export…", then "exported to <name>" or the error.
 - **export PDF · coming soon:** disabled on purpose, in faint ink. Not implemented.
 
-**File dialogs:** `IFileDialogs.SaveAsync(title, suggestedName, typeName, extension, mimeType, write)` is the general "save a new file" call. `SaveCopyAsync` is built on it. The `.tmbr` type uses MIME `application/octet-stream`, so Android's SAF picker shouldn't rename it to `.zip`. **Not yet checked on a phone.**
+**File dialogs:** `IFileDialogs.SaveAsync(title, suggestedName, typeName, extension, mimeType, write)` is the general "save a new file" call. `SaveCopyAsync` is built on it. The `.tmbr` type uses MIME `application/octet-stream`, so Android's SAF picker shouldn't rename it to `.zip`. On the Pixel 9 the picker suggests `voice-take-<id>.tmbr` (after the double-extension fix); saving through it hasn't been tried yet.
 
 **Per-frame lists are now kept with each take** (the user chose this over computing them on each export):
 - The full analysis (`AcousticsAnalysisEngine.AnalyzeAsync`) builds `AnalysisResult.Series` (`Models/TakeSeries`) from its tracks with `Analysis/FrameSeriesBuilder`.
@@ -642,9 +666,9 @@ The user asked to drop `recordings.json`, so takes can be added and removed by h
   - Through `wsl.exe … bash -c '…'`, `$?` must be written `\$?`, or it's expanded before the command reaches bash.
 - **Take cards** (`RecordingCardView.axaml`):
   - "#N" is plain accent text (the pink number circle looked like a button; `Border.num` removed).
-  - Rename, delete and save are square framed `Button.icon` buttons (34 px, radius 8). The header row reads [✏️ rename] date [🗑️ delete].
+  - Delete and save are square framed `Button.icon` buttons (34 px, radius 8). The header row reads #N [name] date [🗑️ delete]. The ✏️ rename button was removed on 2026-10-14; the name itself renames (§8e).
   - The label wraps to two lines before it's cut short (phones).
-- **Rename:** ✏️ swaps the header for a text box (focused, text selected); Enter or ✓ saves, Escape or ✕ cancels.
+- **Rename:** first a text box in the header; since 2026-10-14 a dialog (§8e). Enter saves, Escape cancels.
   - `RecordingStore.Rename` rewrites `take.json` and renames the folder to "NNN new label".
   - The folder keeps its old name while its audio is playing or if the move fails; the name in `take.json` is what counts.
   - `MainViewModel.RenameAsync` reloads after renaming.

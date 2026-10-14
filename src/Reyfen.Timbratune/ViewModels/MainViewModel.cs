@@ -54,8 +54,14 @@ public sealed partial class MainViewModel : ObservableObject
 
     private int? _selectedId;
 
+    /// <summary>The take whose dialog (save / export, rename, delete) is open over the page.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsTakeDialogOpen))]
+    private RecordingItemViewModel? _takeDialog;
+
     public bool HasActive => Active is not null;
     public bool IsModalOpen => Modal is not null;
+    public bool IsTakeDialogOpen => TakeDialog is not null;
     public bool ShowSwitcher => Items.Count > 1;
     public bool NoRecordings => Items.Count == 0;
     /// <summary>The takes folder (one folder per take; files dropped in are imported on the next start).</summary>
@@ -177,14 +183,21 @@ public sealed partial class MainViewModel : ObservableObject
         if (selectLatest) _selectedId = null;
         if (_selectedId is { } id && _recordings.All(r => r.Id != id)) _selectedId = null;
 
-        foreach (var item in Items) item.Dispose();
+        TakeDialog = null;
+        foreach (var item in Items)
+        {
+            item.PropertyChanged -= OnItemChanged;
+            item.Dispose();
+        }
         Items.Clear();
         var latestId = _recordings.Count > 0 ? _recordings[^1].Id : (int?)null;
         for (var i = _recordings.Count - 1; i >= 0; i--)
         {
             var r = _recordings[i];
-            Items.Add(new RecordingItemViewModel(r, _services.Store.Paths.Resolve(r.Audio), r.Id == latestId,
-                _services.Playback, _services.Dialogs, DeleteAsync, ExportDataAsync, RenameAsync));
+            var item = new RecordingItemViewModel(r, _services.Store.Paths.Resolve(r.Audio), r.Id == latestId,
+                _services.Playback, _services.Dialogs, _services.Sharer, DeleteAsync, ExportDataAsync, RenameAsync);
+            item.PropertyChanged += OnItemChanged;
+            Items.Add(item);
         }
 
         OnPropertyChanged(nameof(ShowSwitcher));
@@ -202,7 +215,23 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void CloseModal()
     {
-        Modal?.CloseCommand.Execute(null);
+        if (TakeDialog is { } take) take.CloseDialogCommand.Execute(null);
+        else Modal?.CloseCommand.Execute(null);
+    }
+
+    // One take dialog at a time: opening one closes the one before.
+    private void OnItemChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(RecordingItemViewModel.IsDialogOpen) || sender is not RecordingItemViewModel item) return;
+        if (item.IsDialogOpen)
+        {
+            if (TakeDialog is { } other && other != item) other.CloseDialogCommand.Execute(null);
+            TakeDialog = item;
+        }
+        else if (TakeDialog == item)
+        {
+            TakeDialog = null;
+        }
     }
 
     [RelayCommand]
@@ -219,9 +248,10 @@ public sealed partial class MainViewModel : ObservableObject
     /// Exports a take as a .tmbr file (WAV + take.json, see <see cref="TakeArchive"/>).
     /// Takes analyzed before the per-frame lists were kept get them now: the stored WAV is
     /// analyzed once and the lists saved for next time. The lists are only held while the
-    /// file is written. Returns where it went, or null if cancelled.
+    /// file is written. Saved through the file picker, or with <paramref name="share"/> handed to
+    /// the share sheet. Returns where it was saved, or null if cancelled or shared.
     /// </summary>
-    private async Task<string?> ExportDataAsync(Recording take, string audioPath)
+    private async Task<string?> ExportDataAsync(Recording take, string audioPath, bool share)
     {
         var store = _services.Store;
         var (detail, series) = await Task.Run(() => (store.LoadDetail(take), store.LoadSeries(take)));
@@ -242,9 +272,15 @@ public sealed partial class MainViewModel : ObservableObject
         }
 
         var (d, s) = (detail, series);
-        return await _services.Dialogs.SaveAsync("Export this take's data", $"voice-take-{take.Id}.{TakeArchive.Extension}",
-            "Timbratune take", TakeArchive.Extension, "application/octet-stream",
-            target => Task.Run(() => TakeArchive.Write(target, take, d, s, audioPath, Features.Version)));
+        var name = $"voice-take-{take.Id}.{TakeArchive.Extension}";
+        Func<Stream, Task> write = target => Task.Run(() => TakeArchive.Write(target, take, d, s, audioPath, Features.Version));
+        if (share && _services.Sharer is { } sharer)
+        {
+            await sharer.ShareAsync("Share this take's data", name, "application/octet-stream", write);
+            return null;
+        }
+        return await _services.Dialogs.SaveAsync("Export this take's data", name,
+            "Timbratune take", TakeArchive.Extension, "application/octet-stream", write);
     }
 
     /// <summary>Renames a take (label and folder) and shows the new name everywhere.</summary>
