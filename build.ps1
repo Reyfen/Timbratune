@@ -4,9 +4,16 @@
 #   linux    publish/Timbratune-linux-x64/Timbratune-v<ver>-linux-x64.deb + .AppImage.tar.gz
 #            (packed by scripts/package-linux.sh: in WSL on Windows, directly on Linux)
 #   android  publish/Timbratune-android/Timbratune-v<ver>-android.apk
+#   debug    Android only (so `./build.ps1 debug` means `android debug`): a Debug build into
+#            publish/Timbratune-android-debug/ with assemblies embedded in the APK, no LLVM AOT
+#            (about 1 minute instead of ~4), with debug symbols and the Debug-only fake mic
+#            (files/fake-mic.wav). Slower at runtime: for UI checks and emulator or phone smoke
+#            tests, not for performance numbers or anything the user installs as a release.
+#            win and linux listed with it still build as Release.
 #
-# Usage:  ./build.ps1                 all three
+# Usage:  ./build.ps1                 all three (Release)
 #         ./build.ps1 win android     only those
+#         ./build.ps1 android debug   quick Android Debug build
 # On Windows it can also be double-clicked or started with right-click -> "Run with PowerShell";
 # the window then stays open at the end.
 #
@@ -74,16 +81,18 @@ function Invoke-Dotnet([string]$arguments, [string]$aotDir = $null) {
 
 Push-Location $root
 
-$doWin = $false; $doLinux = $false; $doAndroid = $false
-if (-not $Targets -or $Targets.Count -eq 0) { $doWin = $true; $doLinux = $true; $doAndroid = $true }
+$doWin = $false; $doLinux = $false; $doAndroid = $false; $debug = $false
 foreach ($t in $Targets) {
     switch ($t.ToLowerInvariant()) {
         'win' { $doWin = $true }
         'linux' { $doLinux = $true }
         'android' { $doAndroid = $true }
-        default { Write-Host "Unknown platform `"$t`" (use win, linux, android)."; Finish $false }
+        'debug' { $debug = $true }
+        default { Write-Host "Unknown platform `"$t`" (use win, linux, android, debug)."; Finish $false }
     }
 }
+if ($debug -and -not ($doWin -or $doLinux -or $doAndroid)) { $doAndroid = $true }   # `debug` alone: Android Debug only
+if (-not ($doWin -or $doLinux -or $doAndroid)) { $doWin = $true; $doLinux = $true; $doAndroid = $true }
 
 # The projects target net10.0: an older SDK fails with a confusing error, so check first.
 if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
@@ -245,9 +254,19 @@ if ($doAndroid) {
         $env:JavaSdkDirectory = $jdk
         $env:JAVA_HOME = $jdk
         # The LLVM AOT stage is a few minutes without any output; the heartbeat counts its files.
-        $aotDir = Join-Path $root 'src/Reyfen.Timbratune.Android/obj/Release/net10.0-android'
-        Invoke-Dotnet "publish src/Reyfen.Timbratune.Android -c Release -o publish/Timbratune-android -v quiet -nologo --disable-build-servers `"-p:AndroidSdkDirectory=$sdk`" `"-p:JavaSdkDirectory=$jdk`"" $aotDir
-        if ($LASTEXITCODE -eq 0) { Write-Host 'Android build done.'; $built += "Timbratune-android/Timbratune-v$version-android.apk" }
+        if ($debug) {
+            # Debug: Mono JIT/interpreter instead of LLVM AOT; assemblies embedded so the APK runs
+            # when installed (a Debug APK otherwise relies on fast deployment from the IDE).
+            $outName = 'Timbratune-android-debug'
+            Write-Host 'Debug build: no LLVM AOT, slower at runtime (not for performance measurements).'
+            Invoke-Dotnet "publish src/Reyfen.Timbratune.Android -c Debug -o publish/$outName -p:EmbedAssembliesIntoApk=true -v quiet -nologo --disable-build-servers `"-p:AndroidSdkDirectory=$sdk`" `"-p:JavaSdkDirectory=$jdk`""
+        }
+        else {
+            $outName = 'Timbratune-android'
+            $aotDir = Join-Path $root 'src/Reyfen.Timbratune.Android/obj/Release/net10.0-android'
+            Invoke-Dotnet "publish src/Reyfen.Timbratune.Android -c Release -o publish/$outName -v quiet -nologo --disable-build-servers `"-p:AndroidSdkDirectory=$sdk`" `"-p:JavaSdkDirectory=$jdk`"" $aotDir
+        }
+        if ($LASTEXITCODE -eq 0) { Write-Host 'Android build done.'; $built += "$outName/Timbratune-v$version-android.apk" }
         else { $failed = $true; Write-Host 'Android build FAILED.' }
     }
 }

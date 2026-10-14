@@ -37,6 +37,7 @@ dotnet test Timbratune.slnx                      # Praat oracle tests skip witho
 dotnet run --project src/Reyfen.Timbratune.Desktop
 dotnet publish src/Reyfen.Timbratune.Desktop -p:PublishProfile=win-x64   # single self-contained exe
 ./build.ps1 [win] [linux] [android]           # all published builds (default: all three); Windows PowerShell 5.1 or pwsh (Linux too)
+./build.ps1 android debug                     # quick Android Debug APK, see "Which Android build" below
 ```
 
 Artifact names follow `<app>-v<Version>-<platform>` from `<Version>` in `Directory.Build.props`.
@@ -47,6 +48,8 @@ Environment variables:
 - `TIMBRATUNE_PRAAT`: path to Praat for oracle tests.
 
 UI check without a person: build `long.wav` with `scripts/make-long-wav.ps1`, set `TIMBRATUNE_FAKE_MIC` and `TIMBRATUNE_DATA_DIR`, start with `scripts/screenshot.ps1 -Exe … -Out a.png -Wait 7` (prints `pid=…`), then always pass `-ProcId <pid>`. PrintWindow doesn't capture popups; drive dropdowns with the keyboard.
+
+**Which Android build:** a Release build (`./build.ps1 android`, ~4 min, LLVM AOT) is for anything the user installs, and for every performance number. When Release isn't needed (UI checks, emulator or phone smoke tests, trying a change, debug-only options like the fake mic file), use `./build.ps1 android debug` instead (~1 min, no LLVM, assemblies embedded, into `publish/Timbratune-android-debug/`, so it never overwrites a release APK). It runs slower, so don't measure with it.
 
 Android build: `./build.ps1 android` finds the SDK and a JDK 17-21 itself (env vars, then the usual install folders) and lists where it looked if it can't. By hand, pass `-p:AndroidSdkDirectory=… -p:JavaSdkDirectory=…`. See HANDOFF §8a and §8h.
 - **Emulator** (AVD `EuphoniaPixel`): start it headless with `emulator -avd EuphoniaPixel -no-window -no-snapshot -no-boot-anim -gpu swiftshader_indirect -memory 4096`, install a Debug APK built with `-p:EmbedAssembliesIntoApk=true`, and give it a fake mic with `adb shell run-as com.reyfen.timbratune cp /data/local/tmp/take.wav files/fake-mic.wav`. Screenshots: `adb exec-out screencap -p`. Takes live in `/sdcard/Android/data/com.reyfen.timbratune/files/takes`.

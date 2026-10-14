@@ -668,6 +668,8 @@ The user asked to drop `recordings.json`, so takes can be added and removed by h
 - **`build.ps1` replaces `build.bat` and `build.sh`.** One script for Windows PowerShell 5.1 and PowerShell 7, the latter on Linux too.
   - It keeps both earlier scripts' behaviour: platform arguments, the .NET 10 SDK check, the running-app check (Windows), Linux packing in WSL or directly, and Android SDK/JDK lookup.
   - Keep it ASCII-only: Windows PowerShell reads a BOM-less script as ANSI.
+  - **Progress (2026-10-14):** dotnet runs through `Invoke-Dotnet`, which prints "still building, mm:ss" every 15 s and, for Android, how many assemblies the LLVM AOT has finished per ABI. A Release Android publish is ~3m45s of which ~3m10 is single-threaded `mono-aot-cross --llvm` for arm64 (x64 ~40 s, in parallel), with no output at `-v quiet`.
+  - **`debug` option (2026-10-14):** `./build.ps1 android debug` (or just `debug`) publishes `-c Debug -p:EmbedAssembliesIntoApk=true` into `publish/Timbratune-android-debug/`: ~1m15s, 69 MB APK, no LLVM (the csproj enables it for Release only), so slower at runtime. For the agent's UI and smoke tests; use Release for the user's installs and any measurement. `win`/`linux` listed with it still build Release.
   - Started from Explorer (double-click with PowerShell as the .ps1 handler, which the user set, or "Run with PowerShell") it waits for Enter at the end. That's detected by the parent process being `explorer`; matching the command line missed double-clicks.
 - **XA5300 prevention**, before the Android build, after the user hit it twice in a day:
   - `dotnet build-server shutdown`;
