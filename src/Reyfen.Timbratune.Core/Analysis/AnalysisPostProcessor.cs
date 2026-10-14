@@ -39,6 +39,7 @@ public static class AnalysisPostProcessor
                 F1Hz = Clean(formants.F1),
                 F2Hz = Clean(formants.F2),
                 F3Hz = Clean(formants.F3),
+                UsablePct = UsableFormantPct(raw),
             },
             VoiceQuality = new VoiceQuality
             {
@@ -195,6 +196,23 @@ public static class AnalysisPostProcessor
             });
         }
         return result;
+    }
+
+    /// <summary>Fewer sampled moments than this say too little about how reliable the formants are.</summary>
+    internal const int MinFramesForUsable = 30;
+
+    /// <summary>Below this usable share (%) the take's formants are flagged as shaky (clean speech measured 93–98 %, noisy takes 58–61 %).</summary>
+    public const double UnreliableFormantsBelowPct = 75;
+
+    /// <summary>
+    /// Share (%) of the sampled loud voiced moments with a usable F1 at the 5500 Hz ceiling;
+    /// null if there were fewer than <see cref="MinFramesForUsable"/> (or none were counted).
+    /// </summary>
+    internal static double? UsableFormantPct(RawAnalysis raw)
+    {
+        if (raw.FormantFramesTried < MinFramesForUsable) return null;
+        var usable = raw.Formants.Count(r => r.Ceiling == FormantCeiling);
+        return Math.Round(100.0 * usable / raw.FormantFramesTried, 1);
     }
 
     // ------------------------------------------------------------------

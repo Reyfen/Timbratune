@@ -239,6 +239,13 @@ F2's large "error" is real phonetics: F2 differs by about 700 Hz between /i/ and
 - Trend prediction for loudness and pitch: measured worse.
 - 0.1 s formant blocks: measured worse.
 - Faint raw per-frame traces: removed at the user's request.
+- Formant quality filters on bandwidth (F1–F3 ≤ 300/400/500 Hz) or on the number of poles kept (≥ 4, ≥ 5): the F2 frame-to-frame step did not improve on the noisy takes, and they threw away 50–80 % of clean VCTK frames. Not shipped.
+
+### 6a. Loudness gate and the "shaky formants" note (2026-10-14, v0.2.1)
+Two takes (voice-take-8/9, noisy: 6–12 kHz hiss about as loud as the voice) showed broken or no formants. Findings, with the C# Burg matching Praat to 0.003 Hz on both, so the analysis itself was right:
+- The vowel-core gate (voiced frames within 10 dB of the loudest frame) was set by one 50 ms click. Take 9: 3 loud frames, 0 formant rows. Now the reference is the loudest value after setting aside the loudest 1 % of intensity frames (`RawAnalysisAssembler.LoudOutlierFraction`; none below 100 frames). `AcousticsAnalysisEngine.LoudOutlierFraction = 0` gives analyze.py's gate; the parity tests use it. Live and saved share the code, so they still agree.
+- Clean takes move a little too (vctk_f339: F1 628 → 597, F2 1251 → 1316, F3 2796 → 2671 Hz; the other three ≤ 15 Hz), so formant numbers of old takes are not exactly comparable with new ones.
+- `Formants.UsablePct` (take.json `formants.usable_pct`): the share of the ≤ 300 sampled loud voiced moments with F1 in 250–1000 Hz. Clean speech 93–98 %, the noisy takes 58–61 %. Below 75 % the take view adds a "formants are shaky" note under the F1 line. Null under 30 moments and in older takes.
 
 ## 7. Developer workflow
 

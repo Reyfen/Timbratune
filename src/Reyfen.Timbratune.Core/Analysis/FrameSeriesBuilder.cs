@@ -16,7 +16,7 @@ public sealed class FrameSeriesBuffers
     /// <summary>F1 at the same times as F2/F3; null = not collected (the live graphs don't show it).</summary>
     public List<TimedValue>? F1;
     internal readonly List<(double T, double F0)> Voiced = [];
-    internal readonly List<double> LoudTimes = [];
+    internal readonly List<double> LoudTimes = [], LoudScratch = [];
     internal RawAnalysis.WeightRow?[] Rows = [];
 }
 
@@ -50,7 +50,7 @@ public static class FrameSeriesBuilder
         f1?.Clear();
         f2.Clear();
         f3.Clear();
-        foreach (var time in RawAnalysisAssembler.LoudVoicedTimes(voiced, t.Intensity, b.LoudTimes))
+        foreach (var time in RawAnalysisAssembler.LoudVoicedTimes(voiced, t.Intensity, b.LoudTimes, t.LoudOutlierFraction, b.LoudScratch))
         {
             double v1 = t.Formants5500.ValueAtTime(1, time), v2 = t.Formants5500.ValueAtTime(2, time), v3 = t.Formants5500.ValueAtTime(3, time);
             if (!(v1 >= 250 && v1 <= 1000 && v2 > 0 && v3 > 0)) continue;
@@ -130,7 +130,7 @@ public static class FrameSeriesBuilder
         };
     }
 
-    private const string FormantFrames = "voiced pitch frames within 10 dB of the loudest frame, with F1 in 250-1000 Hz (5500 Hz ceiling)";
+    private const string FormantFrames = "voiced pitch frames within 10 dB of the loudest frames (ignoring the top 1 %, so a click doesn't count), with F1 in 250-1000 Hz (5500 Hz ceiling)";
 
     private static FrameSeries Series(List<TimedValue> points, string unit, double? step, int digits, string description)
     {

@@ -91,10 +91,12 @@ public sealed class LiveAnalysisTests(ITestOutputHelper output)
             ("register.phrases_landed_pct", e.Register?.PhrasesLandedPct, a.Register?.PhrasesLandedPct, Exact),
             ("register.n_phrases", e.Register?.NPhrases, a.Register?.NPhrases, Exact),
             // Formants come from stitched live segments rather than one pass over the file, and
-            // are read between frames at the voiced-frame times. Measured worst case 11 Hz (F3,
-            // 0.4%) and 0.32 dB weight — well inside the zones (F2's neutral band is 80 Hz wide).
+            // are read between frames at the voiced-frame times. Measured worst cases 11 Hz (F3,
+            // 0.4%) and 0.32 dB weight, and 23 Hz for F2 of vctk_f339, whose F2 median moves 65 Hz
+            // with the loudness gate alone (the percentile gate admits more frames) — still inside
+            // the zones (F2's neutral band is 80 Hz wide).
             ("formants.f1_hz", e.Formants.F1Hz, a.Formants.F1Hz, 15),
-            ("formants.f2_hz", e.Formants.F2Hz, a.Formants.F2Hz, 15),
+            ("formants.f2_hz", e.Formants.F2Hz, a.Formants.F2Hz, 25),
             ("formants.f3_hz", e.Formants.F3Hz, a.Formants.F3Hz, 15),
             ("weight.h1a3c_db", e.Weight?.H1a3cDb, a.Weight?.H1a3cDb, 0.4),
             ("weight.tilt_db_khz", e.Weight?.TiltDbKhz, a.Weight?.TiltDbKhz, Exact),

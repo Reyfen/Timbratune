@@ -50,6 +50,13 @@ public sealed class Formants
     public double? F1Hz { get; set; }
     public double? F2Hz { get; set; }
     public double? F3Hz { get; set; }
+    /// <summary>
+    /// Share (%) of the sampled loud voiced moments that gave a usable F1 (250–1000 Hz, 5500 Hz
+    /// ceiling). Clean speech is above ~90 %; a low value means the formants were unreliable
+    /// (noise, hiss, a very close mic). Null when too few moments to say, and in older takes.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public double? UsablePct { get; set; }
 }
 
 public sealed class VoiceQuality

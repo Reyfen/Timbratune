@@ -47,6 +47,31 @@ function Finish([bool]$ok) {
     if ($ok) { exit 0 } else { exit 1 }
 }
 
+# Runs dotnet with the given argument string and prints a heartbeat every 15 s, so a long step
+# (Android's LLVM AOT takes minutes without output at -v quiet) doesn't look stuck. $aotDir, when
+# given, is searched for AOT .so files written since the start, to show how far that stage is.
+# Sets $LASTEXITCODE like a direct call would.
+function Invoke-Dotnet([string]$arguments, [string]$aotDir = $null) {
+    $start = Get-Date
+    $proc = Start-Process -FilePath 'dotnet' -ArgumentList $arguments -NoNewWindow -PassThru
+    $handle = $proc.Handle   # keeps the exit code readable after the process ends
+    while (-not $proc.WaitForExit(15000)) {
+        $t = (Get-Date) - $start
+        $line = '  ... still building, {0:00}:{1:00}' -f [int][math]::Floor($t.TotalMinutes), $t.Seconds
+        if ($aotDir -and (Test-Path -LiteralPath $aotDir)) {
+            $done = @(Get-ChildItem -LiteralPath $aotDir -Recurse -Filter '*.so' -ErrorAction SilentlyContinue |
+                    Where-Object { $_.LastWriteTime -gt $start })
+            if ($done.Count -gt 0) {
+                $groups = $done | Group-Object { ($_.FullName.Substring($aotDir.Length).TrimStart('\', '/') -split '[\\/]')[0] }
+                $line += ' - AOT-compiled assemblies: ' + (($groups | ForEach-Object { '{0} {1}' -f $_.Name, $_.Count }) -join ', ')
+            }
+        }
+        Write-Host $line
+    }
+    $proc.WaitForExit()
+    $global:LASTEXITCODE = $proc.ExitCode
+}
+
 Push-Location $root
 
 $doWin = $false; $doLinux = $false; $doAndroid = $false
@@ -86,7 +111,7 @@ New-Item -ItemType Directory -Force (Join-Path $root 'publish') | Out-Null
 if ($doWin) {
     Write-Host ''
     Write-Host '===== Windows ====='
-    dotnet publish src/Reyfen.Timbratune.Desktop -p:PublishProfile=win-x64 -v quiet -nologo
+    Invoke-Dotnet 'publish src/Reyfen.Timbratune.Desktop -p:PublishProfile=win-x64 -v quiet -nologo'
     if ($LASTEXITCODE -eq 0) { Write-Host 'Windows build done.'; $built += "Timbratune-win-x64/Timbratune-v$version-win-x64.exe" }
     else { $failed = $true; Write-Host 'Windows build FAILED.' }
 }
@@ -94,7 +119,7 @@ if ($doWin) {
 if ($doLinux) {
     Write-Host ''
     Write-Host '===== Linux ====='
-    dotnet publish src/Reyfen.Timbratune.Desktop -p:PublishProfile=linux-x64 -v quiet -nologo
+    Invoke-Dotnet 'publish src/Reyfen.Timbratune.Desktop -p:PublishProfile=linux-x64 -v quiet -nologo'
     if ($LASTEXITCODE -ne 0) {
         $failed = $true; Write-Host 'Linux build FAILED.'
     }
@@ -219,8 +244,9 @@ if ($doAndroid) {
         $env:AndroidSdkDirectory = $sdk
         $env:JavaSdkDirectory = $jdk
         $env:JAVA_HOME = $jdk
-        dotnet publish src/Reyfen.Timbratune.Android -c Release -o publish/Timbratune-android -v quiet -nologo `
-            --disable-build-servers "-p:AndroidSdkDirectory=$sdk" "-p:JavaSdkDirectory=$jdk"
+        # The LLVM AOT stage is a few minutes without any output; the heartbeat counts its files.
+        $aotDir = Join-Path $root 'src/Reyfen.Timbratune.Android/obj/Release/net10.0-android'
+        Invoke-Dotnet "publish src/Reyfen.Timbratune.Android -c Release -o publish/Timbratune-android -v quiet -nologo --disable-build-servers `"-p:AndroidSdkDirectory=$sdk`" `"-p:JavaSdkDirectory=$jdk`"" $aotDir
         if ($LASTEXITCODE -eq 0) { Write-Host 'Android build done.'; $built += "Timbratune-android/Timbratune-v$version-android.apk" }
         else { $failed = $true; Write-Host 'Android build FAILED.' }
     }
