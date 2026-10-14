@@ -10,7 +10,7 @@
     <RootNamespace>Reyfen.Timbratune.Android</RootNamespace>
     <ApplicationId>com.reyfen.timbratune</ApplicationId>
     <ApplicationTitle>Timbratune</ApplicationTitle>
-    <ApplicationVersion>2</ApplicationVersion>
+    <ApplicationVersion>3</ApplicationVersion>
     <ApplicationDisplayVersion>$(Version)</ApplicationDisplayVersion>
     <AndroidPackageFormat>apk</AndroidPackageFormat>
     <RuntimeIdentifiers>android-arm64;android-x64</RuntimeIdentifiers>
