@@ -74,14 +74,15 @@ src/
       Decoding/                         format catalog, sniffer, decoder ports, registry (§4)
     Storage/                            ITakeStorage + IDataStore ports (§7 seam), RecordingStore (repository
                                         over ITakeStorage), FileSystemTakeStorage (today's layout), DataPaths,
-                                        TakeArchive, AppSettings
+                                        TakeArchive
+      Settings/                         SettingKey<T>, SettingScope, SettingsService, ISettingsStore, migrations (§5a)
   Reyfen.Timbratune/                    Avalonia UI library
     App/                                App.axaml(.cs), CompositionRoot (AddTimbratune), ViewLocator (hand-written map)
     Shell/                              ShellView (was MainView), ShellViewModel, overlay stack, back/Esc handling
     Shared/                             ports and state that features share; no feature code
       Navigation/                       IOverlayHost, IRouter base
       Messaging/                        IMessenger + message records (TakeSaved, TakeRenamed, TakeDeleted, ImportFinished…)
-      State/                            IActiveTakeService, ITakeCatalog, ILiveSession, IEntitlements (later)
+      State/                            IActiveTakeService, ITakeCatalog, ILiveSession, ISettings (§5a), IEntitlements (later)
       Platform/                         IFileDialogs, IFileSharer, IPermissions, IPlatformInfo, ISecureStore,
                                         IExternalBrowser, IProcessRunner, IHttpDownloader
       Analytics/                        IAnalytics, TakeAnalyzedEvent, NullAnalytics (the port only, §5)
@@ -378,7 +379,7 @@ Linux is the one platform without a universal system decoder, hence §4.3.
 - **The implementation** is in `Features/Analytics`:
   - `MixpanelAnalytics`: `HttpClient` POST to `/track`, or `api-eu.mixpanel.com`; no SDK.
   - A source-generated `System.Text.Json` context.
-  - `AnalyticsSettings`: opt-in flag plus a random install id, kept in `AppSettings`.
+  - `AnalyticsSettings`: opt-in flag plus a random install id, both `Device`-scoped settings (§5a).
   - The consent toggle view/view model, in About.
 
 **When disabled, nothing is allocated:**
@@ -410,6 +411,84 @@ Linux is the one platform without a universal system decoder, hence §4.3.
 
 ---
 
+## 5a. Settings that persist between sessions (local now, cloud sync later)
+
+**Today** nothing is saved between sessions: the theme toggle, live window choice and similar options reset on every start. **Goal:**
+- typed settings that persist on every platform;
+- each setting marked **device-only** or **synced**;
+- synced settings later follow the user's account to other devices (§6).
+
+### 5a.1 Declaring settings: each feature owns its own
+
+```csharp
+public enum SettingScope { Device, Synced }          // secrets are never settings: they go to ISecureStore (§6)
+
+public sealed record SettingKey<T>(string Id, T Default, SettingScope Scope, JsonTypeInfo<T> Json);
+
+// in Features/Recording/RecordingSettings.cs (example)
+public static class RecordingSettings
+{
+    public static readonly SettingKey<string> LiveWindow =
+        new("recording.liveWindow", "10s", SettingScope.Synced, SettingsJson.Default.String);
+}
+```
+
+- **Ids** are namespaced by feature (`recording.*`, `import.*`, `shell.*`) and never reused.
+- **Registration:** each feature registers its keys in `Add<Feature>Feature()` (`ISettingsRegistry`). There is no central settings class to edit, so features stay independent.
+- **AOT:** values are serialised with source-generated `System.Text.Json` (`JsonTypeInfo<T>`), so it is trim/AOT safe.
+
+**Which scope, as a starting point** (the owner confirms; §12):
+
+| Scope | Examples |
+|---|---|
+| **Device** | window size/position, Android renderer, data folder, FFmpeg path / "not now" / installed version, decoder priorities, analytics opt-in and install id (consent is per device), last-seen version, performance flags |
+| **Synced** | theme, live window length, display preferences (units, which cards are shown), cheat-sheet/tips dismissed, reference-voice choice |
+| **Never a setting** | OAuth tokens and secrets (`ISecureStore`), takes and analysis (`ITakeStorage`), anything about the user's voice |
+
+### 5a.2 The service
+
+- **Port:** `Shared/State/ISettings`, with `T Get<T>(SettingKey<T>)`, `void Set<T>(SettingKey<T>, T)` and a `Changed` event carrying the key.
+- **Reads** come from an in-memory snapshot loaded once at startup. Features read a setting once and subscribe; settings are never read on the analysis hot path.
+- **Writes** update memory at once and are saved **debounced** (about 0.5 s) on a background task. The file is written atomically: a temp file, then a rename.
+- **Format:** two JSON documents, each with a `schemaVersion`:
+  - `settings.device.json`;
+  - `settings.synced.json`, the local copy of the synced settings.
+- **Upgrades:** migrations run on load.
+- **Different app versions on different devices:** unknown keys are **kept and written back unchanged**, so an older app version never deletes a newer version's settings.
+- **Corruption:** a damaged file falls back to defaults and is kept as `.bak`, so one bad file never stops the app from starting.
+
+**Storage port:** `ISettingsStore`, which loads and saves one document by name. It sits on `IDataStore` (§7, phase P2):
+
+| Platform | Location |
+|---|---|
+| Windows / Linux / macOS | the data folder (`%APPDATA%\Timbratune`, `$XDG_DATA_HOME/Timbratune`, `~/Library/Application Support/Timbratune`); `TIMBRATUNE_DATA_DIR` moves it with the takes |
+| Android | the app's internal `FilesDir`, not the external folder where takes live |
+| iOS | Application Support |
+| Browser (later) | OPFS or `localStorage` |
+
+### 5a.3 Cloud sync (later, together with accounts in §6)
+
+- **What syncs:** only `Synced` keys, only when the user is signed in and has sync on. There is a "Sync settings" toggle, default **on** once signed in.
+- **Port:** `ISettingsSyncProvider` in `Shared/Platform`, implemented in a separate adapter project. Pull and push the synced document, keyed by the account.
+- **Recommended backend:** the **same small serverless backend as the Patreon token exchange** (§6). It stores one small JSON document per account id, so it works the same on Windows, Linux, Android, iOS, macOS and the browser, whatever the sign-in provider.
+  - Platform services (iCloud key-value store, Google Play Saved Games) only cover some platforms. They could be added later as extra adapters behind the same port.
+- **Offline first:** the local copy is always the source the app reads. Sync runs on start, on resume, and debounced after a change.
+- **Merging:** each synced key stores `{value, updatedAt, deviceId}`; the newer `updatedAt` wins, and `deviceId` breaks ties. Removed keys leave a tombstone. This means two devices changing *different* settings never overwrite each other.
+- **Sign-out** keeps the local copy and stops syncing.
+- **Device restore:** Android Auto Backup rules include only the settings files. Takes stay excluded, given the size limit and privacy.
+- **Privacy:** synced settings hold no voice data, labels or results. Syncing takes is a separate, later decision, not part of this design.
+
+### 5a.4 Tests
+
+- Round-trips, defaults and migrations.
+- Unknown keys are preserved, and a corrupt file falls back to defaults.
+- Debounced, atomic save (kill-during-write leaves the old file).
+- Merge rules: per-key last-writer-wins, tombstones, ties.
+- An architecture test: features use only `ISettings`, never files.
+- A test that no `SettingKey` id contains "token" or "secret".
+
+---
+
 ## 6. Later: accounts and the supporter avatar (seams now, modules in a later version)
 
 **Purpose:**
@@ -437,7 +516,7 @@ Features/Avatar/   AvatarManager (avatar.json in the data folder, never uploaded
 **Seams in this refactor:**
 - `ISecureStore` and `IExternalBrowser` in `Shared/Platform`.
 - An empty header slot in the Shell.
-- One `AppSettings` store in the data folder.
+- The settings service with `Device`/`Synced` scopes (§5a). Cloud sync then only needs `ISettingsSyncProvider`.
 
 ---
 
@@ -507,7 +586,8 @@ Ask the owner before each commit.
   - `AppInfo` / `IFeatureFlags` / `IPlatformInfo`.
   - Heads move to DI. `MainViewModel` still exists but gets its services from DI.
 - [ ] **P2. Storage and scheduling seams** (§7):
-  - `ITakeStorage`/`IDataStore` + `FileSystemTakeStorage` + `AppSettings`;
+  - `ITakeStorage`/`IDataStore` + `FileSystemTakeStorage`;
+  - the settings service (§5a: keys, scopes, file store, migrations; local only). The theme and live-window choice become the first persisted settings;
   - stream-based analysis entry points;
   - `IAnalysisScheduler`.
 
@@ -547,7 +627,7 @@ Ask the owner before each commit.
   - Add "How to add a feature" and "How to add a metric" checklists at the end of this file.
   - Mark this plan done.
 
-Later versions: accounts and avatar (§6) and the browser head (§7).
+Later versions: accounts and avatar (§6) with cloud settings sync (§5a.3), and the browser head (§7).
 
 ---
 
@@ -602,3 +682,5 @@ Later versions: accounts and avatar (§6) and the browser head (§7).
 2. **P4:** the exact pinned FFmpeg build and its hosting source; whether the installer is also offered on Windows/macOS.
 3. **Later, accounts:** where the Patreon token-exchange backend is hosted.
 4. **Later, browser:** Web Worker vs multithreaded WASM, decided by the spike, and the hosting provider.
+5. **P2 settings:** confirm the device/synced split in §5a.1.
+6. **Later, sync:** whether the avatar choice syncs (it is currently local only, §6), and whether takes ever sync (not planned).
