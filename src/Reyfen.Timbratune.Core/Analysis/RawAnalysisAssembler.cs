@@ -34,6 +34,8 @@ public sealed record FrameTracks
     public HarmonicityContour? Harmonicity { get; init; }
     /// <summary>Glottal pulse times, for the per-slice jitter of the trends (optional).</summary>
     public IReadOnlyList<double> Pulses { get; init; } = [];
+    /// <summary>See <see cref="RawAnalysisAssembler.LoudOutlierFraction"/>; 0 gives analyze.py's gate (the reference for the parity tests).</summary>
+    public double LoudOutlierFraction { get; init; } = RawAnalysisAssembler.LoudOutlierFraction;
 }
 
 /// <summary>
@@ -69,11 +71,13 @@ public static class RawAnalysisAssembler
         };
 
         var contour = Contour(pitch);
+        var selected = SelectVowelCoreTimes(voiced, intensity, t.LoudOutlierFraction);
 
         return new RawAnalysis
         {
             Summary = summary,
-            Formants = VowelCoreFormants(voiced, intensity, [(FormantCeiling, t.Formants5500), (5000, t.Formants5000)]),
+            Formants = VowelCoreFormants(selected, [(FormantCeiling, t.Formants5500), (5000, t.Formants5000)]),
+            FormantFramesTried = selected.Count,
             WeightFrames = WeightFrames(voiced, t.WeightRow),
             Ltas = t.Ltas,
             Contour = contour,
@@ -133,15 +137,27 @@ public static class RawAnalysisAssembler
         return into;
     }
 
+    /// <summary>Loud voiced frames within this many dB of the loudness reference count as vowel core.</summary>
+    public const double LoudWindowDb = 10;
+
     /// <summary>
-    /// vowel_formants(): voiced frames within 10 dB of the loudest intensity frame
-    /// (intensity read at the first frame at or after each time), subsampled to ≤ 300,
-    /// with plausible F1 (250–1000 Hz) — measured at each formant ceiling.
+    /// The loudest this fraction of the intensity frames is ignored when finding the loudness
+    /// reference, so one click or pop can't set the bar (a 50 ms click left a 64 s take with 3
+    /// loud frames and no formants at all). 0 = the loudest frame itself, as in analyze.py.
     /// </summary>
-    public static List<RawAnalysis.FormantRow> VowelCoreFormants(List<(double T, double F0)> voiced, IntensityContour intensity,
-        (double Ceiling, IFormantTrack Track)[] ceilings)
+    public const double LoudOutlierFraction = 0.01;
+
+    /// <summary>
+    /// vowel_formants(): the voiced frames within 10 dB of the loudness reference (intensity
+    /// read at the first frame at or after each time), subsampled to ≤ 300.
+    /// </summary>
+    public static List<double> SelectVowelCoreTimes(List<(double T, double F0)> voiced, IntensityContour intensity,
+        double outlierFraction = LoudOutlierFraction) =>
+        Subsample(LoudVoicedTimes(voiced, intensity, [], outlierFraction), 300);
+
+    /// <summary>The selected times with a plausible F1 (250–1000 Hz) — measured at each formant ceiling.</summary>
+    public static List<RawAnalysis.FormantRow> VowelCoreFormants(List<double> selected, (double Ceiling, IFormantTrack Track)[] ceilings)
     {
-        var selected = Subsample(LoudVoicedTimes(voiced, intensity), 300);
         var rows = new List<RawAnalysis.FormantRow>();
         foreach (var (ceiling, track) in ceilings)
         {
@@ -156,18 +172,17 @@ public static class RawAnalysisAssembler
         return rows;
     }
 
-    /// <summary>Times of voiced frames within 10 dB of the loudest intensity frame.</summary>
-    public static List<double> LoudVoicedTimes(List<(double T, double F0)> voiced, IntensityContour intensity) =>
-        LoudVoicedTimes(voiced, intensity, []);
+    /// <summary>Times of voiced frames within <see cref="LoudWindowDb"/> of the loudness reference.</summary>
+    public static List<double> LoudVoicedTimes(List<(double T, double F0)> voiced, IntensityContour intensity,
+        double outlierFraction = LoudOutlierFraction) =>
+        LoudVoicedTimes(voiced, intensity, [], outlierFraction);
 
     /// <summary>The same, filling <paramref name="candidates"/> (cleared first).</summary>
-    public static List<double> LoudVoicedTimes(List<(double T, double F0)> voiced, IntensityContour intensity, List<double> candidates)
+    public static List<double> LoudVoicedTimes(List<(double T, double F0)> voiced, IntensityContour intensity, List<double> candidates,
+        double outlierFraction = LoudOutlierFraction, List<double>? scratch = null)
     {
         var db = intensity.Db;
-        var loudFloor = double.NaN;
-        foreach (var v in db)
-            if (!double.IsNaN(v) && !(v <= loudFloor)) loudFloor = v;
-        loudFloor -= 10;
+        var loudFloor = LoudReference(db, outlierFraction, scratch) - LoudWindowDb;
         candidates.Clear();
         var p = 0;
         foreach (var (t, _) in voiced)
@@ -176,6 +191,28 @@ public static class RawAnalysisAssembler
             if (db.Count > 0 && db[p] >= loudFloor) candidates.Add(t);
         }
         return candidates;
+    }
+
+    /// <summary>
+    /// The loudest intensity value once the loudest <paramref name="outlierFraction"/> of the
+    /// frames (rounded down: none below 100 frames) is set aside; NaN if there are none.
+    /// </summary>
+    public static double LoudReference(IReadOnlyList<double> db, double outlierFraction, List<double>? scratch = null)
+    {
+        if (outlierFraction <= 0)
+        {
+            var max = double.NaN;
+            foreach (var v in db)
+                if (!double.IsNaN(v) && !(v <= max)) max = v;
+            return max;
+        }
+        var sorted = scratch ?? [];
+        sorted.Clear();
+        foreach (var v in db)
+            if (!double.IsNaN(v)) sorted.Add(v);
+        if (sorted.Count == 0) return double.NaN;
+        System.Runtime.InteropServices.CollectionsMarshal.AsSpan(sorted).Sort();
+        return sorted[sorted.Count - 1 - (int)Math.Floor(outlierFraction * sorted.Count)];
     }
 
     /// <summary>spectral_weight(): weight rows for ≤ 250 voiced frames.</summary>

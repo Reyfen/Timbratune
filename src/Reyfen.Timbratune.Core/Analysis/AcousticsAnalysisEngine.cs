@@ -26,6 +26,9 @@ public sealed class AcousticsAnalysisEngine : IAnalysisEngine
     public const int FormantCount = 5;
     public const double FormantWindow = 0.025;
 
+    /// <summary>The loudest share of frames ignored for the vowel-core loudness gate (see <see cref="RawAnalysisAssembler.LoudOutlierFraction"/>); 0 = analyze.py's gate.</summary>
+    public double LoudOutlierFraction { get; init; } = RawAnalysisAssembler.LoudOutlierFraction;
+
     public bool IsAvailable => true;
     public string? UnavailableReason => null;
 
@@ -39,7 +42,7 @@ public sealed class AcousticsAnalysisEngine : IAnalysisEngine
             // Stage weights: share of the analysis time measured on a 27.6 s take (Release).
             var stages = new StageProgress(progress is null ? null : progress.Report, 93.5, 2, 1, 2.5);
             FrameTracks tracks;
-            using (Timing.Measure("analysis.measure")) tracks = MeasureTracks(sound, stages.Stage(0));
+            using (Timing.Measure("analysis.measure")) tracks = MeasureTracks(sound, stages.Stage(0)) with { LoudOutlierFraction = LoudOutlierFraction };
             RawAnalysis raw;
             using (Timing.Measure("analysis.assemble")) raw = RawAnalysisAssembler.Assemble(tracks);
             stages.Complete(1);

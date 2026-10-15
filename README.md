@@ -26,8 +26,8 @@ To build something you can run without the SDK, publish it. Each platform gets *
 executable**, with no .NET install needed on the target. The output folder is named per platform:
 
 ```powershell
-dotnet publish src/Reyfen.Timbratune.Desktop -p:PublishProfile=win-x64     # → publish\Timbratune-win-x64\Timbratune-v0.2.0-win-x64.exe  (~47 MB)
-dotnet publish src/Reyfen.Timbratune.Desktop -p:PublishProfile=linux-x64   # → publish/Timbratune-linux-x64/Timbratune-v0.2.0-linux-x64     (~47 MB)
+dotnet publish src/Reyfen.Timbratune.Desktop -p:PublishProfile=win-x64     # → publish\Timbratune-win-x64\Timbratune-v0.2.1-win-x64.exe  (~47 MB)
+dotnet publish src/Reyfen.Timbratune.Desktop -p:PublishProfile=linux-x64   # → publish/Timbratune-linux-x64/Timbratune-v0.2.1-linux-x64     (~47 MB)
 ```
 
 Every published file is named `<app>-v<version>-<platform>`, with the version taken from `<Version>` in
@@ -37,7 +37,7 @@ On Linux, package that binary for users. Run this on Linux or in WSL; it needs `
 `appimagetool`:
 
 ```bash
-scripts/package-linux.sh      # → …-v0.2.0-linux-x64.deb and …-v0.2.0-linux-x64.AppImage.tar.gz (replaces the binary)
+scripts/package-linux.sh      # → …-v0.2.1-linux-x64.deb and …-v0.2.1-linux-x64.AppImage.tar.gz (replaces the binary)
 ```
 
 - **`.deb` (~39 MB), for Mint, Ubuntu and Debian:** double-click it, then Install. Timbratune then appears in the app
@@ -56,6 +56,8 @@ The profiles are in `src/Reyfen.Timbratune.Desktop/Properties/PublishProfiles/`.
 ### All builds at once
 
 `build.ps1` builds every published file into `publish/`, or only the platforms named: `./build.ps1 win android`.
+`./build.ps1 android debug` makes a quick Android Debug APK (about a minute instead of four, no LLVM, slower at
+runtime) into `publish/Timbratune-android-debug/`, for testing rather than installing.
 It runs in Windows PowerShell 5.1 and in PowerShell 7 (`pwsh`, also on Linux); on Windows it can also be started
 by double-click or right-click → Run with PowerShell (the window then stays open at the end). It needs the .NET 10
 SDK or newer and says so if it's missing, and at the end lists the files of the platforms it built. On Windows the Linux packages are made in WSL (`Ubuntu-24.04`); on Linux
@@ -84,8 +86,8 @@ sideloadable and signed with the local debug key; a store release needs its own 
 ```powershell
 dotnet publish src/Reyfen.Timbratune.Android -c Release -f net10.0-android -o publish/Timbratune-android `
   "-p:AndroidSdkDirectory=$env:LOCALAPPDATA\Android\Sdk" "-p:JavaSdkDirectory=$env:LOCALAPPDATA\Android\jdk"
-# → publish\Timbratune-android\Timbratune-v0.2.0-android.apk  (~42 MB, arm64 + x86_64, LLVM AOT; Android 8.0+)
-adb install -r publish\Timbratune-android\Timbratune-v0.2.0-android.apk
+# → publish\Timbratune-android\Timbratune-v0.2.1-android.apk  (~42 MB, arm64 + x86_64, LLVM AOT; Android 8.0+)
+adb install -r publish\Timbratune-android\Timbratune-v0.2.1-android.apk
 ```
 
 - **Solution:** `Reyfen.Timbratune.Android` is not in `Timbratune.slnx`, so the desktop solution and its tests build without
@@ -147,7 +149,7 @@ This is deliberately separate from the original Electron app's `%APPDATA%\Euphon
 
 ### Dependencies
 
-- **Avalonia 11.3** (+ Fluent theme, Inter font) is the UI.
+- **Avalonia 12** (+ Fluent theme, Inter font) is the UI.
 - **CommunityToolkit.Mvvm** provides the MVVM source generators.
 - **SoundFlow** handles recording and playback.
 - **xUnit** is used for tests.

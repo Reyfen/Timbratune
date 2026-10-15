@@ -6,11 +6,14 @@ namespace Reyfen.Timbratune.Services;
 /// <summary><see cref="IFileDialogs"/> over Avalonia's cross-platform StorageProvider.</summary>
 public sealed class StorageProviderDialogs : IFileDialogs
 {
-    private TopLevel? _topLevel;
     private Control? _pending;
 
     /// <summary>Binds to the window / view; its TopLevel is resolved lazily (views attach after load).</summary>
     public void Attach(Control control) => _pending = control;
+
+    // Looked up on every call, not cached: on Android the view moves to a new TopLevel when the
+    // Activity is re-created (the renderer switch for split screen), and the old one is disposed.
+    private TopLevel? CurrentTopLevel => _pending as TopLevel ?? TopLevel.GetTopLevel(_pending);
 
     public Task<string?> SaveCopyAsync(string sourcePath, string suggestedName)
     {
@@ -27,10 +30,14 @@ public sealed class StorageProviderDialogs : IFileDialogs
     public async Task<string?> SaveAsync(string title, string suggestedName, string typeName, string extension, string mimeType,
         Func<Stream, Task> write)
     {
-        _topLevel ??= _pending as TopLevel ?? TopLevel.GetTopLevel(_pending);
-        if (_topLevel is null) return null;
+        if (CurrentTopLevel is not { } topLevel) return null;
 
-        var file = await _topLevel.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        // Android's picker adds DefaultExtension to the suggested name itself ("x.tmbr.tmbr"
+        // otherwise); the desktop pickers don't, so they keep the full name.
+        if (OperatingSystem.IsAndroid() && suggestedName.EndsWith("." + extension, StringComparison.OrdinalIgnoreCase))
+            suggestedName = suggestedName[..^(extension.Length + 1)];
+
+        var file = await topLevel.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             Title = title,
             SuggestedFileName = suggestedName,
@@ -46,9 +53,8 @@ public sealed class StorageProviderDialogs : IFileDialogs
 
     public async Task<IReadOnlyList<PickedFile>> OpenFilesAsync(string title, string typeName, IReadOnlyList<string> extensions)
     {
-        _topLevel ??= _pending as TopLevel ?? TopLevel.GetTopLevel(_pending);
-        if (_topLevel is null) return [];
-        var files = await _topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        if (CurrentTopLevel is not { } topLevel) return [];
+        var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
             Title = title,
             AllowMultiple = true,
@@ -59,12 +65,11 @@ public sealed class StorageProviderDialogs : IFileDialogs
 
     public async Task<bool> OpenFolderAsync(string path)
     {
-        _topLevel ??= _pending as TopLevel ?? TopLevel.GetTopLevel(_pending);
-        if (_topLevel is null) return false;
+        if (CurrentTopLevel is not { } topLevel) return false;
         Directory.CreateDirectory(path);
         try
         {
-            return await _topLevel.Launcher.LaunchDirectoryInfoAsync(new DirectoryInfo(path));
+            return await topLevel.Launcher.LaunchDirectoryInfoAsync(new DirectoryInfo(path));
         }
         catch (Exception)
         {

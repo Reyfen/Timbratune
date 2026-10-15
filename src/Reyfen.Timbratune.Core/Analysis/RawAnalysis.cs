@@ -14,6 +14,8 @@ public sealed class RawAnalysis
     public required IReadOnlyDictionary<string, double> Summary { get; init; }
     /// <summary>Vowel-core candidates that passed the F1 gate, in time order per ceiling.</summary>
     public required IReadOnlyList<FormantRow> Formants { get; init; }
+    /// <summary>How many loud voiced moments were tried for <see cref="Formants"/> (≤ 300); 0 = not counted.</summary>
+    public int FormantFramesTried { get; init; }
     public required IReadOnlyList<WeightRow> WeightFrames { get; init; }
     public required IReadOnlyList<(double X, double Y)> Ltas { get; init; }
     /// <summary>10 ms pitch track; Hz &lt;= 0 means unvoiced.</summary>

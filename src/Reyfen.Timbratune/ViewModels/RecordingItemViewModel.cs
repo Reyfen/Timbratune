@@ -13,13 +13,15 @@ public sealed partial class RecordingItemViewModel : ObservableObject, IDisposab
 {
     private readonly PlaybackService _playback;
     private readonly IFileDialogs _dialogs;
+    private readonly IFileSharer? _sharer;
     private readonly Func<int, Task> _delete;
-    private readonly Func<Recording, string, Task<string?>> _exportData;
+    private readonly Func<Recording, string, bool, Task<string?>> _exportData;
     private readonly Func<Recording, string, Task> _rename;
 
-    /// <param name="exportData">Writes the take's .tmbr file (take, its audio path); returns where it went, or null if cancelled.</param>
+    /// <param name="sharer">The share sheet where the platform has one (Android): the take is then shared instead of saved.</param>
+    /// <param name="exportData">Writes the take's .tmbr file (take, its audio path, share instead of save); returns where it was saved, or null if cancelled or shared.</param>
     public RecordingItemViewModel(Recording r, string? audioPath, bool isLatest, PlaybackService playback,
-        IFileDialogs dialogs, Func<int, Task> delete, Func<Recording, string, Task<string?>> exportData,
+        IFileDialogs dialogs, IFileSharer? sharer, Func<int, Task> delete, Func<Recording, string, bool, Task<string?>> exportData,
         Func<Recording, string, Task> rename)
     {
         Recording = r;
@@ -27,6 +29,7 @@ public sealed partial class RecordingItemViewModel : ObservableObject, IDisposab
         IsLatest = isLatest;
         _playback = playback;
         _dialogs = dialogs;
+        _sharer = sharer;
         _delete = delete;
         _exportData = exportData;
         _rename = rename;
@@ -55,7 +58,25 @@ public sealed partial class RecordingItemViewModel : ObservableObject, IDisposab
 
     [ObservableProperty] private float[]? _peaks;
     [ObservableProperty] private bool _isActive;
-    [ObservableProperty] private bool _isConfirmingDelete;
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(IsDialogOpen))] private bool _isConfirmingDelete;
+
+    /// <summary>The save / export (or, on a phone, share) choices are shown.</summary>
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(IsDialogOpen))] private bool _isSaveMenuOpen;
+
+    /// <summary>
+    /// The platform has a share sheet (Android): the card shows a share button instead of 💾, and
+    /// its choices hand the audio / data to another app instead of saving them to a folder.
+    /// </summary>
+    public bool CanShare => _sharer is not null;
+    public bool CanSave => !CanShare;
+    public string MenuTitle => CanShare ? "share" : "save or export";
+    public string AudioChoice => CanShare ? "🎵 share audio (.wav)" : "🎵 save audio (.wav)";
+    public string DataChoice => CanShare ? "📦 share data (.tmbr)" : "📦 export data (.tmbr)";
+    public string PdfChoice => CanShare ? "📄 share PDF · coming soon" : "📄 export PDF · coming soon";
+
+    /// <summary>This take's dialog (save / export, rename or delete) is open over the page.</summary>
+    public bool IsDialogOpen => IsSaveMenuOpen || IsRenaming || IsConfirmingDelete;
+    public string DialogTitle => $"#{Id} · {Label}";
 
     /// <summary>A .tmbr export is being prepared or written (an older take is analyzed first).</summary>
     [ObservableProperty, NotifyPropertyChangedFor(nameof(SaveTip))] private bool _isExporting;
@@ -65,10 +86,10 @@ public sealed partial class RecordingItemViewModel : ObservableObject, IDisposab
 
     public bool HasExportStatus => ExportStatus is not null;
 
-    /// <summary>The label is being edited in place.</summary>
-    [ObservableProperty] private bool _isRenaming;
+    /// <summary>The label is being edited.</summary>
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(IsDialogOpen))] private bool _isRenaming;
     [ObservableProperty] private string _renameText = "";
-    public string SaveTip => IsExporting ? "exporting…" : "save or export this take";
+    public string SaveTip => IsExporting ? "exporting…" : CanShare ? "share this take" : "save or export this take";
 
     public bool IsCurrent => AudioPath is not null && _playback.CurrentPath == AudioPath;
     public bool IsPlaying => IsCurrent && _playback.IsPlaying;
@@ -104,25 +125,65 @@ public sealed partial class RecordingItemViewModel : ObservableObject, IDisposab
     }
 
     [RelayCommand]
-    private async Task SaveCopyAsync()
+    private void OpenSaveMenu()
     {
-        if (AudioPath is not null) await _dialogs.SaveCopyAsync(AudioPath, $"voice-take-{Id}{Path.GetExtension(AudioPath)}");
+        IsRenaming = false;
+        IsConfirmingDelete = false;
+        IsSaveMenuOpen = true;
     }
 
+    /// <summary>Closes whichever dialog is open, as cancel.</summary>
+    [RelayCommand]
+    private void CloseDialog()
+    {
+        IsSaveMenuOpen = false;
+        IsRenaming = false;
+        IsConfirmingDelete = false;
+    }
+
+    /// <summary>The audio: a copy saved through the file picker, or (<see cref="CanShare"/>) shared.</summary>
+    [RelayCommand]
+    private async Task SaveCopyAsync()
+    {
+        IsSaveMenuOpen = false;
+        if (AudioPath is not { } path) return;
+        var name = $"voice-take-{Id}{Path.GetExtension(path)}";
+        try
+        {
+            if (_sharer is null)
+            {
+                await _dialogs.SaveCopyAsync(path, name);
+                return;
+            }
+            var mime = Path.GetExtension(path).Equals(".wav", StringComparison.OrdinalIgnoreCase) ? "audio/wav" : "application/octet-stream";
+            await _sharer.ShareAsync("Share this take's audio", name, mime, async target =>
+            {
+                await using var source = File.OpenRead(path);
+                await source.CopyToAsync(target);
+            });
+        }
+        catch (Exception ex)
+        {
+            ExportStatus = $"couldn't {(CanShare ? "share" : "save")} the audio 🌧️ {ex.Message}";
+        }
+    }
+
+    /// <summary>The .tmbr file: saved through the file picker, or (<see cref="CanShare"/>) shared.</summary>
     [RelayCommand]
     private async Task ExportDataAsync()
     {
+        IsSaveMenuOpen = false;
         if (AudioPath is null || IsExporting) return;
         IsExporting = true;
-        ExportStatus = "preparing the export…";
+        ExportStatus = CanShare ? "preparing the file to share…" : "preparing the export…";
         try
         {
-            var where = await _exportData(Recording, AudioPath);
+            var where = await _exportData(Recording, AudioPath, CanShare);
             ExportStatus = where is null ? null : $"exported to {Path.GetFileName(where)} ✨";
         }
         catch (Exception ex)
         {
-            ExportStatus = $"couldn't export this take 🌧️ {ex.Message}";
+            ExportStatus = $"couldn't {(CanShare ? "share" : "export")} this take 🌧️ {ex.Message}";
         }
         finally
         {
@@ -135,6 +196,7 @@ public sealed partial class RecordingItemViewModel : ObservableObject, IDisposab
     {
         RenameText = Recording.Label;
         IsConfirmingDelete = false;
+        IsSaveMenuOpen = false;
         IsRenaming = true;
     }
 
@@ -156,7 +218,14 @@ public sealed partial class RecordingItemViewModel : ObservableObject, IDisposab
         }
     }
 
-    [RelayCommand] private void AskDelete() => IsConfirmingDelete = true;
+    [RelayCommand]
+    private void AskDelete()
+    {
+        IsRenaming = false;
+        IsSaveMenuOpen = false;
+        IsConfirmingDelete = true;
+    }
+
     [RelayCommand] private void CancelDelete() => IsConfirmingDelete = false;
 
     [RelayCommand]

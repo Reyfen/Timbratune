@@ -16,6 +16,9 @@ public static class Features
     public const bool ReferenceVoices = false;
 #endif
 
+    /// <summary>A phone or tablet (Android, iOS): the cheaper, touch-first look.</summary>
+    public static bool IsMobile { get; } = OperatingSystem.IsAndroid() || OperatingSystem.IsIOS();
+
     /// <summary>"v0.1.0": the build's version (Directory.Build.props), without any "+commit" suffix.</summary>
     public static string VersionText => "v" + Version;
 

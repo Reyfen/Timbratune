@@ -1,16 +1,10 @@
 using Android;
 using Android.App;
+using Android.Content;
 using Android.Content.PM;
 using Android.OS;
-using Avalonia;
+using Android.Views;
 using Avalonia.Android;
-using Avalonia.Media;
-using Avalonia.Media.Fonts;
-using Reyfen.Timbratune.Audio.SoundFlow;
-using Reyfen.Timbratune.Core.Analysis;
-using Reyfen.Timbratune.Core.Audio;
-using Reyfen.Timbratune.Core.Storage;
-using Reyfen.Timbratune.Services;
 
 namespace Reyfen.Timbratune.Android;
 
@@ -21,140 +15,119 @@ namespace Reyfen.Timbratune.Android;
     MainLauncher = true,
     ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize | ConfigChanges.UiMode
                            | ConfigChanges.ScreenLayout | ConfigChanges.SmallestScreenSize)]
-public sealed class MainActivity : AvaloniaMainActivity<App>
+public sealed class MainActivity : AvaloniaMainActivity
 {
     private const int MicrophoneRequest = 1001;
 
-    // One audio engine and recorder for the process: the activity can be re-created.
-    private static SoundFlowAudio? s_audio;
-    private static IAudioRecorder? s_recorder;
     private TaskCompletionSource<bool>? _microphone;
+
+    /// <summary>
+    /// The live Activity. The app and its services are built once per process (<see cref="AndroidApp"/>),
+    /// but the Activity can be re-created (when the surface is replaced, see WatchSurface), so
+    /// anything needing it (permission requests, the share sheet) goes through this rather than
+    /// holding on to the first one.
+    /// </summary>
+    internal static MainActivity? Current { get; private set; }
 
     protected override void OnCreate(Bundle? savedInstanceState)
     {
-#if PROFILING
-        // Experiment switches are read first: some (e.g. "vulkan") apply while the app is built.
-        var flagsFile = System.IO.Path.Combine(GetExternalFilesDir(null)!.AbsolutePath, "perf-flags.txt");
-        if (System.IO.File.Exists(flagsFile))
-            Diagnostics.Perf.Flags = System.IO.File.ReadAllText(flagsFile).Split((char[])[' ', ',', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries).ToHashSet();
-#endif
-        s_audio ??= new SoundFlowAudio();
-        var fakeMic = FakeMic();
-        s_recorder ??= fakeMic is not null ? new FileReplayRecorder(fakeMic) : s_audio.CreateRecorder();
-        var audio = s_audio;
-        var recorder = s_recorder;
-        var paths = DataFolder();
-#if PROFILING
-        // Test takes recorded from the fake mic go to their own folder, not the user's takes.
-        if (fakeMic is not null) paths = new DataPaths(System.IO.Path.Combine(GetExternalFilesDir(null)!.AbsolutePath, "profiling-data"));
-#endif
-        App.ServicesFactory = dialogs => new AppServices(
-            Store: new RecordingStore(paths),
-            Engine: new AcousticsAnalysisEngine(),
-            Recorder: recorder,
-            Playback: new PlaybackService(audio.CreatePlayer()),
-            Dialogs: dialogs,
-            RequestMicrophone: RequestMicrophoneAsync,
-            LowerThreadPriority: () => global::Android.OS.Process.SetThreadPriority(global::Android.OS.ThreadPriority.Background),
-            Decoder: audio,
-            DataFolderHint: FolderHint(paths));
-#if PROFILING
-        // "noprobes": keep the fake mic and switches but log nothing (the probes' own cost out of the measurement).
-        if (!Diagnostics.Perf.Flags.Contains("noprobes")) Diagnostics.Perf.Sink = line => global::Android.Util.Log.Info("Timbratune", line);
-#endif
+        Current = this;
         base.OnCreate(savedInstanceState);
+        global::Android.Util.Log.Info("Timbratune", $"started: vulkan wanted: {AndroidApp.VulkanWanted}, multi-window: {IsInMultiWindowMode}");
+        WatchSurface();
 #if PROFILING
         if (Avalonia.Application.Current is { } app)
             Avalonia.Threading.Dispatcher.UIThread.Post(() => Diagnostics.Perf.ApplyExperiments(app,
-                (app.ApplicationLifetime as Avalonia.Controls.ApplicationLifetimes.ISingleViewApplicationLifetime)?.MainView is { } v
-                    ? Avalonia.Controls.TopLevel.GetTopLevel(v) : null));
+                // This Activity's own view: asking MainViewFactory again would take the view out of this window.
+                Content is Avalonia.Controls.Control v ? Avalonia.Controls.TopLevel.GetTopLevel(v) : null));
         Diagnostics.Perf.StartStallWatch();
         if (Diagnostics.Perf.Flags.Contains("fftbench")) System.Threading.Tasks.Task.Run(FftBench.Run);
         Diagnostics.Perf.Note($"started on {Build.Model}, Android {Build.VERSION.Release}, {System.Environment.ProcessorCount} cores");
 #endif
     }
 
-    /// <summary>
-    /// The app's folder in shared storage (Android/data/com.reyfen.timbratune/files): a PC sees
-    /// it over USB, and so do some file managers. Like private storage it's removed with the
-    /// app. Takes kept in private storage by earlier versions are moved there once. Without
-    /// shared storage (not mounted) private storage is used as before.
-    /// </summary>
-    private DataPaths DataFolder()
+    // Vulkan and a replaced surface. Entering (or leaving) split screen replaces the SurfaceView's
+    // Surface: a new native window, and the old one's buffer queue is abandoned. Avalonia's
+    // Vulkan display (11.3.22, and the same code in 12.1.4) keeps its VkSurfaceKHR from the old
+    // window and only re-creates the swapchain on it, every frame, against a dead window: logcat
+    // fills with "BufferQueue has been abandoned" and the pane stays black, however it is resized
+    // or repainted (a forced full repaint and a layout refresh were tried). Seen on a Pixel 9
+    // (Android 17); the API 35 emulator never shows it, not even on 11.3 without this watcher, so
+    // whether 12 still needs it can only be checked on such a phone. A new view builds a new Vulkan
+    // surface from the current window, so when the surface is replaced the Activity is replaced by
+    // a new one (about half a second, with a flash). The process, recorder and view models keep
+    // running; the main view is the same instance (App hands every Activity the same one),
+    // attached to the new window.
+    // This includes coming back to the app (Home, lock screen, Recents): Android destroys the
+    // surface when the app stops and gives a new one on return. Skipping the re-creation when
+    // the window came back at the same size was tried: it usually worked, but once (unlocking
+    // in split screen) the display presented to the dead window for 3 s until a later resize.
+    private sealed class SurfaceWatcher(MainActivity owner, bool hadSurface) : Java.Lang.Object, ISurfaceHolderCallback
     {
-        var old = DataPaths.Default();
-        var external = GetExternalFilesDir(null)?.AbsolutePath;
-        if (external is null) return old;
-        var paths = new DataPaths(external);
-        try
+        private bool _seen = hadSurface;
+
+        public void SurfaceCreated(ISurfaceHolder holder)
         {
-            DataPaths.MoveContents(old.Root, paths.Root);
+            if (_seen) owner.OnSurfaceReplaced();
+            _seen = true;
         }
-        catch (Exception e)
-        {
-            global::Android.Util.Log.Warn("Timbratune", $"couldn't move the takes to {paths.Root}: {e.Message}");
-            return old;
-        }
-        return paths;
+
+        public void SurfaceChanged(ISurfaceHolder holder, global::Android.Graphics.Format format, int width, int height) { }
+        public void SurfaceDestroyed(ISurfaceHolder holder) { }
     }
 
-    /// <summary>Android can't open the app's folder in a file manager: say where it is instead.</summary>
-    private static string? FolderHint(DataPaths paths) =>
-        paths.TakesDir.Contains("/Android/data/", StringComparison.Ordinal)
-            ? "Android/data/com.reyfen.timbratune/files/takes on this phone · open it from a PC over USB to add or copy takes"
-            : null;
+    private static long s_lastSurfaceRecreate;
 
-    /// <summary>
-    /// Debug builds only: files/fake-mic.wav in the app's private folder replays as if it were
-    /// being spoken (the desktop's TIMBRATUNE_FAKE_MIC). Put it there with
-    /// <c>adb push take.wav /data/local/tmp/ &amp;&amp; adb shell run-as com.reyfen.timbratune cp /data/local/tmp/take.wav files/fake-mic.wav</c>.
-    /// (debug.mono.env can't carry it: .NET for Android 36.1 aborts on any value there.)
-    /// </summary>
-    private string? FakeMic()
+    private void WatchSurface(int attempts = 20)
     {
-#if DEBUG
-        var path = System.IO.Path.Combine(FilesDir!.AbsolutePath, "fake-mic.wav");
-        return System.IO.File.Exists(path) ? path : null;
-#elif PROFILING
-        // Release builds can't be written into over USB; the external app folder can:
-        // adb push take.wav /sdcard/Android/data/com.reyfen.timbratune/files/fake-mic.wav
-        var path = System.IO.Path.Combine(GetExternalFilesDir(null)!.AbsolutePath, "fake-mic.wav");
-        return System.IO.File.Exists(path) ? path : null;
-#else
+        if (IsFinishing || IsDestroyed) return;
+        if (FindSurfaceView(Window?.DecorView) is { } surfaceView)
+        {
+            var had = surfaceView.Holder?.Surface?.IsValid == true;
+            surfaceView.Holder?.AddCallback(new SurfaceWatcher(this, had));
+            return;
+        }
+        if (attempts > 1) new Handler(Looper.MainLooper!).PostDelayed(() => WatchSurface(attempts - 1), 50);
+    }
+
+    private static SurfaceView? FindSurfaceView(View? view)
+    {
+        if (view is SurfaceView surfaceView) return surfaceView;
+        if (view is not ViewGroup group) return null;
+        for (var i = 0; i < group.ChildCount; i++)
+            if (FindSurfaceView(group.GetChildAt(i)) is { } found) return found;
         return null;
-#endif
     }
 
-    // Inter has no emoji, and Android's own emoji font is COLRv1, which this Skia can't draw
-    // (boxes). So the app carries the emoji it uses as a tiny bitmap (CBDT) Noto Color Emoji
-    // subset, built by scripts/make-emoji-font.py.
-    protected override AppBuilder CustomizeAppBuilder(AppBuilder builder) =>
-        base.CustomizeAppBuilder(builder).WithInterFont()
-            .ConfigureFonts(fonts => fonts.AddFontCollection(
-                new EmbeddedFontCollection(new Uri("fonts:TimbratuneEmoji"), new Uri("avares://Reyfen.Timbratune.Android/Assets/Fonts"))))
-            .With(new FontManagerOptions
-            {
-                FontFallbacks = [new FontFallback { FontFamily = new FontFamily("fonts:TimbratuneEmoji#Noto Color Emoji") }],
-            })
-            .With(new AndroidPlatformOptions { RenderingMode = RenderingModes() });
-
-    /// <summary>
-    /// Vulkan first, then OpenGL ES, then software. Measured scrolling: on a Pixel 9 (Android 17,
-    /// where OpenGL ES runs through a translation layer on Vulkan) OpenGL ES held it to ~33 fps
-    /// with the GPU mostly idle, Vulkan gave ~56 fps; on a Pixel 4a 52 → 56 fps, and live
-    /// recording ran smoother on both. If Vulkan can't start, Avalonia falls back to the next.
-    /// </summary>
-    private static IReadOnlyList<AndroidRenderingMode> RenderingModes()
+    private void OnSurfaceReplaced()
     {
-#if PROFILING
-        // A/B switch: "egl" renders through OpenGL ES as before.
-        if (Diagnostics.Perf.Flags.Contains("egl")) return [AndroidRenderingMode.Egl, AndroidRenderingMode.Software];
-#endif
-        return [AndroidRenderingMode.Vulkan, AndroidRenderingMode.Egl, AndroidRenderingMode.Software];
+        // OpenGL ES and software take a replaced surface in their stride; only Vulkan needs this.
+        if (IsFinishing || IsDestroyed || !AndroidApp.VulkanWanted) return;
+        // Never in a loop: at most one re-creation a second.
+        var now = System.Environment.TickCount64;
+        if (now - s_lastSurfaceRecreate < 1000) return;
+        s_lastSurfaceRecreate = now;
+        global::Android.Util.Log.Info("Timbratune", "surface replaced under Vulkan: re-creating the window");
+        // Not Recreate(): Android relaunches into the old window (the same DecorView), and that
+        // preserved window lays the new content out inside the system bars while Avalonia still
+        // pads for them (edge-to-edge is enforced from Android 15): white bars and a page pushed
+        // down by the status bar's height (seen on Avalonia 12, Android 15). A new instance gets
+        // a new window. The view is handed over first: it can only have one parent at a time.
+        Content = null;
+        StartActivity(new Intent(this, typeof(MainActivity)).AddFlags(ActivityFlags.NoAnimation));
+        Finish();
+        if (OperatingSystem.IsAndroidVersionAtLeast(34)) OverrideActivityTransition(OverrideTransition.Close, 0, 0);
+        else OverridePendingTransition(0, 0);
+    }
+
+    protected override void OnDestroy()
+    {
+        if (Current == this) Current = null;
+        base.OnDestroy();
     }
 
     /// <summary>Asks for the microphone the first time; true when recording is allowed.</summary>
-    private Task<bool> RequestMicrophoneAsync()
+    internal Task<bool> RequestMicrophoneAsync()
     {
         if (CheckSelfPermission(Manifest.Permission.RecordAudio) == Permission.Granted) return Task.FromResult(true);
         _microphone?.TrySetResult(false);

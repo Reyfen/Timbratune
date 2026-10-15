@@ -274,6 +274,37 @@ public sealed class PostProcessorTests
     }
 
     [Fact]
+    public void LoudReferenceIgnoresTheLoudestOnePercent()
+    {
+        // 300 frames of speech at 60 dB and a 3-frame click at 85 dB (1 %).
+        var db = Enumerable.Repeat(60.0, 297).Concat([85.0, 85, 85]).ToList();
+        Assert.Equal(85, RawAnalysisAssembler.LoudReference(db, 0)); // analyze.py: the click sets the bar
+        Assert.Equal(60, RawAnalysisAssembler.LoudReference(db, RawAnalysisAssembler.LoudOutlierFraction));
+        // Under 100 frames nothing is set aside, and NaN frames don't count.
+        Assert.Equal(85, RawAnalysisAssembler.LoudReference([60, 85, double.NaN, 60], RawAnalysisAssembler.LoudOutlierFraction));
+        Assert.True(double.IsNaN(RawAnalysisAssembler.LoudReference([double.NaN], RawAnalysisAssembler.LoudOutlierFraction)));
+    }
+
+    [Fact]
+    public void UsableFormantShareNeedsEnoughFrames()
+    {
+        RawAnalysis Raw(int tried, int usable) => new()
+        {
+            Summary = new Dictionary<string, double>(),
+            Formants = Enumerable.Range(0, usable).Select(i => new RawAnalysis.FormantRow(5500, i, 500, 1500, 2500))
+                .Concat(Enumerable.Range(0, usable).Select(i => new RawAnalysis.FormantRow(5000, i, 500, 1500, 2500))).ToList(),
+            WeightFrames = [],
+            Ltas = [],
+            Contour = [],
+            Sounding = [],
+            FormantFramesTried = tried,
+        };
+        Assert.Equal(60, AnalysisPostProcessor.UsableFormantPct(Raw(300, 180)));
+        Assert.Null(AnalysisPostProcessor.UsableFormantPct(Raw(29, 29))); // too few to say
+        Assert.Null(AnalysisPostProcessor.UsableFormantPct(Raw(0, 0)));   // not counted
+    }
+
+    [Fact]
     public void PhraseBreakdownSplitsFramesByPhrase()
     {
         var detail = new RecordingDetail

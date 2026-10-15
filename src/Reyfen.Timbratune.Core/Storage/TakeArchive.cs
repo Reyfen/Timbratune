@@ -18,7 +18,7 @@ public static class TakeArchive
     public const string AudioEntry = "take.wav";
     public const string DataEntry = "take.json";
 
-    /// <summary>This build's version ("0.2.0"), written into every take.json.</summary>
+    /// <summary>This build's version ("0.2.1"), written into every take.json.</summary>
     public static string AppVersion { get; } = typeof(TakeArchive).Assembly
         .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
         .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion.Split('+')[0] ?? "";

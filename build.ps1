@@ -4,9 +4,16 @@
 #   linux    publish/Timbratune-linux-x64/Timbratune-v<ver>-linux-x64.deb + .AppImage.tar.gz
 #            (packed by scripts/package-linux.sh: in WSL on Windows, directly on Linux)
 #   android  publish/Timbratune-android/Timbratune-v<ver>-android.apk
+#   debug    Android only (so `./build.ps1 debug` means `android debug`): a Debug build into
+#            publish/Timbratune-android-debug/ with assemblies embedded in the APK, no LLVM AOT
+#            (about 1 minute instead of ~4), with debug symbols and the Debug-only fake mic
+#            (files/fake-mic.wav). Slower at runtime: for UI checks and emulator or phone smoke
+#            tests, not for performance numbers or anything the user installs as a release.
+#            win and linux listed with it still build as Release.
 #
-# Usage:  ./build.ps1                 all three
+# Usage:  ./build.ps1                 all three (Release)
 #         ./build.ps1 win android     only those
+#         ./build.ps1 android debug   quick Android Debug build
 # On Windows it can also be double-clicked or started with right-click -> "Run with PowerShell";
 # the window then stays open at the end.
 #
@@ -47,18 +54,45 @@ function Finish([bool]$ok) {
     if ($ok) { exit 0 } else { exit 1 }
 }
 
+# Runs dotnet with the given argument string and prints a heartbeat every 15 s, so a long step
+# (Android's LLVM AOT takes minutes without output at -v quiet) doesn't look stuck. $aotDir, when
+# given, is searched for AOT .so files written since the start, to show how far that stage is.
+# Sets $LASTEXITCODE like a direct call would.
+function Invoke-Dotnet([string]$arguments, [string]$aotDir = $null) {
+    $start = Get-Date
+    $proc = Start-Process -FilePath 'dotnet' -ArgumentList $arguments -NoNewWindow -PassThru
+    $handle = $proc.Handle   # keeps the exit code readable after the process ends
+    while (-not $proc.WaitForExit(15000)) {
+        $t = (Get-Date) - $start
+        $line = '  ... still building, {0:00}:{1:00}' -f [int][math]::Floor($t.TotalMinutes), $t.Seconds
+        if ($aotDir -and (Test-Path -LiteralPath $aotDir)) {
+            $done = @(Get-ChildItem -LiteralPath $aotDir -Recurse -Filter '*.so' -ErrorAction SilentlyContinue |
+                    Where-Object { $_.LastWriteTime -gt $start })
+            if ($done.Count -gt 0) {
+                $groups = $done | Group-Object { ($_.FullName.Substring($aotDir.Length).TrimStart('\', '/') -split '[\\/]')[0] }
+                $line += ' - AOT-compiled assemblies: ' + (($groups | ForEach-Object { '{0} {1}' -f $_.Name, $_.Count }) -join ', ')
+            }
+        }
+        Write-Host $line
+    }
+    $proc.WaitForExit()
+    $global:LASTEXITCODE = $proc.ExitCode
+}
+
 Push-Location $root
 
-$doWin = $false; $doLinux = $false; $doAndroid = $false
-if (-not $Targets -or $Targets.Count -eq 0) { $doWin = $true; $doLinux = $true; $doAndroid = $true }
+$doWin = $false; $doLinux = $false; $doAndroid = $false; $debug = $false
 foreach ($t in $Targets) {
     switch ($t.ToLowerInvariant()) {
         'win' { $doWin = $true }
         'linux' { $doLinux = $true }
         'android' { $doAndroid = $true }
-        default { Write-Host "Unknown platform `"$t`" (use win, linux, android)."; Finish $false }
+        'debug' { $debug = $true }
+        default { Write-Host "Unknown platform `"$t`" (use win, linux, android, debug)."; Finish $false }
     }
 }
+if ($debug -and -not ($doWin -or $doLinux -or $doAndroid)) { $doAndroid = $true }   # `debug` alone: Android Debug only
+if (-not ($doWin -or $doLinux -or $doAndroid)) { $doWin = $true; $doLinux = $true; $doAndroid = $true }
 
 # The projects target net10.0: an older SDK fails with a confusing error, so check first.
 if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
@@ -86,7 +120,7 @@ New-Item -ItemType Directory -Force (Join-Path $root 'publish') | Out-Null
 if ($doWin) {
     Write-Host ''
     Write-Host '===== Windows ====='
-    dotnet publish src/Reyfen.Timbratune.Desktop -p:PublishProfile=win-x64 -v quiet -nologo
+    Invoke-Dotnet 'publish src/Reyfen.Timbratune.Desktop -p:PublishProfile=win-x64 -v quiet -nologo'
     if ($LASTEXITCODE -eq 0) { Write-Host 'Windows build done.'; $built += "Timbratune-win-x64/Timbratune-v$version-win-x64.exe" }
     else { $failed = $true; Write-Host 'Windows build FAILED.' }
 }
@@ -94,7 +128,7 @@ if ($doWin) {
 if ($doLinux) {
     Write-Host ''
     Write-Host '===== Linux ====='
-    dotnet publish src/Reyfen.Timbratune.Desktop -p:PublishProfile=linux-x64 -v quiet -nologo
+    Invoke-Dotnet 'publish src/Reyfen.Timbratune.Desktop -p:PublishProfile=linux-x64 -v quiet -nologo'
     if ($LASTEXITCODE -ne 0) {
         $failed = $true; Write-Host 'Linux build FAILED.'
     }
@@ -219,9 +253,20 @@ if ($doAndroid) {
         $env:AndroidSdkDirectory = $sdk
         $env:JavaSdkDirectory = $jdk
         $env:JAVA_HOME = $jdk
-        dotnet publish src/Reyfen.Timbratune.Android -c Release -o publish/Timbratune-android -v quiet -nologo `
-            --disable-build-servers "-p:AndroidSdkDirectory=$sdk" "-p:JavaSdkDirectory=$jdk"
-        if ($LASTEXITCODE -eq 0) { Write-Host 'Android build done.'; $built += "Timbratune-android/Timbratune-v$version-android.apk" }
+        # The LLVM AOT stage is a few minutes without any output; the heartbeat counts its files.
+        if ($debug) {
+            # Debug: Mono JIT/interpreter instead of LLVM AOT; assemblies embedded so the APK runs
+            # when installed (a Debug APK otherwise relies on fast deployment from the IDE).
+            $outName = 'Timbratune-android-debug'
+            Write-Host 'Debug build: no LLVM AOT, slower at runtime (not for performance measurements).'
+            Invoke-Dotnet "publish src/Reyfen.Timbratune.Android -c Debug -o publish/$outName -p:EmbedAssembliesIntoApk=true -v quiet -nologo --disable-build-servers `"-p:AndroidSdkDirectory=$sdk`" `"-p:JavaSdkDirectory=$jdk`""
+        }
+        else {
+            $outName = 'Timbratune-android'
+            $aotDir = Join-Path $root 'src/Reyfen.Timbratune.Android/obj/Release/net10.0-android'
+            Invoke-Dotnet "publish src/Reyfen.Timbratune.Android -c Release -o publish/$outName -v quiet -nologo --disable-build-servers `"-p:AndroidSdkDirectory=$sdk`" `"-p:JavaSdkDirectory=$jdk`"" $aotDir
+        }
+        if ($LASTEXITCODE -eq 0) { Write-Host 'Android build done.'; $built += "$outName/Timbratune-v$version-android.apk" }
         else { $failed = $true; Write-Host 'Android build FAILED.' }
     }
 }

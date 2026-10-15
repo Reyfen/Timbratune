@@ -30,7 +30,8 @@ public sealed class ParityTests(ITestOutputHelper output)
             return;
         }
         var reference = (await praat.AnalyzeAsync(Fixture(clip + ".wav"))).Metrics;
-        var actual = (await new AcousticsAnalysisEngine().AnalyzeAsync(Fixture(clip + ".wav"))).Metrics;
+        var actual = (await new AcousticsAnalysisEngine { LoudOutlierFraction = 0 }.AnalyzeAsync(Fixture(clip + ".wav"))).Metrics;
+        actual.Formants.UsablePct = null; // the reference engine doesn't report it
         // Same measurements, so after 2-dp rounding everything must be identical.
         var expectedJson = TimbratuneJson.WriteRecordings([reference]);
         var actualJson = TimbratuneJson.WriteRecordings([actual]);
@@ -42,7 +43,8 @@ public sealed class ParityTests(ITestOutputHelper output)
     [MemberData(nameof(Clips))]
     public async Task MatchesPythonAnalyzer(string clip)
     {
-        var result = await new AcousticsAnalysisEngine().AnalyzeAsync(Fixture(clip + ".wav"));
+        // The reference gate: relative to the single loudest frame, as in analyze.py.
+        var result = await new AcousticsAnalysisEngine { LoudOutlierFraction = 0 }.AnalyzeAsync(Fixture(clip + ".wav"));
         var expected = TimbratuneJson.ReadRecordings(File.ReadAllText(Fixture(clip + ".expected.json")))[0];
         var expectedDetail = TimbratuneJson.ReadDetail(File.ReadAllText(Fixture(clip + ".expected-detail.json")))!;
         var actual = result.Metrics;

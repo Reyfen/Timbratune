@@ -80,7 +80,7 @@ Each metric is placed in zones (masculine / neutral / feminine, and others).
 | `src/Reyfen.Timbratune.Acoustics` | Pure C#, MIT, no dependencies. See the component list below. |
 | `src/Reyfen.Timbratune.Core` | Domain logic, independent of the UI. |
 | `src/Reyfen.Timbratune.Audio.SoundFlow` | Recording and playback through SoundFlow 1.4.1 (miniaudio). The recorder raises `SamplesCaptured` after each WAV write. |
-| `src/Reyfen.Timbratune` | Avalonia 11.3 UI library, using CommunityToolkit.Mvvm. |
+| `src/Reyfen.Timbratune` | Avalonia 12 UI library, using CommunityToolkit.Mvvm. |
 | `src/Reyfen.Timbratune.Desktop` | Desktop entry point (Windows, Linux, macOS); also provides `--import file.wav --label "…"`. Single-file publish profiles live in `Properties/PublishProfiles/`. |
 | `src/Reyfen.Timbratune.Android` | Android head; see §8a. It is **not in `Timbratune.slnx`**, so the desktop solution and tests build without the Android workload. |
 | `tests/Reyfen.Timbratune.Acoustics.Tests` | 50 tests: synthetic, Praat oracle (skipped without Praat), and streaming. |
@@ -239,6 +239,13 @@ F2's large "error" is real phonetics: F2 differs by about 700 Hz between /i/ and
 - Trend prediction for loudness and pitch: measured worse.
 - 0.1 s formant blocks: measured worse.
 - Faint raw per-frame traces: removed at the user's request.
+- Formant quality filters on bandwidth (F1–F3 ≤ 300/400/500 Hz) or on the number of poles kept (≥ 4, ≥ 5): the F2 frame-to-frame step did not improve on the noisy takes, and they threw away 50–80 % of clean VCTK frames. Not shipped.
+
+### 6a. Loudness gate and the "shaky formants" note (2026-10-14, v0.2.1)
+Two takes (voice-take-8/9, noisy: 6–12 kHz hiss about as loud as the voice) showed broken or no formants. Findings, with the C# Burg matching Praat to 0.003 Hz on both, so the analysis itself was right:
+- The vowel-core gate (voiced frames within 10 dB of the loudest frame) was set by one 50 ms click. Take 9: 3 loud frames, 0 formant rows. Now the reference is the loudest value after setting aside the loudest 1 % of intensity frames (`RawAnalysisAssembler.LoudOutlierFraction`; none below 100 frames). `AcousticsAnalysisEngine.LoudOutlierFraction = 0` gives analyze.py's gate; the parity tests use it. Live and saved share the code, so they still agree.
+- Clean takes move a little too (vctk_f339: F1 628 → 597, F2 1251 → 1316, F3 2796 → 2671 Hz; the other three ≤ 15 Hz), so formant numbers of old takes are not exactly comparable with new ones.
+- `Formants.UsablePct` (take.json `formants.usable_pct`): the share of the ≤ 300 sampled loud voiced moments with F1 in 250–1000 Hz. Clean speech 93–98 %, the noisy takes 58–61 %. Below 75 % the take view adds a "formants are shaky" note under the F1 line. Null under 30 moments and in older takes.
 
 ## 7. Developer workflow
 
@@ -357,7 +364,7 @@ Example (v0.2.0):
 **Android:**
 - **Project:** `src/Reyfen.Timbratune.Android`.
   - `net10.0-android`, minimum API 26, app id `com.reyfen.timbratune`, ABIs arm64 and x86_64.
-  - `MainActivity : AvaloniaMainActivity<App>` wires up the services.
+  - `AndroidApp : AvaloniaAndroidApplication<App>` (Avalonia 12 builds the app there, before any Activity) wires up the services, fonts and renderer; `MainActivity : AvaloniaMainActivity` handles the window (microphone permission, Vulkan surface watcher).
 - **Toolchain:**
   - the android workload (36.1.69);
   - the SDK in `%LOCALAPPDATA%\Android\Sdk` and JDK 17 in `%LOCALAPPDATA%\Android\jdk`. Pass both via `-p:AndroidSdkDirectory=… -p:JavaSdkDirectory=…`. **Correction (2026-10-09, §8h):** these were installed from Claude's shell, so they only exist in Claude's redirected AppData and the user's own builds can't see them. The user's `JAVA_HOME` (Microsoft OpenJDK 17.0.6) does work with the tooling;
@@ -390,7 +397,7 @@ Example (v0.2.0):
    - The register drop bars are now a 3-column `UniformGrid`.
 5. **Runtime microphone permission.** `AppServices.RequestMicrophone` is null on desktop. On Android, `RecordViewModel.StartAsync` awaits it before recording.
 
-**Open Android item:** SkiaSharp 2.88.9's `libSkiaSharp.so` isn't 16 KB page-aligned (build warning XA0141).
+**Android item (resolved 2026-10-15 by Avalonia 12, which brings SkiaSharp 3.119 / HarfBuzzSharp 8.3):** SkiaSharp 2.88.9's `libSkiaSharp.so` isn't 16 KB page-aligned (build warning XA0141).
 - Android 15+ devices with 16 KB pages, and Google Play from late 2025, need that alignment.
 - Fix: move the Android head to SkiaSharp/HarfBuzzSharp 3.x, which Avalonia 11.3 supports, or to a newer Avalonia.
 - Not needed for sideloading on today's 4 KB devices.
@@ -482,6 +489,45 @@ The algorithm itself wasn't the problem: each update is fast enough, but it comp
   - **Cheaper FFT:** real input as a half-size complex FFT, with pooled buffers. Results are identical.
   - The **profiling build** (see below).
 - **`750b29a`:** `AndroidPlatformOptions.RenderingMode` = Vulkan, then Egl, then Software.
+- **v0.2.1, Vulkan and a replaced surface (2026-10-15).** With Vulkan the app went black in split screen (Pixel 9, Android 17, next to Discord).
+  - **Cause, from logcat and decompiled Avalonia 11.3.22:**
+    - Entering split screen (and coming back to the app at all) replaces the SurfaceView's `Surface`: there is a new native window, and the old one's buffer queue is abandoned.
+    - Avalonia's `VulkanDisplay` keeps its `VkSurfaceKHR` from the old window. `EnsureSwapchainAvailable` sees a size mismatch and re-creates the swapchain on that dead surface every frame. Logcat shows `BufferQueue ... has been abandoned` and `NATIVE_WINDOW_MIN_UNDEQUEUED_BUFFERS query failed` at 60 Hz (4,476 in 75 s), and the pane stays black.
+    - The surface is only rebuilt on `VK_ERROR_SURFACE_LOST_KHR`. `AndroidVulkanSurface.CreateSurface` itself reads the current window each time.
+    - The same code is in Avalonia 12.1.4: the decompiled `Avalonia.Vulkan` differs only in composite-alpha selection and interfaces.
+  - **What didn't help:**
+    - refreshing layout and invalidating on `OnConfigurationChanged` / `OnMultiWindowModeChanged`;
+    - a forced full repaint after resizing (nudging the root's opacity), tried on the theory that only damaged regions were redrawn (Uno #24865).
+  - **Fix** (`MainActivity.WatchSurface`): an `ISurfaceHolderCallback` on Avalonia's SurfaceView. When its surface is created again (any replacement) and Vulkan is in use, the Activity is re-created; at most once a second. A new view builds a new Vulkan surface from the current window.
+    - It takes about half a second and flashes. The process, recorder, view models and the main view itself (static `SingleViewLifetime`) carry on.
+    - This happens on entering and leaving split screen via Recents, and on every return to the app (Home, lock screen).
+    - Resizing the split, or dragging the divider to full screen, only changes the surface's size and needs nothing.
+  - **Tried and dropped: skipping the re-creation when the app came back from a stop at the same size.** It usually worked, but once, unlocking in split screen, the display presented to the dead window for 3 s (183 errors) until a later resize.
+  - **Before this:** a runtime renderer switch, `RendererSwitch.cs` (Vulkan full screen, OpenGL ES in multi-window, rebuilding Avalonia's internal compositor by reflection). It has been removed, together with the earlier refresh code.
+  - `renderer.txt` (`vulkan`, `egl` or `software`) in the app's external files folder still picks the renderer, for tests.
+  - **Measured** (Pixel 9, Release profiling build, 60 Hz):
+    - Scrolling, 15 s: full-screen Vulkan 52.8–53.8 fps while drawing with 10–14 % janky frames; OpenGL ES about 62 % janky; in a split pane OpenGL ES 33.7 %.
+    - Live recording: 2 % janky with Vulkan, 9–10 % with OpenGL ES.
+  - **Checked on the Pixel 9 (debug build):**
+    - entering and leaving split screen with Discord, also via Recents;
+    - dragging the divider and swapping panes;
+    - Home and back;
+    - rotation;
+    - lock and unlock;
+    - a re-creation 40 s into a recording: the timer and live graphs carried on and it is one take.
+  - **Not checked:** the Pixel 4a, freeform or desktop windows, and picture-in-picture.
+  - **Avalonia 12 (2026-10-15, emulator API 35, Debug):**
+    - **`Recreate()` replaced by a new instance.** Under 12 every re-creation (Home → back, entering split screen) left white status and navigation bars and pushed the page down by the status-bar height. `Recreate()` relaunches into the *preserved* window (the same `DecorView`, by id), whose new content frame was laid out inside the bars (`0,136–1080,2337`) while Avalonia, with edge-to-edge enforced from Android 15, still padded for them. `SetDecorFitsSystemWindows(false)` in `OnCreate` didn't help, and `OnAttachedToWindow` doesn't even run for a preserved window. `OnSurfaceReplaced` now detaches the view (`Content = null`), starts a new `MainActivity` (`NoAnimation`), finishes this one and drops the close transition. That gives a new window, edge-to-edge, with one Activity in the task. `App`'s `MainViewFactory` also detaches the view from its old parent first, against a "MainView already has a visual parent" crash seen on the Pixel 9.
+    - **Checked:** cold start (6.2–6.4 s to first frame, Debug), takes list, colour emoji, the mic permission prompt, fake-mic recording with live graphs, rotation mid-recording (no re-creation: config changes are handled), Home → back mid-recording (one take, saved), stop & analyze, entering split screen via Recents, resizing the split, dragging it back to full screen, Back then relaunch, and the share sheet (`voice-take-4.wav`).
+    - **Is the watcher still needed? Not decidable on the emulator.** With `OnSurfaceReplaced` disabled, the emulator showed no "abandoned" errors and no black pane after Home → back or in split screen. But the 11.3 build (HEAD `9c638a0`) with the watcher disabled behaves the same there, so the emulator never had the bug (its Vulkan is `vulkan.ranchu`/SwiftShader). It stays until the same test passes on the Pixel 9 (Android 17).
+    - **Cosmetic, not fixed:** a take dialog's dimmed backdrop stops under the status bar (it follows the safe area), so the bar stays light above it.
+  - **Avalonia 12 vs 11.3 on the Pixel 9 (2026-10-15, Release profiling builds, fake mic, 60 Hz, medians of 4 runs (12) and 6 runs (11.3, HEAD `9c638a0`), alternated):**
+    - Scrolling (10 flings down and back): 58.0 vs 53.4 fps, frames over 25 ms **1.0 % vs 8.1 %**.
+    - Live recording, 30 s: frames over 25 ms 3.2 % vs 4.1 %, frames over 50 ms 24 vs 22 (fps over the window 39.2 vs 39.5; it counts idle gaps, as the app only redraws on change). One live update 4.2 vs 4.8 ms (median).
+    - Stop: analysis 1.72 vs 1.73 s.
+    - **Live update rate:** 12 ran only ~197 updates per take against ~237. Its 100 ms `DispatcherTimer` fires a little early, so `RecordViewModel`'s "at most one update per 100 ms" check skipped every such tick (gaps of 200–250 ms: ~60 per take against ~20). The check now allows 90 ms. Not yet re-measured on the phone with that change.
+    - Found on the phone: the "already has a visual parent" crash after Home → back (fixed, see above), and that the profiling build's `ApplyExperiments` hook called `MainViewFactory` again, which (with the detach) emptied the window: black screen. It now uses the Activity's own `Content`.
+    - How: `adb shell dumpsys SurfaceFlinger --latency` on the `SurfaceView[…](BLAST)` layer, sampled every 1.5 s; the probes from `adb logcat -s Timbratune`. On Android 17 shell can't read the app's 0600 files (take.wav) in `Android/data`, and `run-as` can't reach shared storage, so a phone backup over adb only gets the JSON files.
 - **`b5d73f4`** (jank round):
   - **Scheduling:** live updates run on one dedicated thread (`Analysis/LiveWorker.cs`) at Android background priority (`AppServices.LowerThreadPriority`). At most one update starts per 100 ms, and nested parallelism is capped at 2 cores through an ambient limit (`Acoustics/Numerics/Parallelism.cs`, `Parallelism.Limit(n)` / `Parallelism.Options`, used by every `Parallel.*` in the analysis). The analysis after Stop keeps all cores.
   - **Mono GC:** `Properties/GcEnvironment.txt` sets `MONO_GC_PARAMS=nursery-size=16m,major=marksweep-conc` (an `AndroidEnvironment` item; `-p:TimbratuneGcEnv=false` leaves the defaults). **32 MB makes the runtime fail at startup** (LinkageError).
@@ -527,12 +573,36 @@ The algorithm itself wasn't the problem: each update is fast enough, but it comp
 
 ## 8e. Save menu and the .tmbr export (2026-10-08)
 
-The 💾 button on each "All recordings" card now opens a menu (`RecordingCardView.axaml`, a `Button.Flyout` with a `MenuFlyout`, styled as `MenuFlyoutPresenter.save-menu` in `Styles.axaml`):
+The 💾 button on each "All recordings" card now opens a menu with three choices. It was first a `MenuFlyout`; since 2026-10-14 it is the take dialog, see below.
+
+**Take dialogs (2026-10-14):** save / export (💾, with a cancel button), rename (click the take's name; there's no ✏️ button any more) and delete (🗑️) open one dialog over the whole page, with the same scrim and card as the metric modal. They used to be a flyout menu and inline rows in the card.
+- **View:** `Views/TakeDialogView.axaml`, shown by `MainView` while `MainViewModel.TakeDialog` is set. Each card keeps its own state (`IsSaveMenuOpen`, `IsRenaming`, `IsConfirmingDelete`, together `IsDialogOpen`), and `MainViewModel.OnItemChanged` keeps one dialog open at a time.
+- **Share on Android:** where the platform gives a share sheet (`AppServices.Sharer`, an `IFileSharer`; only Android sets one), the card shows a share button instead of 💾. There are two buttons and `CanSave` / `CanShare` pick one; the share sign is three linked dots in the accent colour, drawn in `RecordingCardView.axaml`, with no icon font or emoji.
+  - The same dialog then reads "share", and its choices hand the WAV (`audio/wav`) or the `.tmbr` (`application/octet-stream`) to the share sheet instead of the save picker. `MainViewModel.ExportDataAsync(take, audio, share)` builds the `.tmbr` either way.
+  - Android side, `AndroidFileSharer.cs`: the file is written to `cache/share/` and handed out as a `content://` URI by `ShareFileProvider` (an AndroidX `FileProvider`, declared by attribute so both manifests get it; paths in `Resources/xml/share_paths.xml`), with read permission granted through `ClipData`. Then `Intent.CreateChooser`.
+  - Shared files are kept an hour (the receiving app may still be uploading), then deleted on the next share.
+  - Checked on the Pixel 9: the sheet opens with `voice-take-N.tmbr` / `.wav`. Sending to an app wasn't tried.
+- **Current Activity:** `MainActivity.s_current` is what the share sheet and the microphone request use. The services are built once per process, and they used to hold the first Activity, which can be re-created when its surface is replaced (§8d).
+- **The name:** it is a `Button.label-link` (plain text, accent and underlined on hover), so clicking it renames without selecting the take. `RecordingCardView.OnCardClicked` skips buttons; the rest of the card still selects it.
+- **Closing:** the background (scrim, or the scroller over it outside the card: `OnBackgroundPressed`), ✕, cancel, Esc, and Android's back button (`MainView.OnBackRequested`, which also closes the metric modal) close it as cancel.
+- **Styles:** the save choices are `Button.choice` in `Styles.axaml`; "coming soon" is disabled and faded.
+- **Rename focus:** the name box is focused with the name selected, which brings up a phone's keyboard. This is triggered by the take's `IsRenaming`, not by the box's visibility: with no dialog open the view has no DataContext, so the `IsVisible` binding falls back to true and never changes. Focus is retried every 50 ms (up to 10 times) until the box is laid out.
+- **On-screen keyboard:** `TopLevel.InputPane` gives the scroller around the card a bottom margin, and the card scrolls when what's left is too short (landscape).
+- **Checked on the Pixel 9 (debug build):**
+  - save / export opens and Back closes it;
+  - rename with focus, keyboard and Enter;
+  - delete of a throwaway take;
+  - export data opens the system picker.
+- **File pickers** (`StorageProviderDialogs`):
+  - The TopLevel is now looked up on every call. It was cached, which would break after the Activity is re-created (§8d).
+  - On Android the extension is taken off the suggested name, because the picker adds it again (it showed `voice-take-15.tmbr.tmbr`).
+
+The choices:
 - **save audio (.wav):** the WAV copy as before (`RecordingItemViewModel.SaveCopyAsync`).
 - **export data (.tmbr):** `RecordingItemViewModel.ExportDataAsync` → `MainViewModel.ExportDataAsync`. The card shows "preparing the export…", then "exported to <name>" or the error.
 - **export PDF · coming soon:** disabled on purpose, in faint ink. Not implemented.
 
-**File dialogs:** `IFileDialogs.SaveAsync(title, suggestedName, typeName, extension, mimeType, write)` is the general "save a new file" call. `SaveCopyAsync` is built on it. The `.tmbr` type uses MIME `application/octet-stream`, so Android's SAF picker shouldn't rename it to `.zip`. **Not yet checked on a phone.**
+**File dialogs:** `IFileDialogs.SaveAsync(title, suggestedName, typeName, extension, mimeType, write)` is the general "save a new file" call. `SaveCopyAsync` is built on it. The `.tmbr` type uses MIME `application/octet-stream`, so Android's SAF picker shouldn't rename it to `.zip`. On the Pixel 9 the picker suggests `voice-take-<id>.tmbr` (after the double-extension fix); saving through it hasn't been tried yet.
 
 **Per-frame lists are now kept with each take** (the user chose this over computing them on each export):
 - The full analysis (`AcousticsAnalysisEngine.AnalyzeAsync`) builds `AnalysisResult.Series` (`Models/TakeSeries`) from its tracks with `Analysis/FrameSeriesBuilder`.
@@ -614,9 +684,9 @@ The user asked to drop `recordings.json`, so takes can be added and removed by h
   - Through `wsl.exe … bash -c '…'`, `$?` must be written `\$?`, or it's expanded before the command reaches bash.
 - **Take cards** (`RecordingCardView.axaml`):
   - "#N" is plain accent text (the pink number circle looked like a button; `Border.num` removed).
-  - Rename, delete and save are square framed `Button.icon` buttons (34 px, radius 8). The header row reads [✏️ rename] date [🗑️ delete].
+  - Delete and save are square framed `Button.icon` buttons (34 px, radius 8). The header row reads #N [name] date [🗑️ delete]. The ✏️ rename button was removed on 2026-10-14; the name itself renames (§8e).
   - The label wraps to two lines before it's cut short (phones).
-- **Rename:** ✏️ swaps the header for a text box (focused, text selected); Enter or ✓ saves, Escape or ✕ cancels.
+- **Rename:** first a text box in the header; since 2026-10-14 a dialog (§8e). Enter saves, Escape cancels.
   - `RecordingStore.Rename` rewrites `take.json` and renames the folder to "NNN new label".
   - The folder keeps its old name while its audio is playing or if the move fails; the name in `take.json` is what counts.
   - `MainViewModel.RenameAsync` reloads after renaming.
@@ -640,6 +710,8 @@ The user asked to drop `recordings.json`, so takes can be added and removed by h
 - **`build.ps1` replaces `build.bat` and `build.sh`.** One script for Windows PowerShell 5.1 and PowerShell 7, the latter on Linux too.
   - It keeps both earlier scripts' behaviour: platform arguments, the .NET 10 SDK check, the running-app check (Windows), Linux packing in WSL or directly, and Android SDK/JDK lookup.
   - Keep it ASCII-only: Windows PowerShell reads a BOM-less script as ANSI.
+  - **Progress (2026-10-14):** dotnet runs through `Invoke-Dotnet`, which prints "still building, mm:ss" every 15 s and, for Android, how many assemblies the LLVM AOT has finished per ABI. A Release Android publish is ~3m45s of which ~3m10 is single-threaded `mono-aot-cross --llvm` for arm64 (x64 ~40 s, in parallel), with no output at `-v quiet`.
+  - **`debug` option (2026-10-14):** `./build.ps1 android debug` (or just `debug`) publishes `-c Debug -p:EmbedAssembliesIntoApk=true` into `publish/Timbratune-android-debug/`: ~1m15s, 69 MB APK, no LLVM (the csproj enables it for Release only), so slower at runtime. For the agent's UI and smoke tests; use Release for the user's installs and any measurement. `win`/`linux` listed with it still build Release.
   - Started from Explorer (double-click with PowerShell as the .ps1 handler, which the user set, or "Run with PowerShell") it waits for Enter at the end. That's detected by the parent process being `explorer`; matching the command line missed double-clicks.
 - **XA5300 prevention**, before the Android build, after the user hit it twice in a day:
   - `dotnet build-server shutdown`;

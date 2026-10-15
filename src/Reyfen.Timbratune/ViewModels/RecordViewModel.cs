@@ -176,7 +176,9 @@ public sealed partial class RecordViewModel : ObservableObject
             var lowPriority = LowPriorityCores();
             if (lowPriority > 0)
             {
-                if (_liveStarted != 0 && Stopwatch.GetElapsedTime(_liveStarted).TotalMilliseconds < 100) return;
+                // 90, not 100: the 100 ms timer can fire a little early (Avalonia 12 on a Pixel 9),
+                // and skipping that tick made every other update wait 200 ms (237 → 197 per take).
+                if (_liveStarted != 0 && Stopwatch.GetElapsedTime(_liveStarted).TotalMilliseconds < 90) return;
                 _worker ??= new LiveWorker(lowPriority, _lowerThreadPriority);
             }
             _liveStarted = Stopwatch.GetTimestamp();
