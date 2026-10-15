@@ -31,7 +31,7 @@
           <StackPanel Spacing="8">
             <WrapPanel IsVisible="{Binding IsIdle}">
               <TextBox Classes="label-input" Margin="0,0,10,6" Text="{Binding Label}"
-                       Watermark="untitled take" />
+                       PlaceholderText="untitled take" />
               <Button Classes="primary" Margin="0,0,10,6" Content="🎙️ record" Command="{Binding StartCommand}" />
               <Button Classes="outline" Margin="0,0,10,6" Content="📥 import"
                       ToolTip.Tip="add takes from audio files (.wav, .mp3, .flac) or Timbratune files (.tmbr)"

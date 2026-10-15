@@ -52,7 +52,7 @@
         <!-- rename: Enter saves, Escape cancels -->
         <StackPanel x:Name="RenamePanel" Spacing="12" IsVisible="{Binding IsRenaming}">
           <TextBox x:Name="RenameBox" Classes="label-input rename" Text="{Binding RenameText}" MaxLength="80"
-                   Watermark="name this take">
+                   PlaceholderText="name this take">
             <TextBox.KeyBindings>
               <KeyBinding Gesture="Enter" Command="{Binding ConfirmRenameCommand}" />
               <KeyBinding Gesture="Escape" Command="{Binding CancelRenameCommand}" />

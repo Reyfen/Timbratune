@@ -4,6 +4,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Markup.Xaml;
+using Avalonia.VisualTree;
 using Reyfen.Timbratune.Services;
 using Reyfen.Timbratune.ViewModels;
 using Reyfen.Timbratune.Views;
@@ -47,6 +48,21 @@ public sealed class App : Application
             var window = new MainWindow { DataContext = vm };
             dialogs.Attach(window);
             desktop.MainWindow = window;
+        }
+        else if (ApplicationLifetime is IActivityApplicationLifetime activity)
+        {
+            // Android: the app is built before any Activity, and each (re-)created Activity asks
+            // for its view. They all get the same one, so nothing is lost when one is re-created.
+            // The previous Activity's window can still hold it when the next one asks (Avalonia
+            // 12 detaches it only later), so it is taken out of that window first.
+            var view = new MainView { DataContext = vm };
+            dialogs.Attach(view);
+            activity.MainViewFactory = () =>
+            {
+                if (view.Parent is ContentControl previous) previous.Content = null;
+                if (view.GetVisualParent() is Avalonia.Controls.Presenters.ContentPresenter presenter) presenter.Content = null;
+                return view;
+            };
         }
         else if (ApplicationLifetime is ISingleViewApplicationLifetime single)
         {

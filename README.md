@@ -149,7 +149,7 @@ This is deliberately separate from the original Electron app's `%APPDATA%\Euphon
 
 ### Dependencies
 
-- **Avalonia 11.3** (+ Fluent theme, Inter font) is the UI.
+- **Avalonia 12** (+ Fluent theme, Inter font) is the UI.
 - **CommunityToolkit.Mvvm** provides the MVVM source generators.
 - **SoundFlow** handles recording and playback.
 - **xUnit** is used for tests.

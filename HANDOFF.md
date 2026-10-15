@@ -80,7 +80,7 @@ Each metric is placed in zones (masculine / neutral / feminine, and others).
 | `src/Reyfen.Timbratune.Acoustics` | Pure C#, MIT, no dependencies. See the component list below. |
 | `src/Reyfen.Timbratune.Core` | Domain logic, independent of the UI. |
 | `src/Reyfen.Timbratune.Audio.SoundFlow` | Recording and playback through SoundFlow 1.4.1 (miniaudio). The recorder raises `SamplesCaptured` after each WAV write. |
-| `src/Reyfen.Timbratune` | Avalonia 11.3 UI library, using CommunityToolkit.Mvvm. |
+| `src/Reyfen.Timbratune` | Avalonia 12 UI library, using CommunityToolkit.Mvvm. |
 | `src/Reyfen.Timbratune.Desktop` | Desktop entry point (Windows, Linux, macOS); also provides `--import file.wav --label "…"`. Single-file publish profiles live in `Properties/PublishProfiles/`. |
 | `src/Reyfen.Timbratune.Android` | Android head; see §8a. It is **not in `Timbratune.slnx`**, so the desktop solution and tests build without the Android workload. |
 | `tests/Reyfen.Timbratune.Acoustics.Tests` | 50 tests: synthetic, Praat oracle (skipped without Praat), and streaming. |
@@ -364,7 +364,7 @@ Example (v0.2.0):
 **Android:**
 - **Project:** `src/Reyfen.Timbratune.Android`.
   - `net10.0-android`, minimum API 26, app id `com.reyfen.timbratune`, ABIs arm64 and x86_64.
-  - `MainActivity : AvaloniaMainActivity<App>` wires up the services.
+  - `AndroidApp : AvaloniaAndroidApplication<App>` (Avalonia 12 builds the app there, before any Activity) wires up the services, fonts and renderer; `MainActivity : AvaloniaMainActivity` handles the window (microphone permission, Vulkan surface watcher).
 - **Toolchain:**
   - the android workload (36.1.69);
   - the SDK in `%LOCALAPPDATA%\Android\Sdk` and JDK 17 in `%LOCALAPPDATA%\Android\jdk`. Pass both via `-p:AndroidSdkDirectory=… -p:JavaSdkDirectory=…`. **Correction (2026-10-09, §8h):** these were installed from Claude's shell, so they only exist in Claude's redirected AppData and the user's own builds can't see them. The user's `JAVA_HOME` (Microsoft OpenJDK 17.0.6) does work with the tooling;
@@ -397,7 +397,7 @@ Example (v0.2.0):
    - The register drop bars are now a 3-column `UniformGrid`.
 5. **Runtime microphone permission.** `AppServices.RequestMicrophone` is null on desktop. On Android, `RecordViewModel.StartAsync` awaits it before recording.
 
-**Open Android item:** SkiaSharp 2.88.9's `libSkiaSharp.so` isn't 16 KB page-aligned (build warning XA0141).
+**Android item (resolved 2026-10-15 by Avalonia 12, which brings SkiaSharp 3.119 / HarfBuzzSharp 8.3):** SkiaSharp 2.88.9's `libSkiaSharp.so` isn't 16 KB page-aligned (build warning XA0141).
 - Android 15+ devices with 16 KB pages, and Google Play from late 2025, need that alignment.
 - Fix: move the Android head to SkiaSharp/HarfBuzzSharp 3.x, which Avalonia 11.3 supports, or to a newer Avalonia.
 - Not needed for sideloading on today's 4 KB devices.
@@ -516,6 +516,18 @@ The algorithm itself wasn't the problem: each update is fast enough, but it comp
     - lock and unlock;
     - a re-creation 40 s into a recording: the timer and live graphs carried on and it is one take.
   - **Not checked:** the Pixel 4a, freeform or desktop windows, and picture-in-picture.
+  - **Avalonia 12 (2026-10-15, emulator API 35, Debug):**
+    - **`Recreate()` replaced by a new instance.** Under 12 every re-creation (Home → back, entering split screen) left white status and navigation bars and pushed the page down by the status-bar height. `Recreate()` relaunches into the *preserved* window (the same `DecorView`, by id), whose new content frame was laid out inside the bars (`0,136–1080,2337`) while Avalonia, with edge-to-edge enforced from Android 15, still padded for them. `SetDecorFitsSystemWindows(false)` in `OnCreate` didn't help, and `OnAttachedToWindow` doesn't even run for a preserved window. `OnSurfaceReplaced` now detaches the view (`Content = null`), starts a new `MainActivity` (`NoAnimation`), finishes this one and drops the close transition. That gives a new window, edge-to-edge, with one Activity in the task. `App`'s `MainViewFactory` also detaches the view from its old parent first, against a "MainView already has a visual parent" crash seen on the Pixel 9.
+    - **Checked:** cold start (6.2–6.4 s to first frame, Debug), takes list, colour emoji, the mic permission prompt, fake-mic recording with live graphs, rotation mid-recording (no re-creation: config changes are handled), Home → back mid-recording (one take, saved), stop & analyze, entering split screen via Recents, resizing the split, dragging it back to full screen, Back then relaunch, and the share sheet (`voice-take-4.wav`).
+    - **Is the watcher still needed? Not decidable on the emulator.** With `OnSurfaceReplaced` disabled, the emulator showed no "abandoned" errors and no black pane after Home → back or in split screen. But the 11.3 build (HEAD `9c638a0`) with the watcher disabled behaves the same there, so the emulator never had the bug (its Vulkan is `vulkan.ranchu`/SwiftShader). It stays until the same test passes on the Pixel 9 (Android 17).
+    - **Cosmetic, not fixed:** a take dialog's dimmed backdrop stops under the status bar (it follows the safe area), so the bar stays light above it.
+  - **Avalonia 12 vs 11.3 on the Pixel 9 (2026-10-15, Release profiling builds, fake mic, 60 Hz, medians of 4 runs (12) and 6 runs (11.3, HEAD `9c638a0`), alternated):**
+    - Scrolling (10 flings down and back): 58.0 vs 53.4 fps, frames over 25 ms **1.0 % vs 8.1 %**.
+    - Live recording, 30 s: frames over 25 ms 3.2 % vs 4.1 %, frames over 50 ms 24 vs 22 (fps over the window 39.2 vs 39.5; it counts idle gaps, as the app only redraws on change). One live update 4.2 vs 4.8 ms (median).
+    - Stop: analysis 1.72 vs 1.73 s.
+    - **Live update rate:** 12 ran only ~197 updates per take against ~237. Its 100 ms `DispatcherTimer` fires a little early, so `RecordViewModel`'s "at most one update per 100 ms" check skipped every such tick (gaps of 200–250 ms: ~60 per take against ~20). The check now allows 90 ms. Not yet re-measured on the phone with that change.
+    - Found on the phone: the "already has a visual parent" crash after Home → back (fixed, see above), and that the profiling build's `ApplyExperiments` hook called `MainViewFactory` again, which (with the detach) emptied the window: black screen. It now uses the Activity's own `Content`.
+    - How: `adb shell dumpsys SurfaceFlinger --latency` on the `SurfaceView[…](BLAST)` layer, sampled every 1.5 s; the probes from `adb logcat -s Timbratune`. On Android 17 shell can't read the app's 0600 files (take.wav) in `Android/data`, and `run-as` can't reach shared storage, so a phone backup over adb only gets the JSON files.
 - **`b5d73f4`** (jank round):
   - **Scheduling:** live updates run on one dedicated thread (`Analysis/LiveWorker.cs`) at Android background priority (`AppServices.LowerThreadPriority`). At most one update starts per 100 ms, and nested parallelism is capped at 2 cores through an ambient limit (`Acoustics/Numerics/Parallelism.cs`, `Parallelism.Limit(n)` / `Parallelism.Options`, used by every `Parallel.*` in the analysis). The analysis after Stop keeps all cores.
   - **Mono GC:** `Properties/GcEnvironment.txt` sets `MONO_GC_PARAMS=nursery-size=16m,major=marksweep-conc` (an `AndroidEnvironment` item; `-p:TimbratuneGcEnv=false` leaves the defaults). **32 MB makes the runtime fail at startup** (LinkageError).

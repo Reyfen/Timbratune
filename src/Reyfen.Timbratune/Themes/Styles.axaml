@@ -215,7 +215,7 @@
     <Setter Property="Foreground" Value="{DynamicResource InkStrongBrush}" />
   </Style>
   <!-- the placeholder in italics: "untitled take" is what an unnamed take is called -->
-  <Style Selector="TextBox.label-input /template/ TextBlock#PART_Watermark">
+  <Style Selector="TextBox.label-input /template/ TextBlock#PART_Placeholder">
     <Setter Property="FontStyle" Value="Italic" />
   </Style>
   <!-- keep the app's input colour while typing (Fluent turns it black / white on focus) -->
