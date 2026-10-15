@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Reyfen.Timbratune.App;
 using Reyfen.Timbratune.Core.Audio;
 using Reyfen.Timbratune.Core.Storage;
+using Reyfen.Timbratune.Core.Storage.Settings;
 using Reyfen.Timbratune.Shared;
 using Reyfen.Timbratune.Shared.Navigation;
 using Reyfen.Timbratune.Shared.Platform;
@@ -69,6 +70,26 @@ public sealed class CompositionTests
         var e = Assert.Throws<AggregateException>(() => services.BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true }));
         Assert.Contains(e.InnerExceptions, x => x.Message.Contains(nameof(MainViewModel)));
     }
+
+    [Fact]
+    public void TheRegisteredSettingsAreValidAndDeviceOnly()
+    {
+        using var provider = WithHeadServices().BuildServiceProvider();
+        var keys = provider.GetServices<ISettingKey>().ToList();
+        Assert.Contains(keys, k => k.Id == ShellSettings.Theme.Id);
+        Assert.Contains(keys, k => k.Id == RecordingSettings.LiveWindowSeconds.Id);
+        // Every setting is device-only until sync exists (the owner's decision, 2026-10-15).
+        Assert.All(keys, k => Assert.Equal(SettingScope.Device, k.Scope));
+        // Building the service checks the ids (no clashes, nothing that looks like a secret).
+        Assert.Equal("system", provider.GetRequiredService<ISettings>().Get(ShellSettings.Theme));
+    }
+
+    [Theory]
+    [InlineData(0, "whole take")]
+    [InlineData(30, "last 30 s")]
+    [InlineData(45, "whole take")]
+    public void TheStoredLiveWindowPicksItsChoice(double seconds, string label) =>
+        Assert.Equal(label, RecordingSettings.OptionFor(seconds).Label);
 
     [Fact]
     public void FeatureFlagsFollowTheBuild() => Assert.Equal(BuildFeatureFlags.ReferenceVoicesBuilt, new BuildFeatureFlags().ReferenceVoices);

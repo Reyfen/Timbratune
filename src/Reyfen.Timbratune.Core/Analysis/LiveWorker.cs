@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using Reyfen.Timbratune.Acoustics.Numerics;
 
-namespace Reyfen.Timbratune.Analysis;
+namespace Reyfen.Timbratune.Core.Analysis;
 
 /// <summary>
 /// One long-lived thread for the live analysis, optionally at a lower OS priority (set by the

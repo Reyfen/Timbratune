@@ -1,6 +1,6 @@
 # Timbratune refactoring plan
 
-*Status:* agreed 2026-10-15; P0 done except the phone baselines (HANDOFF §8i); P1 done (HANDOFF §8j).
+*Status:* agreed 2026-10-15; P0 done except the phone baselines (HANDOFF §8i); P1 and P2 done (HANDOFF §8j, §8k).
 *Base:* `dev/v0.2.1` at `2b33f06`.
 *Work branch:* `dev/v0.3.0`.
 
@@ -588,13 +588,17 @@ Ask the owner before each commit.
   - `AppInfo` / `IFeatureFlags` / `IPlatformInfo`.
   - Heads move to DI. `MainViewModel` still exists but gets its services from DI.
   - *As built (HANDOFF §8j):* `App` became `App/TimbratuneApp` (a class can't share the `App` namespace's name). `Shared/State` is left to the P3 steps that extract its implementations from `MainViewModel`/`RecordViewModel` (`ISettings` to P2). The platform ports with no consumer yet (`ISecureStore`, `IExternalBrowser`, `IProcessRunner`, `IHttpDownloader`) come with their features (P4, later). `OverlayHost`/`RouterBase` and the message records exist but are first used by the Shell and features in P3.
-- [ ] **P2. Storage and scheduling seams** (§7):
+- [x] **P2. Storage and scheduling seams** (§7):
   - `ITakeStorage`/`IDataStore` + `FileSystemTakeStorage`;
   - the settings service (§5a: keys, scopes, file store, migrations; local only). The theme and live-window choice become the first persisted settings;
   - stream-based analysis entry points;
   - `IAnalysisScheduler`.
 
   Store tests and the migration test must pass unchanged.
+  - *As built (HANDOFF §8k):*
+    - **Settings:** every setting is `Device`-scoped for now (the owner's answer to §12.5, 2026-10-15); scopes get decided per key with accounts. `ISettings` lives in Core (`Core/Storage/Settings`), beside the service that implements it, not in `Shared/State`. The two keys live in `ViewModels/AppSettings.cs` until their features exist (P3).
+    - **Recorders:** they still write their WAV to a temporary file, and Stop still trims, analyzes and copies by path. The seams a stream-based recorder needs are in place (`WavWriter(Stream)`, `WavWriter.Truncate(Stream)`, `AnalyzeAsync(Stream|Sound)`); switching the Stop flow is left to the browser phase, where `Audio.Web` needs it.
+    - **Storage outside `ITakeStorage`:** `DataPaths` (folder discovery, legacy moves), the old-layout conversion, and the importer's dropped-file scan and work folder stay on the file system: they only exist on native heads.
 - [ ] **P3. UI features, one per step:**
   - [ ] CheatSheet + About
   - [ ] TakeActions
@@ -685,5 +689,5 @@ Later versions: accounts and avatar (§6) with cloud settings sync (§5a.3), and
 2. **P4:** the exact pinned FFmpeg build and its hosting source; whether the installer is also offered on Windows/macOS.
 3. **Later, accounts:** where the Patreon token-exchange backend is hosted.
 4. **Later, browser:** Web Worker vs multithreaded WASM, decided by the spike, and the hosting provider.
-5. **P2 settings:** confirm the device/synced split in §5a.1.
+5. ~~**P2 settings:** confirm the device/synced split in §5a.1.~~ Decided 2026-10-15: all device-only until accounts and sync exist.
 6. **Later, sync:** whether the avatar choice syncs (it is currently local only, §6), and whether takes ever sync (not planned).

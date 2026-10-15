@@ -101,6 +101,22 @@ public sealed class DependencyRuleTests
     }
 
     [Fact]
+    public void FeaturesUseSettingsOnlyThroughISettings()
+    {
+        // §5a: features read and write settings through the service, never its files.
+        string[] forbidden =
+        [
+            "Reyfen.Timbratune.Core.Storage.Settings.SettingsService", "Reyfen.Timbratune.Core.Storage.Settings.ISettingsStore",
+            "Reyfen.Timbratune.Core.Storage.Settings.DataStoreSettingsStore", "Reyfen.Timbratune.Core.Storage.IDataStore",
+            "Reyfen.Timbratune.Core.Storage.FileSystemDataStore",
+        ];
+        var violations = new List<string>();
+        foreach (var type in UiTypes().Where(t => FeatureOf(t.Namespace) is not null))
+            violations.AddRange(TypeReferences.Of(type).Where(forbidden.Contains).Select(u => $"{type.FullName} → {u}"));
+        Assert.Empty(violations);
+    }
+
+    [Fact]
     public void FeatureViewsDontBindToAParentsViewModel()
     {
         // `$parent[v:MainView].((vm:MainViewModel)DataContext)` couples a view to another one's

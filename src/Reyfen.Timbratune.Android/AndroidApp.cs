@@ -64,6 +64,9 @@ public sealed class AndroidApp : AvaloniaAndroidApplication<TimbratuneApp>
         services.AddSingleton<IPermissions, AndroidPermissions>();
         services.AddSingleton<IThreadPriority, AndroidThreadPriority>();
         services.AddSingleton<IFileSharer>(new AndroidFileSharer(() => MainActivity.Current));
+        // Settings in the app's private folder, not with the takes in shared storage (a PC sees
+        // that one over USB, and settings would be lost with a moved data folder).
+        services.AddSingleton<IDataStore>(new FileSystemDataStore(FilesDir!.AbsolutePath));
         _services = services.BuildServiceProvider();
 #if PROFILING
         // "noprobes": keep the fake mic and switches but log nothing (the probes' own cost out of the measurement).

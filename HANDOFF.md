@@ -2,7 +2,7 @@
 
 This file brings a new engineer or agent up to date on everything done so far: what the user asked for, what was decided and why, how the code is organised, what was measured, and what is still open.
 
-Last updated 2026-10-15. The newest work is §8i–§8j (refactoring P0: golden, architecture and bench baselines; P1: dependency injection and shared ports); §8d–§8h cover v0.2.0 (Android performance, export, one folder per take, import, `build.ps1`); §8 is the current state.
+Last updated 2026-10-15. The newest work is §8i–§8k (refactoring P0: golden, architecture and bench baselines; P1: dependency injection and shared ports; P2: storage, settings and scheduling seams); §8d–§8h cover v0.2.0 (Android performance, export, one folder per take, import, `build.ps1`); §8 is the current state.
 
 **Name:** the project is **Timbratune — Gender Voice Analysis Tool**, by **Reyfen**.
 - **Before 2026-10-02 it was called Euphonia**, and it is a fork of [Euphonia](https://github.com/Yuuzulight/Euphonia). Older parts of this file and of the transcript say "Euphonia" and "Euphonia-CSharp"; read those as Timbratune and the repo root (the code moved from `Timbratune/` to the root on 2026-10-06).
@@ -265,7 +265,7 @@ Two takes (voice-take-8/9, noisy: 6–12 kHz hiss about as loud as the voice) sh
 ```powershell
 cd C:\Projects\Reyfen\Timbratune
 dotnet build Timbratune.slnx
-dotnet test Timbratune.slnx                     # 158 tests; the Praat oracle tests skip without Praat
+dotnet test Timbratune.slnx                     # 184 tests; the Praat oracle tests skip without Praat
 dotnet run --project src/Reyfen.Timbratune.Desktop
 ./build.ps1 [win] [linux] [android]             # all published builds into publish/ (§8h)
 ```
@@ -817,6 +817,46 @@ Phase P1 of `REFACTOR-PLAN.md`. No user-visible change.
   - Android (Debug APK on the `EuphoniaPixel` emulator, fake mic): start, recording with live graphs (permission and thread priority through DI), stop & analyze (take saved and shown).
   - The Android profiling configuration (`-p:TimbratuneProfiling=true`) compiles.
   - The bench: hashes identical, and an A/B against `86944bb` in the same session shows no difference (see the §8i note on drift).
+
+## 8k. Refactoring P2: storage, settings and scheduling seams (2026-10-15)
+
+Phase P2 of `REFACTOR-PLAN.md`. The only user-visible change: the theme toggle and the live-window choice are now remembered between sessions.
+
+- **`IAnalysisScheduler`** (`Core/Analysis/IAnalysisScheduler.cs`): where the analyses run. `NativeAnalysisScheduler(liveCores, lowerThreadPriority)` does exactly what the app did before:
+  - live updates on one `LiveWorker` (moved from the UI project into Core), made on first use, at the platform's lower priority, with loops limited to `LiveCores` (2); with 0 cores, on the thread pool;
+  - saved analyses on the thread pool.
+  - The profiling switches `fullcpu` and `lowprioN` now pick the cores in `CompositionRoot.LiveCores()`. `RecordViewModel` asks the scheduler instead of keeping its own worker, and skips the 90 ms throttle when `LiveCores` is 0, as before. `AcousticsAnalysisEngine` takes an optional scheduler; the parameterless constructor (tests, tools, the CLI) uses the thread pool.
+- **Stream entry points:**
+  - `AcousticsAnalysisEngine.AnalyzeAsync(Stream …)` and `AnalyzeAsync(Sound …)` next to the path one; all three run the same private `Analyze`, and `SeamTests` checks that they give identical JSON.
+  - `IAnalysisEngine` has a default `AnalyzeAsync(Stream …)` that copies to a temporary file, for path-only engines such as the Praat reference.
+  - `WavWriter(Stream, …, leaveOpen)` and `WavWriter.Truncate(Stream, n)` write the same bytes as the file versions (tested).
+  - The recorders and the Stop flow still use paths (see the plan's note).
+- **Storage ports** (`Core/Storage/ITakeStorage.cs`):
+  - `ITakeStorage`: named takes holding named files. It lists, creates (with "(2)" suffixes), renames, deletes, reads and writes atomically, copies or moves a local file in, gives a file's write time, and a local path where there is one. The file-system exceptions are the contract: locked means `IOException`.
+  - `IDataStore`: the app's own files (settings, later tools), with atomic writes.
+  - `FileSystemTakeStorage` and `FileSystemDataStore` implement them; names must be one path segment, so nothing can leave the folder.
+  - `RecordingStore` is now the repository over `ITakeStorage`. Its public API and behaviour are unchanged (`RecordingStore(DataPaths)` still works; `RecordingStore(ITakeStorage, DataPaths)` is new), and the store tests pass unmodified.
+  - A take is found from its paths (`takes/<take>/<file>`, anything else is refused). New `MoveIntoTake` is used for an import's original MP3/FLAC.
+  - `TakeArchive.Describe` can read the WAV format from a stream opener.
+  - **Byte check:** the old (`e110baf`) and new `--import` of the same two fixtures wrote identical `take.wav`, `detail.json` and `series.json`; `take.json` differs only in `exported_at`.
+- **Settings** (`Core/Storage/Settings/`, REFACTOR-PLAN §5a):
+  - `SettingKey<T>(Id, Default, Scope, JsonTypeInfo<T>)` and `SettingScope { Device, Synced }`; `SettingsJson` is the source-generated context for the plain value types. `ISettings` has `Get`, `Set` and `Changed`.
+  - `SettingsService` loads both documents once (`{ "schemaVersion": 1, "values": {…} }`, one per scope), keeps values in memory, and saves 0.5 s after the last change on a timer. It also saves on dispose: the container is disposed when the desktop app exits; Android relies on the timer.
+  - Unknown keys are written back unchanged. A damaged file becomes `.bak`, and the app starts from the defaults. A value of another shape reads as the default. Migrations run on load, and a newer app's document keeps its version.
+  - Ids that look like secrets (token, secret, password, apikey) and duplicate ids are refused.
+  - `DataStoreSettingsStore` writes indented JSON through `IDataStore`.
+  - **Where:** desktop, the data folder's root (`settings.device.json` next to `takes/`, so `TIMBRATUNE_DATA_DIR` moves it too); Android, the app's private `FilesDir` (not the USB-visible folder with the takes).
+  - **The owner's decision (2026-10-15): every setting is `Device` for now**; which ones sync is decided with accounts. `CompositionTests` checks that every registered key is `Device`.
+  - **Keys today** (in `ViewModels/AppSettings.cs` until the features exist):
+    - `shell.theme`: "system", "light" or "dark"; applied in `TimbratuneApp` before the window is made, set by the toggle.
+    - `recording.liveWindowSeconds`: 0 means the whole take; an unknown value means the whole take.
+  - Registered with `services.AddSetting(key)`. An architecture rule says features use `ISettings` only, never the settings store or `IDataStore`.
+- **Tests:** 184 pass with Praat (14 UI, 18 architecture, 57 acoustics, 95 core). New: `SeamTests` (11), `SettingsTests` (10), 4 composition tests and 1 architecture rule.
+- **Checked:**
+  - **A/B bench** against `e110baf` in one session, alternating, 2 runs each: same numbers within noise, identical saved and live hashes.
+  - **Desktop:** theme toggle → `settings.device.json` → restart in light; a stored 30 s window comes back as "last 30 s"; record (fake mic) and stop & analyze.
+  - **Android emulator (Debug):** the theme kept across a force-stop, the file in `files/`, record and stop & analyze (take saved).
+- **A slip during the checks:** one restarted desktop instance lacked `TIMBRATUNE_FAKE_MIC` (each tool call is a new shell), so Record captured ~26 s of the real microphone. It was killed before Stop, nothing was analyzed or saved, and the temporary WAV was deleted. CLAUDE.md now says to set the variable in the same command as every launch.
 
 ## 8. Current state, at the time of writing
 

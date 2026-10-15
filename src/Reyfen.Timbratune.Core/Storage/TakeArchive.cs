@@ -27,7 +27,11 @@ public static class TakeArchive
     /// Everything about a take except its detail and series: the take.json of a take folder
     /// (<paramref name="keepSource"/> true) or the start of an export's take.json.
     /// </summary>
-    public static TakeExport Describe(Recording recording, RecordingDetail detail, string? audioPath, bool keepSource) => new()
+    public static TakeExport Describe(Recording recording, RecordingDetail detail, string? audioPath, bool keepSource) =>
+        Describe(recording, detail, audioPath is null ? null : () => File.OpenRead(audioPath), keepSource);
+
+    /// <param name="openAudio">Opens the take's WAV (its format goes into the description); null: no audio.</param>
+    public static TakeExport Describe(Recording recording, RecordingDetail detail, Func<Stream>? openAudio, bool keepSource) => new()
     {
         AppVersion = AppVersion,
         ExportedAt = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
@@ -41,7 +45,7 @@ public static class TakeArchive
             DurationS = recording.DurationS,
             SourceFile = keepSource && !string.IsNullOrEmpty(recording.SourceFile) ? recording.SourceFile : null,
         },
-        Audio = audioPath is null ? new ExportedAudio() : ReadFormat(audioPath),
+        Audio = openAudio is null ? new ExportedAudio() : ReadFormat(openAudio),
         Analysis = Settings(detail),
         Metrics = Metrics(recording),
     };
@@ -144,12 +148,12 @@ public static class TakeArchive
     };
 
     /// <summary>Sample rate, channels and bits from the WAV's fmt chunk (zeros if unreadable).</summary>
-    private static ExportedAudio ReadFormat(string wavPath)
+    private static ExportedAudio ReadFormat(Func<Stream> openAudio)
     {
         var audio = new ExportedAudio { File = AudioEntry };
         try
         {
-            using var stream = File.OpenRead(wavPath);
+            using var stream = openAudio();
             Span<byte> header = stackalloc byte[12];
             if (stream.Read(header) < 12) return audio;
             Span<byte> chunk = stackalloc byte[8];

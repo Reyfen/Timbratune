@@ -5,8 +5,9 @@ using Reyfen.Timbratune.Core.Models;
 namespace Reyfen.Timbratune.Core.Storage;
 
 /// <summary>
-/// The takes on disk: one folder per take under <see cref="DataPaths.TakesDir"/> (see
-/// <see cref="DataPaths"/> for the files), found by listing that folder; there is no index.
+/// The takes: one take per folder under <see cref="DataPaths.TakesDir"/> (see
+/// <see cref="DataPaths"/> for the files), found by listing them; there is no index.
+/// The repository over <see cref="ITakeStorage"/>, which does the actual reading and writing.
 /// The older layout (recordings.json + audio/ + analysis/) is converted on first use.
 /// All writes are serialized through one lock; files are written then renamed.
 /// </summary>
@@ -14,11 +15,22 @@ public sealed class RecordingStore
 {
     public const string AudioName = "take.wav", TakeJson = "take.json", DetailJson = "detail.json", SeriesJson = "series.json";
 
+    /// <summary>The folder of the data folder that holds the takes; <see cref="Recording.Audio"/> paths start with it.</summary>
+    public const string TakesFolder = "takes";
+
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
     private readonly object _gate = new();
+    private readonly ITakeStorage _storage;
 
-    public RecordingStore(DataPaths paths)
+    /// <summary>Takes in folders under <paramref name="paths"/> (the native heads).</summary>
+    public RecordingStore(DataPaths paths) : this(new FileSystemTakeStorage(paths.TakesDir), paths)
     {
+    }
+
+    /// <param name="paths">The data folder: the old layout is looked for there, and local paths resolve against it.</param>
+    public RecordingStore(ITakeStorage storage, DataPaths paths)
+    {
+        _storage = storage;
         Paths = paths;
     }
 
@@ -39,11 +51,10 @@ public sealed class RecordingStore
 
     public RecordingDetail? LoadDetail(Recording recording)
     {
-        var path = Paths.Resolve(recording.Detail);
-        if (path is null || !File.Exists(path)) return null;
+        if (Locate(recording.Detail) is not var (take, file) || !_storage.Exists(take, file)) return null;
         try
         {
-            return TimbratuneJson.ReadDetail(File.ReadAllText(path, Encoding.UTF8));
+            return TimbratuneJson.ReadDetail(ReadText(take, file));
         }
         catch (Exception)
         {
@@ -63,19 +74,18 @@ public sealed class RecordingStore
             if (string.IsNullOrEmpty(entry.Date)) entry.Date = DateTime.Now.ToString("yyyy-MM-dd");
             entry.RecordedAt ??= entry.Date == DateTime.Now.ToString("yyyy-MM-dd") ? Recording.Timestamp(DateTime.Now) : null;
             entry.Id = NextIdUnlocked();
-            var folder = NewFolderUnlocked(entry.Id, entry.Label);
+            var take = NewTakeUnlocked(entry.Id, entry.Label);
             try
             {
-                var audio = Path.Combine(folder, AudioName);
-                File.Copy(audioSourcePath, audio);
-                WriteTakeUnlocked(folder, entry, detail, series);
+                _storage.CopyIn(take, AudioName, audioSourcePath);
+                WriteTakeUnlocked(take, entry, detail, series);
             }
             catch
             {
-                TryDeleteFolder(folder);
+                TryDeleteTake(take);
                 throw;
             }
-            SetPaths(entry, folder);
+            SetPaths(entry, take);
             return entry;
         }
     }
@@ -97,20 +107,26 @@ public sealed class RecordingStore
         lock (_gate)
         {
             entry.Id = NextIdUnlocked();
-            var folder = NewFolderUnlocked(entry.Id, entry.Label);
+            var take = NewTakeUnlocked(entry.Id, entry.Label);
             try
             {
-                File.Move(extractedAudio, Path.Combine(folder, AudioName));
-                WriteTakeUnlocked(folder, entry, export.Detail ?? new RecordingDetail(), export.Series);
+                _storage.MoveIn(take, AudioName, extractedAudio);
+                WriteTakeUnlocked(take, entry, export.Detail ?? new RecordingDetail(), export.Series);
             }
             catch
             {
-                TryDeleteFolder(folder);
+                TryDeleteTake(take);
                 throw;
             }
-            SetPaths(entry, folder);
+            SetPaths(entry, take);
             return entry;
         }
+    }
+
+    /// <summary>Moves a local file into a take's folder as <paramref name="fileName"/> (e.g. the original of an MP3 import).</summary>
+    public void MoveIntoTake(Recording recording, string fileName, string sourcePath)
+    {
+        lock (_gate) _storage.MoveIn(TakeOf(recording), fileName, sourcePath);
     }
 
     /// <summary>Rewrites a take's detail.json (e.g. after re-analyzing its audio).</summary>
@@ -118,15 +134,15 @@ public sealed class RecordingStore
     {
         lock (_gate)
         {
-            var folder = FolderOf(recording);
-            WriteText(Path.Combine(folder, DetailJson), TimbratuneJson.WriteDetail(detail));
+            var take = TakeOf(recording);
+            WriteText(take, DetailJson, TimbratuneJson.WriteDetail(detail));
             // take.json carries the analysis settings that come from the detail (e.g. the trend step).
-            WriteTakeJsonUnlocked(folder, recording, detail);
+            WriteTakeJsonUnlocked(take, recording, detail);
         }
     }
 
     /// <summary>Whether the take's per-frame lists are saved (takes analyzed before they were kept have none).</summary>
-    public bool HasSeries(Recording recording) => SeriesFileOf(recording) is { } path && File.Exists(path);
+    public bool HasSeries(Recording recording) => SeriesTakeOf(recording) is { } take && _storage.Exists(take, SeriesJson);
 
     /// <summary>
     /// The take's per-frame lists, read from its series.json; null if absent or unreadable.
@@ -134,11 +150,10 @@ public sealed class RecordingStore
     /// </summary>
     public TakeSeries? LoadSeries(Recording recording)
     {
-        var path = SeriesFileOf(recording);
-        if (path is null || !File.Exists(path)) return null;
+        if (SeriesTakeOf(recording) is not { } take || !_storage.Exists(take, SeriesJson)) return null;
         try
         {
-            using var stream = File.OpenRead(path);
+            using var stream = _storage.OpenRead(take, SeriesJson);
             return TimbratuneJson.ReadSeries(stream);
         }
         catch (Exception)
@@ -150,7 +165,7 @@ public sealed class RecordingStore
     /// <summary>Writes (or replaces) the take's series.json.</summary>
     public void SaveSeries(Recording recording, TakeSeries series)
     {
-        lock (_gate) WriteSeries(Path.Combine(FolderOf(recording), SeriesJson), series);
+        lock (_gate) WriteSeries(TakeOf(recording), series);
     }
 
     /// <summary>
@@ -163,29 +178,18 @@ public sealed class RecordingStore
         label = label.Trim();
         lock (_gate)
         {
-            var folder = FolderOf(recording);
-            var json = Path.Combine(folder, TakeJson);
-            TakeExport take;
-            using (var stream = File.OpenRead(json))
-                take = TimbratuneJson.ReadExport(stream) ?? throw new InvalidDataException($"Can't read {json}.");
-            take.Take.Label = label;
-            take.Metrics.Label = label;
-            WriteExportJson(json, take);
+            var take = TakeOf(recording);
+            TakeExport export;
+            using (var stream = _storage.OpenRead(take, TakeJson))
+                export = TimbratuneJson.ReadExport(stream) ?? throw new InvalidDataException($"Can't read {take}/{TakeJson}.");
+            export.Take.Label = label;
+            export.Metrics.Label = label;
+            WriteExportJson(take, export);
 
-            var renamed = Path.Combine(Paths.TakesDir, $"{take.Take.Id:000} {SafeName(label)}".TrimEnd());
-            if (renameFolder && !string.Equals(renamed, folder, StringComparison.Ordinal) && !Directory.Exists(renamed))
-            {
-                try
-                {
-                    Directory.Move(folder, renamed);
-                    folder = renamed;
-                }
-                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-                {
-                    // e.g. its audio is open in a player: the name inside take.json is what counts
-                }
-            }
-            return ToRecording(folder, take);
+            // e.g. its audio is open in a player: then the name inside take.json is what counts
+            var renamed = $"{export.Take.Id:000} {SafeName(label)}".TrimEnd();
+            if (renameFolder && _storage.TryRenameTake(take, renamed)) take = renamed;
+            return ToRecording(take, export);
         }
     }
 
@@ -195,17 +199,31 @@ public sealed class RecordingStore
         lock (_gate)
         {
             var entry = ScanUnlocked().FirstOrDefault(r => r.Id == id);
-            if (entry is not null) TryDeleteFolder(FolderOf(entry));
+            if (entry is not null) TryDeleteTake(TakeOf(entry));
         }
     }
 
-    /// <summary>The folder holding <paramref name="recording"/> (from its paths).</summary>
+    /// <summary>The folder holding <paramref name="recording"/> (from its paths), on storage with a file system.</summary>
     public string FolderOf(Recording recording) =>
-        Path.GetDirectoryName(Paths.Resolve(recording.Detail) ?? Paths.Resolve(recording.Audio)
-                              ?? throw new InvalidOperationException($"Take #{recording.Id} has no folder."))!;
+        Path.GetDirectoryName(_storage.LocalPath(TakeOf(recording), TakeJson)
+                              ?? throw new InvalidOperationException("This storage has no folders."))!;
 
-    private string? SeriesFileOf(Recording recording) =>
-        Paths.Resolve(recording.Detail) is { } detail ? Path.Combine(Path.GetDirectoryName(detail)!, SeriesJson) : null;
+    /// <summary>The take's name in the storage (its folder's name), from its paths.</summary>
+    private static string TakeOf(Recording recording) =>
+        (Locate(recording.Detail) ?? Locate(recording.Audio))?.Take
+        ?? throw new InvalidOperationException($"Take #{recording.Id} has no folder.");
+
+    private static string? SeriesTakeOf(Recording recording) => Locate(recording.Detail)?.Take;
+
+    /// <summary>"takes/&lt;take&gt;/&lt;file&gt;" → (take, file); null for anything else (also anything leaving the takes folder).</summary>
+    private static (string Take, string File)? Locate(string? relative)
+    {
+        if (string.IsNullOrWhiteSpace(relative)) return null;
+        var parts = relative.Replace('\\', '/').Split('/');
+        if (parts.Length != 3 || parts[0] != TakesFolder) return null;
+        if (parts[1] is "" or "." or ".." || parts[2] is "" or "." or "..") return null;
+        return (parts[1], parts[2]);
+    }
 
     // ---- reading ----
 
@@ -213,68 +231,64 @@ public sealed class RecordingStore
     {
         var takes = new List<Recording>();
         var unreadable = new List<string>();
-        if (Directory.Exists(Paths.TakesDir))
+        var seen = new HashSet<int>();
+        var renumber = new List<(string Take, TakeExport Export)>();
+        // Name order: the zero-padded id prefix keeps the original of a copied duplicate first.
+        foreach (var take in _storage.ListTakes().Order(StringComparer.Ordinal))
         {
-            var seen = new HashSet<int>();
-            var renumber = new List<(string Folder, TakeExport Take)>();
-            // Name order: the zero-padded id prefix keeps the original of a copied duplicate first.
-            foreach (var folder in Directory.GetDirectories(Paths.TakesDir).Order(StringComparer.Ordinal))
+            if (!_storage.Exists(take, TakeJson)) continue; // not a take (yet)
+            TakeExport? export;
+            try
             {
-                var json = Path.Combine(folder, TakeJson);
-                if (!File.Exists(json)) continue; // not a take (yet)
-                TakeExport? take;
-                try
-                {
-                    using var stream = File.OpenRead(json);
-                    take = TimbratuneJson.ReadExport(stream);
-                }
-                catch (Exception)
-                {
-                    take = null;
-                }
-                if (take is null)
-                {
-                    unreadable.Add(Path.GetFileName(folder));
-                    continue;
-                }
-                if (take.Take.Id <= 0 || !seen.Add(take.Take.Id))
-                {
-                    renumber.Add((folder, take)); // e.g. a take folder copied in from another device
-                    continue;
-                }
-                takes.Add(ToRecording(folder, take));
+                using var stream = _storage.OpenRead(take, TakeJson);
+                export = TimbratuneJson.ReadExport(stream);
             }
-            foreach (var (folder, take) in renumber)
+            catch (Exception)
             {
-                take.Take.Id = Math.Max(seen.DefaultIfEmpty(0).Max(), takes.Select(t => t.Id).DefaultIfEmpty(0).Max()) + 1;
-                seen.Add(take.Take.Id);
-                try
-                {
-                    WriteExportJson(Path.Combine(folder, TakeJson), take);
-                }
-                catch (IOException)
-                {
-                    // read-only: it still shows, under the new id, until the next start
-                }
-                takes.Add(ToRecording(folder, take));
+                export = null;
             }
+            if (export is null)
+            {
+                unreadable.Add(take);
+                continue;
+            }
+            if (export.Take.Id <= 0 || !seen.Add(export.Take.Id))
+            {
+                renumber.Add((take, export)); // e.g. a take folder copied in from another device
+                continue;
+            }
+            takes.Add(ToRecording(take, export));
+        }
+        foreach (var (take, export) in renumber)
+        {
+            export.Take.Id = Math.Max(seen.DefaultIfEmpty(0).Max(), takes.Select(t => t.Id).DefaultIfEmpty(0).Max()) + 1;
+            seen.Add(export.Take.Id);
+            try
+            {
+                WriteExportJson(take, export);
+            }
+            catch (IOException)
+            {
+                // read-only: it still shows, under the new id, until the next start
+            }
+            takes.Add(ToRecording(take, export));
         }
         Unreadable = unreadable;
         takes.Sort((a, b) => a.Id.CompareTo(b.Id));
         return takes;
     }
 
-    private Recording ToRecording(string folder, TakeExport take)
+    private Recording ToRecording(string take, TakeExport export)
     {
-        var r = take.Metrics;
-        r.Id = take.Take.Id;
-        r.Label = take.Take.Label ?? "";
-        r.Note = take.Take.Note ?? "";
-        r.Date = take.Take.Date ?? "";
-        r.RecordedAt = take.Take.RecordedAt ?? AudioTime(folder, r.Date);
-        r.DurationS = take.Take.DurationS ?? r.DurationS;
-        r.SourceFile = take.Take.SourceFile ?? "";
-        SetPaths(r, folder);
+        var r = export.Metrics;
+        r.Id = export.Take.Id;
+        r.Label = export.Take.Label ?? "";
+        r.Note = export.Take.Note ?? "";
+        r.Date = export.Take.Date ?? "";
+        r.RecordedAt = export.Take.RecordedAt ?? AudioTime(take, r.Date);
+        r.DurationS = export.Take.DurationS ?? r.DurationS;
+        r.SourceFile = export.Take.SourceFile ?? "";
+        SetPaths(r, take);
         return r;
     }
 
@@ -282,35 +296,29 @@ public sealed class RecordingStore
     /// For takes saved before the time was kept: the audio file's time, when it's on the take's
     /// date (the WAV is written as the take is recorded, and moving it keeps its time).
     /// </summary>
-    private static string? AudioTime(string folder, string date)
-    {
-        var audio = Path.Combine(folder, AudioName);
-        if (!File.Exists(audio)) return null;
-        var written = File.GetLastWriteTime(audio);
-        return written.ToString("yyyy-MM-dd") == date ? Recording.Timestamp(written) : null;
-    }
+    private string? AudioTime(string take, string date) =>
+        _storage.LastWriteTime(take, AudioName) is { } written && written.ToString("yyyy-MM-dd") == date
+            ? Recording.Timestamp(written)
+            : null;
 
-    private void SetPaths(Recording r, string folder)
+    private void SetPaths(Recording r, string take)
     {
-        var relative = Path.GetRelativePath(Paths.Root, folder).Replace('\\', '/');
-        r.Audio = File.Exists(Path.Combine(folder, AudioName)) ? $"{relative}/{AudioName}" : null;
-        r.Detail = $"{relative}/{DetailJson}";
+        r.Audio = _storage.Exists(take, AudioName) ? $"{TakesFolder}/{take}/{AudioName}" : null;
+        r.Detail = $"{TakesFolder}/{take}/{DetailJson}";
     }
 
     private int NextIdUnlocked() => ScanUnlocked().Select(r => r.Id).DefaultIfEmpty(0).Max() + 1;
 
+    private string ReadText(string take, string file)
+    {
+        using var reader = new StreamReader(_storage.OpenRead(take, file), Encoding.UTF8);
+        return reader.ReadToEnd();
+    }
+
     // ---- writing ----
 
-    /// <summary>A new, empty folder "NNN label" (made unique if needed).</summary>
-    private string NewFolderUnlocked(int id, string? label)
-    {
-        Directory.CreateDirectory(Paths.TakesDir);
-        var name = $"{id:000} {SafeName(label)}".TrimEnd();
-        var folder = Path.Combine(Paths.TakesDir, name);
-        for (var n = 2; Directory.Exists(folder); n++) folder = Path.Combine(Paths.TakesDir, $"{name} ({n})");
-        Directory.CreateDirectory(folder);
-        return folder;
-    }
+    /// <summary>A new, empty take "NNN label" (made unique if needed).</summary>
+    private string NewTakeUnlocked(int id, string? label) => _storage.CreateTake($"{id:000} {SafeName(label)}".TrimEnd());
 
     /// <summary>A label as part of a folder name: no path or reserved characters, at most 40 characters.</summary>
     public static string SafeName(string? label)
@@ -323,61 +331,46 @@ public sealed class RecordingStore
     }
 
     // take.json last: a folder without it isn't listed, so a half-written take never shows.
-    private void WriteTakeUnlocked(string folder, Recording entry, RecordingDetail detail, TakeSeries? series)
+    private void WriteTakeUnlocked(string take, Recording entry, RecordingDetail detail, TakeSeries? series)
     {
-        WriteText(Path.Combine(folder, DetailJson), TimbratuneJson.WriteDetail(detail));
-        if (series is not null) WriteSeries(Path.Combine(folder, SeriesJson), series);
-        WriteTakeJsonUnlocked(folder, entry, detail);
+        WriteText(take, DetailJson, TimbratuneJson.WriteDetail(detail));
+        if (series is not null) WriteSeries(take, series);
+        WriteTakeJsonUnlocked(take, entry, detail);
     }
 
-    private static void WriteTakeJsonUnlocked(string folder, Recording entry, RecordingDetail detail)
+    private void WriteTakeJsonUnlocked(string take, Recording entry, RecordingDetail detail)
     {
-        var audio = Path.Combine(folder, AudioName);
-        WriteExportJson(Path.Combine(folder, TakeJson), TakeArchive.Describe(entry, detail, File.Exists(audio) ? audio : null, keepSource: true));
+        Func<Stream>? audio = _storage.Exists(take, AudioName) ? () => _storage.OpenRead(take, AudioName) : null;
+        WriteExportJson(take, TakeArchive.Describe(entry, detail, audio, keepSource: true));
     }
 
-    private static void WriteExportJson(string path, TakeExport take)
-    {
-        var tmp = path + ".tmp";
-        using (var stream = File.Create(tmp)) TimbratuneJson.WriteExport(stream, take);
-        File.Move(tmp, path, overwrite: true);
-    }
+    private void WriteExportJson(string take, TakeExport export) =>
+        _storage.Write(take, TakeJson, stream => TimbratuneJson.WriteExport(stream, export));
 
     // Streamed to the file (the lists can be a few MB as text) and written then renamed.
-    private static void WriteSeries(string path, TakeSeries series)
-    {
-        var tmp = path + ".tmp";
-        using (var stream = File.Create(tmp)) TimbratuneJson.WriteSeries(stream, series);
-        File.Move(tmp, path, overwrite: true);
-    }
+    private void WriteSeries(string take, TakeSeries series) =>
+        _storage.Write(take, SeriesJson, stream => TimbratuneJson.WriteSeries(stream, series));
 
-    private static void WriteText(string path, string text)
-    {
-        var tmp = path + ".tmp";
-        File.WriteAllText(tmp, text, Utf8NoBom);
-        File.Move(tmp, path, overwrite: true);
-    }
+    private void WriteText(string take, string file, string text) =>
+        _storage.Write(take, file, stream => stream.Write(Utf8NoBom.GetBytes(text)));
 
-    private void TryDeleteFolder(string folder)
+    private void TryDeleteTake(string take)
     {
-        // Only ever a folder directly inside takes/.
-        if (!string.Equals(Path.GetDirectoryName(Path.GetFullPath(folder)), Path.GetFullPath(Paths.TakesDir), StringComparison.OrdinalIgnoreCase))
-            return;
         try
         {
-            Directory.Delete(folder, recursive: true);
+            _storage.DeleteTake(take);
         }
         catch (IOException)
         {
             // locked by a player: take.json goes at least, so it no longer shows
-            try { File.Delete(Path.Combine(folder, TakeJson)); } catch (IOException) { }
+            try { _storage.DeleteFile(take, TakeJson); } catch (IOException) { }
         }
         catch (UnauthorizedAccessException)
         {
         }
     }
 
-    // ---- the layout before 0.2.0 ----
+    // ---- the layout before 0.2.0 (only ever in a data folder on disk) ----
 
     /// <summary>
     /// recordings.json + audio/NNN.wav + analysis/&lt;id&gt;.json(+ .series.json) → one folder per
@@ -418,9 +411,9 @@ public sealed class RecordingStore
             var oldId = r.Id;
             if (r.Id <= 0 || used.Contains(r.Id)) r.Id = used.DefaultIfEmpty(0).Max() + 1;
             used.Add(r.Id);
-            var folder = NewFolderUnlocked(r.Id, r.Label);
-            if (audio is not null && File.Exists(audio)) File.Move(audio, Path.Combine(folder, AudioName));
-            WriteTakeUnlocked(folder, r, detail ?? new RecordingDetail(), series);
+            var take = NewTakeUnlocked(r.Id, r.Label);
+            if (audio is not null && File.Exists(audio)) _storage.MoveIn(take, AudioName, audio);
+            WriteTakeUnlocked(take, r, detail ?? new RecordingDetail(), series);
             if (detailPath is not null) TryDeleteFile(detailPath);
             TryDeleteFile(seriesPath);
             TryDeleteFile(Path.Combine(Paths.AnalysisDir, $"{oldId}-insight.json"));

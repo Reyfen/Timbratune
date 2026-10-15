@@ -8,6 +8,7 @@ using Reyfen.Timbratune.Core.Domain;
 using Reyfen.Timbratune.Core.Json;
 using Reyfen.Timbratune.Core.Models;
 using Reyfen.Timbratune.Core.Storage;
+using Reyfen.Timbratune.Core.Storage.Settings;
 using Reyfen.Timbratune.Diagnostics;
 using Reyfen.Timbratune.Services;
 using Reyfen.Timbratune.Shared;
@@ -25,6 +26,7 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly IFileSharer? _sharer;
     private readonly IFeatureFlags _flags;
     private readonly IPlatformInfo _platform;
+    private readonly ISettings _settings;
     private readonly string? _referenceDir;
     private readonly HashSet<int> _backfilling = [];
     private readonly TakeImporter _importer;
@@ -34,8 +36,9 @@ public sealed partial class MainViewModel : ObservableObject
     /// <param name="sharer">The share sheet, where the platform has one (then takes are shared instead of saved).</param>
     public MainViewModel(RecordingStore store, IAnalysisEngine engine, IAudioRecorder recorder, PlaybackService playback,
         IFileDialogs dialogs, TakeImporter importer, IFeatureFlags flags, IPlatformInfo platform, IPermissions permissions,
-        IThreadPriority threadPriority, ReferenceVoiceFolder referenceVoices, IFileSharer? sharer = null)
+        IAnalysisScheduler scheduler, ReferenceVoiceFolder referenceVoices, ISettings settings, IFileSharer? sharer = null)
     {
+        _settings = settings;
         _store = store;
         _engine = engine;
         _playback = playback;
@@ -45,7 +48,7 @@ public sealed partial class MainViewModel : ObservableObject
         _platform = platform;
         _referenceDir = referenceVoices.Path;
         _importer = importer;
-        Record = new RecordViewModel(recorder, engine, store, () => ReloadAsync(selectLatest: true), permissions, threadPriority, flags);
+        Record = new RecordViewModel(recorder, engine, store, () => ReloadAsync(selectLatest: true), permissions, scheduler, flags, settings);
         OpenMetricCommand = new RelayCommand<MetricKey>(OpenMetric);
         // An import's note is about the takes list; a new recording makes it old news.
         Record.PropertyChanged += (_, e) =>
@@ -262,6 +265,7 @@ public sealed partial class MainViewModel : ObservableObject
         app.RequestedThemeVariant = app.ActualThemeVariant == Avalonia.Styling.ThemeVariant.Dark
             ? Avalonia.Styling.ThemeVariant.Light
             : Avalonia.Styling.ThemeVariant.Dark;
+        _settings.Set(ShellSettings.Theme, ShellSettings.NameOf(app.RequestedThemeVariant));
     }
 
     /// <summary>

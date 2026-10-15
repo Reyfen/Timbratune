@@ -89,7 +89,7 @@ public sealed class TakeImporter(RecordingStore store, IAnalysisEngine engine, I
         var ext = Path.GetExtension(path).ToLowerInvariant();
         try
         {
-            if (ext is ".mp3" or ".flac") File.Move(path, Path.Combine(store.FolderOf(take), "source" + ext));
+            if (ext is ".mp3" or ".flac") store.MoveIntoTake(take, "source" + ext, path);
             else File.Delete(path);
         }
         catch (IOException)

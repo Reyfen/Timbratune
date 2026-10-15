@@ -6,21 +6,37 @@ namespace Reyfen.Timbratune.Core.Audio;
 /// <summary>Minimal PCM WAV writer/reader — enough for our own recordings.</summary>
 public sealed class WavWriter : IDisposable
 {
-    private readonly FileStream _stream;
+    private readonly Stream _stream;
+    private readonly string? _path;
+    private readonly bool _leaveOpen;
     private readonly int _sampleRate;
     private readonly short _channels;
     private long _dataBytes;
     private bool _disposed;
 
     public WavWriter(string path, int sampleRate, int channels = 1)
+        : this(new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read), sampleRate, channels)
     {
+        _path = ((FileStream)_stream).Name;
+    }
+
+    /// <summary>
+    /// Writes to <paramref name="stream"/> (seekable: the header's sizes are patched on dispose),
+    /// e.g. one a storage without file paths provides. The stream is closed on dispose unless
+    /// <paramref name="leaveOpen"/>.
+    /// </summary>
+    public WavWriter(Stream stream, int sampleRate, int channels = 1, bool leaveOpen = false)
+    {
+        if (!stream.CanSeek || !stream.CanWrite) throw new ArgumentException("The WAV stream must be writable and seekable.", nameof(stream));
+        _stream = stream;
+        _leaveOpen = leaveOpen;
         _sampleRate = sampleRate;
         _channels = (short)channels;
-        _stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read);
         WriteHeader(); // placeholder sizes, patched on dispose
     }
 
-    public string Path => _stream.Name;
+    /// <summary>The file being written; only for a writer made with a path.</summary>
+    public string Path => _path ?? throw new InvalidOperationException("This WAV is written to a stream, not a file.");
     public TimeSpan Duration => TimeSpan.FromSeconds((double)_dataBytes / (2 * _channels * _sampleRate));
 
     /// <summary>The PCM16 value a float sample (−1..1) is stored as.</summary>
@@ -49,6 +65,12 @@ public sealed class WavWriter : IDisposable
     public static void Truncate(string path, int sampleCount)
     {
         using var stream = new FileStream(path, FileMode.Open, FileAccess.ReadWrite);
+        Truncate(stream, sampleCount);
+    }
+
+    /// <summary><see cref="Truncate(string, int)"/> on an open, seekable stream holding such a WAV.</summary>
+    public static void Truncate(Stream stream, int sampleCount)
+    {
         var dataBytes = Math.Min((long)sampleCount * 2, Math.Max(0, stream.Length - 44));
         stream.SetLength(44 + dataBytes);
         Span<byte> size = stackalloc byte[4];
@@ -66,7 +88,8 @@ public sealed class WavWriter : IDisposable
         _disposed = true;
         _stream.Position = 0;
         WriteHeader();
-        _stream.Dispose();
+        if (_leaveOpen) _stream.Flush();
+        else _stream.Dispose();
     }
 
     private void WriteHeader()
