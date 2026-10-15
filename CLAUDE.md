@@ -27,8 +27,9 @@
 | `src/Reyfen.Timbratune` | Avalonia UI library (CommunityToolkit.Mvvm). Key: `ViewModels/RecordViewModel.cs`, `ViewModels/LiveTimelinesViewModel.cs`, `ViewModels/TakeViewModel.cs`, `Analysis/RecentWindow.cs` (live smoothing/prediction), `Controls/TimelineChart.cs`, `Controls/ContourChart.cs`, `Themes/Styles.axaml`, `Features.cs` (feature flags, version, links). |
 | `src/Reyfen.Timbratune.Desktop` | Desktop head (Windows/Linux/macOS); `--import file.wav|.mp3|.flac|.tmbr --label "…"`. Publish profiles in `Properties/PublishProfiles/`. |
 | `src/Reyfen.Timbratune.Android` | Android head. **Not in `Timbratune.slnx`** so the solution builds without the Android workload. |
-| `tests/` | Acoustics tests (synthetic, Praat oracle, streaming) and Core tests (parity with `analyze.py` on VCTK fixtures, live-vs-saved). |
+| `tests/` | Acoustics tests (synthetic, Praat oracle, streaming), Core tests (parity with `analyze.py` on VCTK fixtures, live-vs-saved, golden snapshots in `Golden/`) and architecture tests (dependency rules of `REFACTOR-PLAN.md`). |
 | `tools/live-steadiness` | Dev tool measuring how steady and accurate the live dots are. |
+| `tools/analysis-bench` | Dev tool timing the full and live analysis and counting allocations; `-baseline baseline-p0.json` checks the refactoring gate (HANDOFF §8i). |
 | `tools/noise-bench` | Dev tool: noisy and degraded copies of the fixtures, candidate clean-up chains, analysis and scoring (see `NOISE-PLAN.md`). |
 | `scripts/` | `fetch-praat.ps1`, `make-long-wav.ps1`, `screenshot.ps1` (Windows UI checks), `linux-ui.sh`, `package-linux.sh`, `make-emoji-font.py` (re-run when adding emoji to the UI). |
 

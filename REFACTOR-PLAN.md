@@ -1,6 +1,6 @@
 # Timbratune refactoring plan
 
-*Status:* agreed 2026-10-15, not started.
+*Status:* agreed 2026-10-15; P0 in progress (all but the phone baselines, HANDOFF §8i).
 *Base:* `dev/v0.2.1` at `2b33f06`.
 *Work branch:* `dev/v0.3.0`.
 
@@ -576,10 +576,12 @@ Every phase ends with:
 Ask the owner before each commit.
 
 - [ ] **P0. Safety net.**
-  - Golden snapshot tests: `take.json`, `detail.json`, `series.json` and the final live snapshot for each VCTK fixture.
-  - Reflection-based architecture tests (the rules in §1.1, §5 and §7).
-  - `tools/analysis-bench`.
-  - Baselines: bench numbers, `tools/live-steadiness`, Pixel 9 and 4a frame times. Record them in HANDOFF.
+  - [x] Golden snapshot tests: `take.json`, `detail.json`, `series.json` and the final live snapshot for each VCTK fixture.
+  - [x] Reflection-based architecture tests (the rules in §1.1, §5 and §7).
+  - [x] `tools/analysis-bench`.
+  - Baselines, recorded in HANDOFF §8i:
+    - [x] bench numbers (`tools/analysis-bench/baseline-p0.json`) and `tools/live-steadiness`;
+    - [ ] Pixel 9 and 4a frame times (needs the owner's phones; before P5 at the latest).
 - [ ] **P1. Infrastructure.**
   - MS.DI, `CompositionRoot`/`AddTimbratune()`, `ViewLocator`.
   - `Shared/Navigation`, `Messaging`, `State`, `Platform`.

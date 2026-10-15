@@ -2,7 +2,7 @@
 
 This file brings a new engineer or agent up to date on everything done so far: what the user asked for, what was decided and why, how the code is organised, what was measured, and what is still open.
 
-Last updated 2026-10-10. The newest work is §8d–§8h (v0.2.0: Android performance, export, one folder per take, import, `build.ps1`); §8 is the current state.
+Last updated 2026-10-15. The newest work is §8i (refactoring P0: golden, architecture and bench baselines); §8d–§8h cover v0.2.0 (Android performance, export, one folder per take, import, `build.ps1`); §8 is the current state.
 
 **Name:** the project is **Timbratune — Gender Voice Analysis Tool**, by **Reyfen**.
 - **Before 2026-10-02 it was called Euphonia**, and it is a fork of [Euphonia](https://github.com/Yuuzulight/Euphonia). Older parts of this file and of the transcript say "Euphonia" and "Euphonia-CSharp"; read those as Timbratune and the repo root (the code moved from `Timbratune/` to the root on 2026-10-06).
@@ -252,7 +252,7 @@ Two takes (voice-take-8/9, noisy: 6–12 kHz hiss about as loud as the voice) sh
 ```powershell
 cd C:\Projects\Reyfen\Timbratune
 dotnet build Timbratune.slnx
-dotnet test Timbratune.slnx                     # 121 tests; the Praat oracle tests skip without Praat
+dotnet test Timbratune.slnx                     # 148 tests; the Praat oracle tests skip without Praat
 dotnet run --project src/Reyfen.Timbratune.Desktop
 ./build.ps1 [win] [linux] [android]             # all published builds into publish/ (§8h)
 ```
@@ -272,6 +272,8 @@ UI check without a person:
 7. PrintWindow doesn't capture popups; select dropdown items with the keyboard (Down, Enter via SendKeys).
 
 Steadiness check: `cd tools/live-steadiness; dotnet run -c Release -- <tmp>\long.wav`
+
+Speed and allocation check (refactoring gate, §8i): `cd tools/analysis-bench; dotnet run -c Release -- -baseline baseline-p0.json`
 
 Shell gotchas on this machine:
 - Git Bash heredocs containing `'` inside a python `-c` can break. Write the script to a file and run it.
@@ -734,6 +736,47 @@ The user asked to drop `recordings.json`, so takes can be added and removed by h
   - WSL Ubuntu with PowerShell 7.6.6 in `~/.powershell` (tester, no sudo): win + linux built, android stopped with the workload message;
   - an unknown platform and a missing `dotnet` both give a message and exit 1.
 - **The take title's date and time** now has a dot between them: "08-Oct-26 · 14:03" (the device's short date and short time).
+
+## 8i. Refactoring P0: the safety net (2026-10-15)
+
+Branch `dev/v0.3.0`, phase P0 of `REFACTOR-PLAN.md` §9. No app code changed; this adds what the later phases are checked against. The base for every comparison is `4da741a` (the analysis code is unchanged since `07db82d`).
+
+- **Golden snapshots** (`tests/Reyfen.Timbratune.Core.Tests/GoldenTests.cs`, files in `Golden/`). For each VCTK fixture:
+  - the saved analysis as the store writes it: `<clip>.take.json` (the `Recording`), `.detail.json`, `.series.json`;
+  - the final live snapshot (`.live.json`: metrics, detail and the six live series), recorded the way the app does: irregular chunks, an update per 100 ms of audio, a full update every 10th, then the final update on the aligned length.
+  - Saved values must be identical; live values may move by at most 1e-7. Keys, their order and array lengths must match exactly.
+  - `TIMBRATUNE_UPDATE_GOLDEN=1` rewrites the files. Do that only on purpose, and say why in the commit.
+  - The files were made on Windows x64. Another OS's `libm` could change last digits; if the WSL run in P9 shows that, loosen the saved comparison for that case rather than regenerating.
+- **Architecture tests** (`tests/Reyfen.Timbratune.Architecture.Tests`, in the solution). A small IL scanner (`TypeReferences.cs`, reflection only) collects every type a type uses, from its signatures and method bodies; lambdas and async methods are covered through their nested compiler-generated types. Rules:
+  - Acoustics references only the .NET runtime; Core only Acoustics and the runtime.
+  - Acoustics, Core and the UI library reference nothing native-only (SoundFlow, Avalonia.Desktop/Android/Native/Win32/X11, Mono.Android, the `Audio.*` adapters, the heads).
+  - Under `Reyfen.Timbratune.Features.<X>`: no references to another feature. Outside `Features`, only `Reyfen.Timbratune.App` and `.Shell` may use features. Feature `*Manager`s never use Avalonia. Feature `*ViewModel`s never use `RecordingStore`, `File`, `Directory`, `FileInfo`, `DirectoryInfo` or `FileStream`.
+  - No `$parent[…]…DataContext` bindings in `src/Reyfen.Timbratune/Features/**/*.axaml`.
+  - Live analysis (Acoustics, Core, `Reyfen.Timbratune.Analysis`, `Features.LiveMonitor`, types named `Live*`) never uses analytics.
+  - The feature rules have nothing to check until P3 adds `Features/`. Positive controls (the scanner sees `VoiceReport` inside `LiveAnalyzer.Update`, and `RecordingStore` in `MainViewModel`'s async methods) keep them from passing by seeing nothing.
+  - P1 must rename the `Features` class (`Features.cs`) and move `App` out of the namespace `Reyfen.Timbratune` before folders with those names exist; the tests refer to `Reyfen.Timbratune.App` by type.
+- **`tools/analysis-bench`** (dev tool, not in the solution; Stopwatch and `GC.GetTotalAllocatedBytes(precise)`, no package). Without a WAV it builds the 27.6 s `long.wav` of `make-long-wav.ps1` from the fixtures. It measures the full analysis (`AnalyzeAsync`, all cores), then replays the take through `LiveAnalyzer` the way the app does: 10 ms chunks, an update every 100 ms (a full one every 10th), on one thread limited to 2 cores like `LiveWorker`, plus `LiveTimelinesViewModel.Compute` on each snapshot. It also prints SHA-256 hashes of the saved and live results. `-types` lists live allocations by type (an `AllocationTick` listener); `-out` writes the numbers; `-baseline` checks the gate.
+  - **Allocations aren't exactly repeatable:** `ArrayPool.Shared` keeps per-thread caches, so a run's allocations depend on which pool threads the loops land on. The full analysis varies 109–185 MB between runs, and its median by about 4 % between sessions. Live allocation is steady (median 8.857–8.858 MB/s in three sessions). The gate therefore allows +5 % on the full analysis' allocations and +1 % on the live ones. Time medians also move by about ±4 % between sessions on this machine, so re-run once before calling a miss.
+  - Run: `cd tools/analysis-bench; dotnet run -c Release -- -baseline baseline-p0.json`.
+
+**Baselines** (this machine: 24 cores, .NET 10.0.11, x64, Release; 27.6 s `long.wav`; medians of 10 runs; stored in `tools/analysis-bench/baseline-p0.json`):
+
+| Measure | Baseline |
+|---|---|
+| Full analysis | 356 ms; 154 MB allocated |
+| Live update, quick / full (per tick) | 9.6 / 9.7 ms |
+| Live updates, whole take (276 ticks + final) | 2,814 ms |
+| Live allocation (updates) | 8.86 MB per second of audio |
+| `LiveTimelinesViewModel.Compute`, whole take | 292 ms; 1.96 MB/s |
+| Result hashes | saved `504d74118fb5a222`, live `3d166b64c72ee99b` |
+
+Top live allocations by type (sampled): `double[]` 186 MB, `TimedValue[]` 36 MB, `(double, double)[]` 23 MB, `double?[]` 22 MB, `PitchCandidate[]` 17 MB per replay.
+
+**`tools/live-steadiness`** on `long.wav` (% of each graph's range: dot step / tail change / dot error, app settings): pitch 8.31 / 0.62 / 8.98, loudness 24.44 / 0.09 / 2.67, HNR 0.01 / 0.00 / 0.00, F2 0.01 / 0.00 / 0.00, F3 0.00 / 0.00 / 0.00, weight 0.00 / 0.00 / 0.00. These don't resemble §5.6 (for example loudness 6.65 there). HNR, F2, F3 and weight now find almost no current dot, which suggests the tool lags behind later smoothing changes (`BridgeGap`, the specs). It works as a before/after diff for the refactoring, but needs a look before its absolute numbers mean anything.
+
+**Not done: phone baselines.** The Pixel 9 and 4a frame times (Release profiling build, §8d) need the owner's phones over USB. They must be taken before P5, the first phase that touches the analysis.
+
+**Tests:** 148 pass with Praat (17 architecture, 57 acoustics, 74 core).
 
 ## 8. Current state, at the time of writing
 
