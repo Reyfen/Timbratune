@@ -219,6 +219,19 @@ These come from `tools/live-steadiness` on the 27.6 s take. Values are % of each
 
 The gains are real but small, about 5–10%.
 
+**Re-measured 2026-10-15** (`long.wav`, 27.6 s, after fixing the tool, §8i). Weight, HNR, loudness and pitch are unchanged. F2 and F3 moved because the formant loudness gate changed in v0.2.1 (§6a); with that gate set back to analyze.py's (`LoudOutlierFraction` 0) the tool gives exactly the F2 and F3 rows above. With the current gate:
+
+| Metric | Dot step, baseline → app | Tail change, baseline → app | Dot error, baseline → app |
+|---|---|---|---|
+| Pitch | 8.46 → 8.31 | 0.60 → 0.62 | 8.71 → 8.98 |
+| Loudness (holds) | 6.65 | 1.99 | 16.48 |
+| HNR | 4.00 → 3.83 | 1.48 → 1.53 | 8.90 → 9.54 |
+| F2 | 5.03 → 4.54 | 2.18 → 2.12 | 48.21 → 46.44 |
+| F3 | 0.69 → 0.73 | 0.34 → 0.35 | 4.48 → 4.26 |
+| Weight | 1.66 → 1.51 | 0.70 → 0.72 | 11.48 → 10.70 |
+
+With the new gate the trend no longer steadies F3's dot (0.69 → 0.73) but still makes it more accurate; for F2 it helps a little more than before.
+
 **Loudness.** Every prediction variant was worse on both measures; the first version made the dot step 6.65 → 9.29 and the error 16.5 → 25.8. Loudness follows syllables, so it holds instead.
 
 **Pitch:**
@@ -772,7 +785,7 @@ Branch `dev/v0.3.0`, phase P0 of `REFACTOR-PLAN.md` §9. No app code changed; th
 
 Top live allocations by type (sampled): `double[]` 186 MB, `TimedValue[]` 36 MB, `(double, double)[]` 23 MB, `double?[]` 22 MB, `PitchCandidate[]` 17 MB per replay.
 
-**`tools/live-steadiness`** on `long.wav` (% of each graph's range: dot step / tail change / dot error, app settings): pitch 8.31 / 0.62 / 8.98, loudness 24.44 / 0.09 / 2.67, HNR 0.01 / 0.00 / 0.00, F2 0.01 / 0.00 / 0.00, F3 0.00 / 0.00 / 0.00, weight 0.00 / 0.00 / 0.00. These don't resemble §5.6 (for example loudness 6.65 there). HNR, F2, F3 and weight now find almost no current dot, which suggests the tool lags behind later smoothing changes (`BridgeGap`, the specs). It works as a before/after diff for the refactoring, but needs a look before its absolute numbers mean anything.
+**`tools/live-steadiness`** on `long.wav` (% of each graph's range: dot step / tail change / dot error, app settings): pitch 8.31 / 0.62 / 8.98, loudness 6.65 / 1.99 / 16.48, HNR 3.83 / 1.53 / 9.54, F2 4.54 / 2.12 / 46.44, F3 0.73 / 0.35 / 4.26, weight 1.51 / 0.72 / 10.70 (baseline variant in §5.6). The first P0 run gave loudness 24.44 and about 0 for HNR, F2, F3 and weight because the tool was broken, not the app: it kept every tick's snapshot and computed the lines after the last update, but since `b5d73f4` `LiveAnalyzer` refills two sets of series lists in turn, so all stored snapshots showed the last two updates' data. Pitch was unaffected (its frames are new on every update). The tool now computes each tick's lines right after its update, as the app does, and checks its "app" lines against `LiveTimelinesViewModel.Compute` on every tick (it prints a warning if they differ). It reproduces §5.6's numbers exactly when the formant gate is set back to the pre-§6a one. Checked tick by tick against the original tool on `82c5621` (the commit before the double buffering): with the old gate, the fixed tool on today's code and on `b5d73f4` gives the same 2,030 dots, bit-identical in time and value, in both variants.
 
 **Not done: phone baselines.** The Pixel 9 and 4a frame times (Release profiling build, §8d) need the owner's phones over USB. They must be taken before P5, the first phase that touches the analysis.
 
