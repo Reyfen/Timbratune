@@ -1,0 +1,8 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:lm="using:Reyfen.Timbratune.Features.LiveMonitor"
+             x:Class="Reyfen.Timbratune.Features.LiveMonitor.LiveWindowPickerView"
+             x:DataType="lm:LiveMonitorViewModel">
+  <!-- "whole take / last 10 s / …": how much of the take the live graphs show. -->
+  <ComboBox Classes="pill" ItemsSource="{Binding WindowOptions}" SelectedItem="{Binding LiveWindow}" MinWidth="150" />
+</UserControl>

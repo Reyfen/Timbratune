@@ -72,6 +72,8 @@ public sealed class DependencyRuleTests
         {
             var ns = type.Namespace ?? "";
             if (FeatureOf(ns) is not null || InNamespace(ns, "Reyfen.Timbratune.App") || InNamespace(ns, "Reyfen.Timbratune.Shell")) continue;
+            // Avalonia's compiled-XAML loaders (generated, they reach every view) and namespace-less compiler types.
+            if (ns.Length == 0 || InNamespace(ns, "CompiledAvaloniaXaml")) continue;
             violations.AddRange(TypeReferences.Of(type).Where(u => FeatureOf(Namespace(u)) is not null).Select(u => $"{type.FullName} → {u}"));
         }
         Assert.Empty(violations);
@@ -156,9 +158,13 @@ public sealed class DependencyRuleTests
         Assert.Contains("Reyfen.Timbratune.Acoustics.Streaming.LivePitchTracker", used);
         Assert.Contains("Reyfen.Timbratune.Acoustics.Voice.VoiceReport", used);
         // Lambdas and async methods live in nested compiler-generated types.
-        var ui = UiTypes().Where(t => Outermost(t).FullName == "Reyfen.Timbratune.ViewModels.MainViewModel").SelectMany(TypeReferences.Of).ToHashSet();
-        Assert.Contains("Reyfen.Timbratune.Core.Storage.RecordingStore", ui);
-        Assert.Contains(ui, u => u.StartsWith("Avalonia", StringComparison.Ordinal) || u.StartsWith("CommunityToolkit", StringComparison.Ordinal));
+        // TakeActionsManager uses TakeArchive only in a lambda inside an async method (closure and state machine types).
+        var manager = UiTypes().Where(t => Outermost(t).FullName == "Reyfen.Timbratune.Features.TakeActions.TakeActionsManager")
+            .SelectMany(TypeReferences.Of).ToHashSet();
+        Assert.Contains("Reyfen.Timbratune.Core.Storage.TakeArchive", manager);
+        // And the feature rules see feature types at all: the Shell uses them.
+        var shell = UiTypes().Where(t => Outermost(t).FullName == "Reyfen.Timbratune.Shell.ShellViewModel").SelectMany(TypeReferences.Of).ToHashSet();
+        Assert.Contains(shell, u => u.StartsWith("Reyfen.Timbratune.Features.", StringComparison.Ordinal));
     }
 
     [Fact]

@@ -1,0 +1,9 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:im="using:Reyfen.Timbratune.Features.Import"
+             x:Class="Reyfen.Timbratune.Features.Import.ImportButtonView"
+             x:DataType="im:ImportViewModel">
+  <Button Classes="outline" Margin="0,0,10,6" Content="📥 import"
+          ToolTip.Tip="add takes from audio files (.wav, .mp3, .flac) or Timbratune files (.tmbr)"
+          Command="{Binding ImportCommand}" IsEnabled="{Binding !IsImporting}" />
+</UserControl>

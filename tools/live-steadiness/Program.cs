@@ -12,10 +12,9 @@
 // the update after next. Keeping all snapshots and reading them at the end measured the
 // last update's data over and over (dots ≈ 0, loudness 24 %). The "app" lines are checked
 // against LiveTimelinesViewModel.Compute on every tick, so the tool can't drift from it.
-using Reyfen.Timbratune.Analysis;
+using Reyfen.Timbratune.Features.LiveMonitor;
 using Reyfen.Timbratune.Core.Analysis;
 using Reyfen.Timbratune.Core.Models;
-using Reyfen.Timbratune.ViewModels;
 using System.Globalization;
 
 if (args.Length < 1)

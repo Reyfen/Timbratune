@@ -1,0 +1,8 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:im="using:Reyfen.Timbratune.Features.Import"
+             x:Class="Reyfen.Timbratune.Features.Import.ImportStatusView"
+             x:DataType="im:ImportStatusViewModel"
+             IsVisible="{Binding HasText}">
+  <TextBlock Classes="cap" TextWrapping="Wrap" Text="{Binding Text}" />
+</UserControl>

@@ -12,11 +12,8 @@ public abstract class RouterBase(IOverlayHost overlays)
     /// <summary>Shows <paramref name="overlay"/> in front.</summary>
     protected void Open(object overlay) => Overlays.Push(overlay);
 
-    /// <summary>Closes <paramref name="overlay"/> if it is open; disposes it when it is disposable.</summary>
-    protected void Close(object overlay)
-    {
-        if (Overlays.Close(overlay) && overlay is IDisposable disposable) disposable.Dispose();
-    }
+    /// <summary>Closes <paramref name="overlay"/> if it is open (the host disposes it).</summary>
+    protected void Close(object overlay) => Overlays.Close(overlay);
 
     /// <summary>Closes every overlay of type <typeparamref name="T"/> (one dialog of a kind at a time).</summary>
     protected void CloseAll<T>() where T : class

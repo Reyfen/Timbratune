@@ -2,7 +2,7 @@
 
 This file brings a new engineer or agent up to date on everything done so far: what the user asked for, what was decided and why, how the code is organised, what was measured, and what is still open.
 
-Last updated 2026-10-15. The newest work is §8i–§8k (refactoring P0: golden, architecture and bench baselines; P1: dependency injection and shared ports; P2: storage, settings and scheduling seams); §8d–§8h cover v0.2.0 (Android performance, export, one folder per take, import, `build.ps1`); §8 is the current state.
+Last updated 2026-10-15. The newest work is §8i–§8l (refactoring P0: golden, architecture and bench baselines; P1: dependency injection and shared ports; P2: storage, settings and scheduling seams; P3: UI feature modules); §8d–§8h cover v0.2.0 (Android performance, export, one folder per take, import, `build.ps1`); §8 is the current state.
 
 **Name:** the project is **Timbratune — Gender Voice Analysis Tool**, by **Reyfen**.
 - **Before 2026-10-02 it was called Euphonia**, and it is a fork of [Euphonia](https://github.com/Yuuzulight/Euphonia). Older parts of this file and of the transcript say "Euphonia" and "Euphonia-CSharp"; read those as Timbratune and the repo root (the code moved from `Timbratune/` to the root on 2026-10-06).
@@ -74,6 +74,8 @@ Each metric is placed in zones (masculine / neutral / feminine, and others).
 18. **One `build.ps1`** instead of `.bat` + `.sh`, a pre-emptive fix for "Android SDK directory could not be found", and finding why the user's builds didn't see the SDK (§8h).
 
 ## 4. Codebase map (repo root)
+
+> Since the refactoring (2026-10-15) the UI library is organised by feature: `Features/<Name>/`, `Shared/`, `Shell/`, `App/` (§8j–§8l, and the CLAUDE.md layout table). The `ViewModels/…` and `Views/…` paths below are from before that; the classes kept their names, except `MainViewModel`/`MainView` → `Shell/ShellViewModel`/`ShellView` and `RecordingItemViewModel` → `Features/TakeLibrary/TakeCardViewModel` (its dialog part is `Features/TakeActions/TakeDialogViewModel`). `Analysis/LiveWorker.cs` is in Core now; `Analysis/RecentWindow.cs` is in `Features/LiveMonitor/`.
 
 | Project | Role |
 |---|---|
@@ -265,7 +267,7 @@ Two takes (voice-take-8/9, noisy: 6–12 kHz hiss about as loud as the voice) sh
 ```powershell
 cd C:\Projects\Reyfen\Timbratune
 dotnet build Timbratune.slnx
-dotnet test Timbratune.slnx                     # 184 tests; the Praat oracle tests skip without Praat
+dotnet test Timbratune.slnx                     # 189 tests; the Praat oracle tests skip without Praat
 dotnet run --project src/Reyfen.Timbratune.Desktop
 ./build.ps1 [win] [linux] [android]             # all published builds into publish/ (§8h)
 ```
@@ -857,6 +859,60 @@ Phase P2 of `REFACTOR-PLAN.md`. The only user-visible change: the theme toggle a
   - **Desktop:** theme toggle → `settings.device.json` → restart in light; a stored 30 s window comes back as "last 30 s"; record (fake mic) and stop & analyze.
   - **Android emulator (Debug):** the theme kept across a force-stop, the file in `files/`, record and stop & analyze (take saved).
 - **A slip during the checks:** one restarted desktop instance lacked `TIMBRATUNE_FAKE_MIC` (each tool call is a new shell), so Record captured ~26 s of the real microphone. It was killed before Stop, nothing was analyzed or saved, and the temporary WAV was deleted. CLAUDE.md now says to set the variable in the same command as every launch.
+
+## 8l. Refactoring P3: UI feature modules (2026-10-15)
+
+Phase P3 of `REFACTOR-PLAN.md`. No user-visible change except the two small ones listed at the end.
+
+**Layout** (`src/Reyfen.Timbratune`):
+- `Features/<Name>/`: each has its View(s), ViewModel(s), a Manager where there are use cases, a Router where it opens overlays, and `Add<Name>Feature()`:
+  - `CheatSheet`: the view only.
+  - `About`: the footer (takes folder, credits).
+  - `TakeActions`: the take dialog (`TakeDialogViewModel`), `TakeActionsManager` (save or share audio, .tmbr export with the series backfill, rename, delete), `TakeActionsRouter`.
+  - `MetricCompare`: `MetricModalViewModel`, `MetricCompareManager` (reference voices, audio paths), `MetricCompareRouter`.
+  - `Import`: `ImportViewModel` (button) with `ImportStatusViewModel` (line), and `ImportManager` (picked and dropped files, the trend backfill).
+  - `TakeLibrary`: switcher and cards, `TakeCardViewModel`, `TakeLibraryManager` (audio path, peaks).
+  - `TakeDetails`: `TakeDetailsViewModel` (the take in focus and the live take), `TakeViewModel`, `TakeDetailsManager`.
+  - `Record`: `RecordViewModel` (panel), `RecordingManager`, which is the `ILiveSession`.
+  - `LiveMonitor`: `LiveMonitorViewModel`, `LiveTimelinesViewModel`, `RecentWindow`, the window picker.
+- **`Shell/`:** `ShellViewModel` and `ShellView` (were `MainViewModel` and `MainView`) only place the features. The Shell fills the record panel's slots (`IdleActions` = Import button, `WindowPicker` = LiveMonitor, `Footer` = import status), holds the overlay stack, the theme toggle and start-up. `MainWindow` hosts `ShellView`.
+- **`Shared/`:**
+  - `State/`: `ITakeCatalog`/`TakeCatalog` (the takes; reloaded by whichever manager changed them), `IActiveTakeService`/`ActiveTakeService` (picked take, or the newest; a vanished pick falls back), `ILiveSession`.
+  - `Navigation/`: `IOverlayHost`/`OverlayHost` (now disposes what it closes, so Esc, back and routers all clean up), `RouterBase`, `ITakeActionsLauncher`, `IMetricCompareLauncher`.
+  - `Messaging/`: new `TakeActionStatus` (a card's export or rename status), `TakeTrendsOutdated`, `RecordingStarted`.
+  - `ThrottledProgress`.
+- **Deleted:** `ViewModels/`, `Views/` and `Analysis/`. `LiveWorker` moved to Core in P2. The bridge-gap constant moved to `ContourChart` (a shared control mustn't read a feature).
+- **Namespace clash:** the Recording feature is `Features/Record`: a namespace `Features.Recording` hides the `Recording` model type in every sibling feature (C# resolves enclosing namespaces before `using`s).
+
+**How the old couplings were cut:**
+- **Cross-feature openers:** the `$parent[v:MainView]` bindings (import button and status, switcher chips) and the card's ancestor lookup became slots, the card's own `SelectCommand`, and launchers. A card opens its dialog through `ITakeActionsLauncher`; a stat card opens the comparison through `IMetricCompareLauncher`.
+- **Status and backfill through messages:** a card's export and rename status arrives as `TakeActionStatus`. TakeDetails asks for a trend backfill with `TakeTrendsOutdated`, and Import answers with `TakeAnalysisUpdated`.
+- **Overlays:** `Modal`, `TakeDialog` and `CloseModalCommand` became one overlay stack shown through the `ViewLocator`. Esc and Android's back close its front. One dialog of a kind at a time; reloading the takes closes a take dialog, as before.
+
+**The live path, now in `RecordingManager`** (it was `RecordViewModel`'s timer):
+- **Loop:** one update starts at most per 100 ms tick on `IAnalysisScheduler.RunLiveAsync`. After a slow update the next waits for the next tick, as the `DispatcherTimer` did. The loop runs off the UI thread (`ConfigureAwait(false)`) instead of hopping through it each tick.
+- **Full updates:** about once a second, and every tick until the first result, as before.
+- **Snapshots:** `SnapshotReady` is raised inside the live work item, on the live thread. LiveMonitor smooths there (`live.compute`) and posts only `Apply` (`live.apply`); TakeDetails posts the live take's update (`live.takeview`). The final snapshot is published on a pool thread, inside the final update's work item, so its smoothing is now off the UI thread as well.
+- **Profiling switches:** `liveslow`, `slowcharts` and `nolivetake` keep working, in the manager, LiveMonitor and TakeDetails respectively.
+- **Stop:** trim, final update, analyze and save happen in the manager. The panel goes idle, then `FinishAsync` reloads the takes, selects the new one, sends `TakeSaved` and ends the live views, in the old order.
+
+**Tests:** 189 pass with Praat (19 UI, 18 architecture, 57 acoustics, 95 core).
+- `RecordingManagerTests` replays `vctk_f294` in real time through the real manager (about 10 s): 99–100 snapshots for 9.8 s, about 11 with a result, live ticks on the "Live analysis" thread and the final one on a pool thread, monotonic progress. The take is saved, announced and selected, and the final live contour equals the saved one frame for frame.
+- `TakeStateTests` covers the catalog and selection.
+- The architecture rules now have features to check; they skip Avalonia's generated `CompiledAvaloniaXaml` loaders, which reference every view.
+
+**Checked:**
+- **A/B bench** against `859e98f`, alternating, 2 runs each: same within noise, identical hashes. The bench drives `LiveAnalyzer` directly, so the new loop's real-world cost is for the phone gates (P9).
+- **Desktop** (fake mic, test data folder):
+  - the metric comparison through the overlay stack, closed with ✕;
+  - a card's delete dialog: cancel, then a real delete; the list reloads and the selection is kept;
+  - selecting a card;
+  - recording the whole 27.6 s `long.wav` with live graphs and the live take's cards, Stop with the progress bar over the frozen live view, the new take selected and shown.
+- **Android emulator (Debug):** start, the comparison opened by tapping a stat card and closed with the back key (the app stays), record with live graphs, Stop, take saved.
+
+**User-visible differences** (small, on purpose):
+- "couldn't open the folder here · it's …" now shows under the folder link in the footer, not in the import line (that line belongs to Import now).
+- The live-window choice is stored as `liveMonitor.windowSeconds`. The unreleased P2 id `recording.liveWindowSeconds` is not read; it stays in the file as an unknown key.
 
 ## 8. Current state, at the time of writing
 

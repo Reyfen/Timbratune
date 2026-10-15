@@ -22,7 +22,7 @@ using Reyfen.Timbratune.Acoustics.Numerics;
 using Reyfen.Timbratune.Core.Analysis;
 using Reyfen.Timbratune.Core.Audio;
 using Reyfen.Timbratune.Core.Json;
-using Reyfen.Timbratune.ViewModels;
+using Reyfen.Timbratune.Features.LiveMonitor;
 
 CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
 CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;

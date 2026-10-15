@@ -1,6 +1,6 @@
 # Timbratune refactoring plan
 
-*Status:* agreed 2026-10-15; P0 done except the phone baselines (HANDOFF §8i); P1 and P2 done (HANDOFF §8j, §8k).
+*Status:* agreed 2026-10-15; P0 done except the phone baselines (HANDOFF §8i); P1, P2 and P3 done (HANDOFF §8j, §8k, §8l).
 *Base:* `dev/v0.2.1` at `2b33f06`.
 *Work branch:* `dev/v0.3.0`.
 
@@ -599,15 +599,22 @@ Ask the owner before each commit.
     - **Settings:** every setting is `Device`-scoped for now (the owner's answer to §12.5, 2026-10-15); scopes get decided per key with accounts. `ISettings` lives in Core (`Core/Storage/Settings`), beside the service that implements it, not in `Shared/State`. The two keys live in `ViewModels/AppSettings.cs` until their features exist (P3).
     - **Recorders:** they still write their WAV to a temporary file, and Stop still trims, analyzes and copies by path. The seams a stream-based recorder needs are in place (`WavWriter(Stream)`, `WavWriter.Truncate(Stream)`, `AnalyzeAsync(Stream|Sound)`); switching the Stop flow is left to the browser phase, where `Audio.Web` needs it.
     - **Storage outside `ITakeStorage`:** `DataPaths` (folder discovery, legacy moves), the old-layout conversion, and the importer's dropped-file scan and work folder stay on the file system: they only exist on native heads.
-- [ ] **P3. UI features, one per step:**
-  - [ ] CheatSheet + About
-  - [ ] TakeActions
-  - [ ] MetricCompare
-  - [ ] Import
-  - [ ] TakeLibrary
-  - [ ] TakeDetails
-  - [ ] Recording + LiveMonitor + `ILiveSession`
-  - [ ] Shell: `MainViewModel` becomes `ShellViewModel`; remove every `$parent[v:MainView]` binding and the ancestor lookup in `RecordingCardView`.
+- [x] **P3. UI features, one per step:**
+  - [x] CheatSheet + About
+  - [x] TakeActions
+  - [x] MetricCompare
+  - [x] Import
+  - [x] TakeLibrary
+  - [x] TakeDetails
+  - [x] Recording + LiveMonitor + `ILiveSession`
+  - [x] Shell: `MainViewModel` becomes `ShellViewModel`; remove every `$parent[v:MainView]` binding and the ancestor lookup in `RecordingCardView`.
+  - *As built (HANDOFF §8l):*
+    - **Order:** the page moved into the `Shell` namespace first, so the rule "only App and Shell see features" held at every step. TakeDetails, Recording/LiveMonitor and the Shell landed as one step, because the live take connects them.
+    - **Recording became `Features/Record`:** a namespace `Features.Recording` hides the `Recording` model type in every sibling feature.
+    - **Shared contracts:** `ITakeActionsLauncher` and `IMetricCompareLauncher` (`Shared/Navigation`); `ITakeCatalog`, `IActiveTakeService` and `ILiveSession` (`Shared/State`); the messages `TakeActionStatus`, `TakeTrendsOutdated` and `RecordingStarted`.
+    - **Record panel slots:** the Shell fills `IdleActions`, `WindowPicker` and `Footer` (the Import button, LiveMonitor's window choice, the import status).
+    - **Routers:** only the features that open overlays have one (TakeActions, MetricCompare).
+    - **Settings and layout:** the live-window setting moved with its feature (`liveMonitor.windowSeconds`, was `recording.liveWindowSeconds` in unreleased P2). The open-folder failure shows in the footer instead of the import line.
 - [ ] **P4. Import formats** (§4):
   - [ ] Decoding ports + catalog + sniffer + `AnalysisWavSink`, with the managed and miniaudio providers, so behaviour is unchanged.
   - [ ] Probed picker filters.

@@ -1,0 +1,31 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ab="using:Reyfen.Timbratune.Features.About"
+             x:Class="Reyfen.Timbratune.Features.About.AboutView"
+             x:DataType="ab:AboutViewModel">
+  <!-- The page's footer: tagline, the takes folder, credits. -->
+  <StackPanel Spacing="28">
+    <TextBlock Classes="cap" HorizontalAlignment="Center" TextAlignment="Center"
+               Text="made with 💗 · numbers are a compass, not a judge · your ears matter most" />
+    <StackPanel Spacing="4">
+      <!-- the takes folder: a link that opens it, or (Android) where to find it -->
+      <WrapPanel HorizontalAlignment="Center">
+        <TextBlock Classes="footnote" Text="your takes live in " />
+        <HyperlinkButton Classes="footlink" Content="{Binding DataFolder}" Command="{Binding OpenDataFolderCommand}"
+                         IsVisible="{Binding CanOpenDataFolder}" ToolTip.Tip="open the folder · drop audio or .tmbr files in it to import them" />
+        <TextBlock Classes="footnote" Text="{Binding DataFolderHint}" TextWrapping="Wrap"
+                   IsVisible="{Binding !CanOpenDataFolder}" />
+      </WrapPanel>
+      <TextBlock Classes="footnote" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
+                 Text="{Binding Status}" IsVisible="{Binding HasStatus}" />
+    </StackPanel>
+    <!-- credits: name, version, developer, and where it comes from (links open the browser) -->
+    <WrapPanel HorizontalAlignment="Center">
+      <TextBlock Classes="footnote" Text="{Binding CreditsText}" />
+      <TextBlock Classes="footnote" Text=" · a fork of " />
+      <HyperlinkButton Classes="footlink" Content="Euphonia" NavigateUri="{Binding EuphoniaUri}" />
+      <TextBlock Classes="footnote" Text=" · algorithms inspired by " />
+      <HyperlinkButton Classes="footlink" Content="Praat" NavigateUri="{Binding PraatUri}" />
+    </WrapPanel>
+  </StackPanel>
+</UserControl>

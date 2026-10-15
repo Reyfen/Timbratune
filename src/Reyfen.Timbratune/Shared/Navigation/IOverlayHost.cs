@@ -8,10 +8,13 @@ namespace Reyfen.Timbratune.Shared.Navigation;
 /// Esc and Android's back key close the top one. Features open and close overlays through
 /// their routers (<see cref="RouterBase"/>), never through each other.
 /// </summary>
-public interface IOverlayHost
+public interface IOverlayHost : System.ComponentModel.INotifyPropertyChanged
 {
     /// <summary>The overlay in front, or null when the page is uncovered.</summary>
     object? Top { get; }
+
+    /// <summary>Something is open over the page.</summary>
+    bool IsOpen { get; }
 
     /// <summary>All open overlays, bottom first.</summary>
     IReadOnlyList<object> Overlays { get; }
@@ -19,7 +22,7 @@ public interface IOverlayHost
     /// <summary>Puts <paramref name="overlay"/> in front (moving it there if it is already open).</summary>
     void Push(object overlay);
 
-    /// <summary>Removes <paramref name="overlay"/> wherever it is; false if it wasn't open.</summary>
+    /// <summary>Removes <paramref name="overlay"/> wherever it is, and disposes it if it is disposable; false if it wasn't open.</summary>
     bool Close(object overlay);
 
     /// <summary>Closes the overlay in front (Esc, back); false if none was open.</summary>
@@ -53,6 +56,7 @@ public sealed partial class OverlayHost : ObservableObject, IOverlayHost
     {
         if (!_overlays.Remove(overlay)) return false;
         Notify();
+        (overlay as IDisposable)?.Dispose();
         return true;
     }
 

@@ -1,0 +1,27 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:tl="using:Reyfen.Timbratune.Features.TakeLibrary"
+             x:Class="Reyfen.Timbratune.Features.TakeLibrary.TakeSwitcherView"
+             x:DataType="tl:TakeLibraryViewModel"
+             IsVisible="{Binding ShowsTop}">
+  <!-- Above the take: a load error, and the switcher's chips (with more than one take). -->
+  <StackPanel Spacing="28">
+    <TextBlock Foreground="{DynamicResource DangerBrush}" Text="{Binding LoadError}" IsVisible="{Binding HasLoadError}" />
+    <WrapPanel IsVisible="{Binding ShowSwitcher}">
+      <TextBlock Classes="cap" VerticalAlignment="Center" Margin="0,0,8,6" Text="viewing:" />
+      <ItemsControl ItemsSource="{Binding Items}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="tl:TakeCardViewModel">
+            <!-- TextBlock content: a plain string would turn "_" into an access key -->
+            <Button Classes="pick" Classes.active="{Binding IsActive}" Command="{Binding SelectCommand}">
+              <TextBlock Text="{Binding PickerText}" Foreground="{Binding $parent[Button].Foreground}" />
+            </Button>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </WrapPanel>
+  </StackPanel>
+</UserControl>

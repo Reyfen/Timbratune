@@ -1,0 +1,79 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ta="using:Reyfen.Timbratune.Features.TakeActions"
+             x:Class="Reyfen.Timbratune.Features.TakeActions.TakeDialogView"
+             x:DataType="ta:TakeDialogViewModel">
+  <!-- A take's dialog over the whole page, like the metric modal: scrim + card.
+       Click the background, ✕, cancel or press Esc / Back to close (as cancel). -->
+  <Grid>
+    <Border Background="{DynamicResource ScrimBrush}" PointerPressed="OnScrimPressed" />
+    <!-- the scroller keeps the card above an on-screen keyboard (its bottom margin is set in code)
+         and lets it scroll when what's left is too short, as in landscape on a phone. It covers
+         the scrim, so a press on it outside the card closes the dialog too (OnBackgroundPressed). -->
+    <ScrollViewer x:Name="Scroller" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"
+                  Background="Transparent" PointerPressed="OnBackgroundPressed">
+    <Border x:Name="Card" Classes="card" MaxWidth="460" Margin="24" Padding="24,20" VerticalAlignment="Center"
+            BoxShadow="0 18 48 0 #55000000">
+      <StackPanel Spacing="14">
+        <Grid ColumnDefinitions="*,Auto">
+          <StackPanel Spacing="2">
+            <TextBlock Classes="section" Text="{Binding MenuTitle}" IsVisible="{Binding IsSaveMenuOpen}" />
+            <TextBlock Classes="section" Text="rename" IsVisible="{Binding IsRenaming}" />
+            <TextBlock Classes="section" Text="delete" IsVisible="{Binding IsConfirmingDelete}" />
+            <!-- TextBlock: a plain string would turn "_" into an access key -->
+            <TextBlock Classes="cap" Text="{Binding DialogTitle}" TextTrimming="CharacterEllipsis" />
+          </StackPanel>
+          <Button Grid.Column="1" Classes="ghost" VerticalAlignment="Top" Content="✕" ToolTip.Tip="close"
+                  Command="{Binding CloseDialogCommand}" />
+        </Grid>
+
+        <!-- save / export; on a phone (CanShare) the same choices go to the share sheet -->
+        <StackPanel Spacing="8" IsVisible="{Binding IsSaveMenuOpen}">
+          <Button Classes="choice" Command="{Binding SaveCopyCommand}">
+            <StackPanel Spacing="2">
+              <TextBlock FontWeight="SemiBold" Text="{Binding AudioChoice}" />
+              <TextBlock Classes="cap" Text="a copy of the recording" TextWrapping="Wrap" />
+            </StackPanel>
+          </Button>
+          <Button Classes="choice" Command="{Binding ExportDataCommand}">
+            <StackPanel Spacing="2">
+              <TextBlock FontWeight="SemiBold" Text="{Binding DataChoice}" />
+              <TextBlock Classes="cap" Text="the audio plus every graph's numbers, in one file" TextWrapping="Wrap" />
+            </StackPanel>
+          </Button>
+          <!-- not available yet: faint, so it reads as "coming", not as broken -->
+          <Button Classes="choice" IsEnabled="False">
+            <TextBlock FontWeight="SemiBold" Text="{Binding PdfChoice}" />
+          </Button>
+          <Button Classes="ghost" HorizontalAlignment="Right" Margin="0,4,0,0" Content="cancel"
+                  Command="{Binding CloseDialogCommand}" />
+        </StackPanel>
+
+        <!-- rename: Enter saves, Escape cancels -->
+        <StackPanel x:Name="RenamePanel" Spacing="12" IsVisible="{Binding IsRenaming}">
+          <TextBox x:Name="RenameBox" Classes="label-input rename" Text="{Binding RenameText}" MaxLength="80"
+                   PlaceholderText="name this take">
+            <TextBox.KeyBindings>
+              <KeyBinding Gesture="Enter" Command="{Binding ConfirmRenameCommand}" />
+              <KeyBinding Gesture="Escape" Command="{Binding CancelRenameCommand}" />
+            </TextBox.KeyBindings>
+          </TextBox>
+          <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+            <Button Classes="ghost" Content="cancel" Command="{Binding CancelRenameCommand}" />
+            <Button Classes="primary" Content="save the name" Command="{Binding ConfirmRenameCommand}" />
+          </StackPanel>
+        </StackPanel>
+
+        <!-- delete -->
+        <StackPanel Spacing="12" IsVisible="{Binding IsConfirmingDelete}">
+          <TextBlock Classes="sub" Foreground="{DynamicResource DangerBrush}" TextWrapping="Wrap" Text="{Binding ConfirmText}" />
+          <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+            <Button Classes="ghost" Content="cancel" Command="{Binding CancelDeleteCommand}" />
+            <Button Classes="danger" FontWeight="Bold" Content="yes, delete" Command="{Binding ConfirmDeleteCommand}" />
+          </StackPanel>
+        </StackPanel>
+      </StackPanel>
+    </Border>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

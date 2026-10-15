@@ -8,8 +8,7 @@ using Avalonia.VisualTree;
 using Microsoft.Extensions.DependencyInjection;
 using Reyfen.Timbratune.Core.Storage.Settings;
 using Reyfen.Timbratune.Shared.Platform;
-using Reyfen.Timbratune.ViewModels;
-using Reyfen.Timbratune.Views;
+using Reyfen.Timbratune.Shell;
 
 namespace Reyfen.Timbratune.App;
 
@@ -54,7 +53,7 @@ public sealed class TimbratuneApp : Application
         RequestedThemeVariant = ShellSettings.VariantOf(services.GetRequiredService<ISettings>().Get(ShellSettings.Theme));
         // Resolved only now: some services (PlaybackService's DispatcherTimer) need the UI thread set up.
         var dialogs = services.GetRequiredService<StorageProviderDialogs>();
-        var vm = services.GetRequiredService<MainViewModel>();
+        var vm = services.GetRequiredService<ShellViewModel>();
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {

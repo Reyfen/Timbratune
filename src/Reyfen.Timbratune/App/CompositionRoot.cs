@@ -6,11 +6,21 @@ using Reyfen.Timbratune.Core.Audio;
 using Reyfen.Timbratune.Core.Storage;
 using Reyfen.Timbratune.Core.Storage.Settings;
 using Reyfen.Timbratune.Diagnostics;
+using Reyfen.Timbratune.Features.About;
+using Reyfen.Timbratune.Features.CheatSheet;
+using Reyfen.Timbratune.Features.Import;
+using Reyfen.Timbratune.Features.LiveMonitor;
+using Reyfen.Timbratune.Features.MetricCompare;
+using Reyfen.Timbratune.Features.Record;
+using Reyfen.Timbratune.Features.TakeActions;
+using Reyfen.Timbratune.Features.TakeDetails;
+using Reyfen.Timbratune.Features.TakeLibrary;
 using Reyfen.Timbratune.Services;
 using Reyfen.Timbratune.Shared;
 using Reyfen.Timbratune.Shared.Navigation;
 using Reyfen.Timbratune.Shared.Platform;
-using Reyfen.Timbratune.ViewModels;
+using Reyfen.Timbratune.Shared.State;
+using Reyfen.Timbratune.Shell;
 
 namespace Reyfen.Timbratune.App;
 
@@ -49,6 +59,8 @@ public static class CompositionRoot
         // Shared
         services.TryAddSingleton<IMessenger>(_ => new WeakReferenceMessenger());
         services.TryAddSingleton<IOverlayHost, OverlayHost>();
+        services.TryAddSingleton<ITakeCatalog>(sp => new TakeCatalog(sp.GetRequiredService<RecordingStore>()));
+        services.TryAddSingleton<IActiveTakeService>(sp => new ActiveTakeService(sp.GetRequiredService<ITakeCatalog>()));
         services.TryAddSingleton<IFeatureFlags, BuildFeatureFlags>();
         services.TryAddSingleton<IPermissions, NoRuntimePermissions>();
         services.TryAddSingleton<IThreadPriority, DefaultThreadPriority>();
@@ -57,11 +69,21 @@ public static class CompositionRoot
         services.TryAddSingleton<IFileDialogs>(sp => sp.GetRequiredService<StorageProviderDialogs>());
         services.TryAddSingleton(sp => new PlaybackService(sp.GetRequiredService<IAudioPlayer>()));
 
-        // UI (each feature's settings are registered with it; these move with the features in P3)
+        // Features (each registers its own view models, managers, routers and settings)
+        services.AddCheatSheetFeature();
+        services.AddAboutFeature();
+        services.AddTakeActionsFeature();
+        services.AddMetricCompareFeature();
+        services.AddImportFeature();
+        services.AddTakeLibraryFeature();
+        services.AddTakeDetailsFeature();
+        services.AddRecordingFeature();
+        services.AddLiveMonitorFeature();
+
+        // Shell
         services.AddSetting(ShellSettings.Theme);
-        services.AddSetting(RecordingSettings.LiveWindowSeconds);
         services.TryAddSingleton<ViewLocator>();
-        services.TryAddSingleton<MainViewModel>();
+        services.TryAddSingleton<ShellViewModel>();
         return services;
     }
 
