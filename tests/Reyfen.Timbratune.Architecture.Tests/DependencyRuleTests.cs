@@ -19,7 +19,7 @@ public sealed class DependencyRuleTests
 
     private static readonly Assembly Acoustics = typeof(Sound).Assembly;
     private static readonly Assembly Core = typeof(LiveAnalyzer).Assembly;
-    private static readonly Assembly Ui = typeof(Reyfen.Timbratune.App).Assembly;
+    private static readonly Assembly Ui = typeof(Reyfen.Timbratune.App.TimbratuneApp).Assembly;
 
     /// <summary>Assemblies only a native head may use: a browser head couldn't load them.</summary>
     private static readonly string[] NativeOnly =

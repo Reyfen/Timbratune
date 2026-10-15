@@ -1,30 +1,14 @@
-namespace Reyfen.Timbratune;
+namespace Reyfen.Timbratune.Shared;
 
-/// <summary>
-/// Build-time feature switches. Turn one on with an MSBuild property, e.g.
-/// <c>dotnet build -p:TimbratuneReferenceVoices=true</c>.
-/// </summary>
-public static class Features
+/// <summary>What the app says about itself: version, credits and links.</summary>
+public static class AppInfo
 {
-    /// <summary>
-    /// The real reference voices (VCTK clips) in the metric comparison. Off by default: the
-    /// comparison then shows your own takes only, and the clips are not shipped.
-    /// </summary>
-#if REFERENCE_VOICES
-    public const bool ReferenceVoices = true;
-#else
-    public const bool ReferenceVoices = false;
-#endif
-
-    /// <summary>A phone or tablet (Android, iOS): the cheaper, touch-first look.</summary>
-    public static bool IsMobile { get; } = OperatingSystem.IsAndroid() || OperatingSystem.IsIOS();
-
     /// <summary>"v0.1.0": the build's version (Directory.Build.props), without any "+commit" suffix.</summary>
     public static string VersionText => "v" + Version;
 
     /// <summary>"0.1.0": the build's version (Directory.Build.props), without any "+commit" suffix.</summary>
     public static string Version { get; } = System.Reflection.CustomAttributeExtensions
-        .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(typeof(Features).Assembly)
+        .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(typeof(AppInfo).Assembly)
         ?.InformationalVersion.Split('+')[0] ?? "0.0.0";
 
     /// <summary>Footer credit: "Timbratune v0.1.0 · by Reyfen".</summary>
@@ -37,7 +21,7 @@ public static class Features
     public static Uri PraatUri { get; } = new("https://github.com/praat/praat.github.io");
 
     /// <summary>What tapping a metric card offers.</summary>
-    public const string CompareHint = ReferenceVoices
+    public static string CompareHint(bool referenceVoices) => referenceVoices
         ? "tap to see how you compare to real voices 🔍"
         : "tap to compare with your other takes 🔍";
 }

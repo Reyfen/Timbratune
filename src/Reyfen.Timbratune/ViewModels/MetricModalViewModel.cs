@@ -17,12 +17,14 @@ public sealed partial class MetricModalViewModel : ObservableObject, IDisposable
 {
     private readonly PlaybackService _playback;
     private readonly Action _close;
+    private readonly bool _referenceVoices;
 
     public MetricModalViewModel(MetricDef metric, IReadOnlyList<Recording> recordings,
         IReadOnlyList<ReferenceVoice> references, int? activeId, Func<Recording, string?> takeAudio,
-        Func<ReferenceVoice, string?> refAudio, PlaybackService playback, Action close)
+        Func<ReferenceVoice, string?> refAudio, PlaybackService playback, bool referenceVoices, Action close)
     {
         Metric = metric;
+        _referenceVoices = referenceVoices;
         _playback = playback;
         _close = close;
         _playback.PropertyChanged += OnPlaybackChanged;
@@ -76,8 +78,8 @@ public sealed partial class MetricModalViewModel : ObservableObject, IDisposable
     public double Hi { get; }
     public IReadOnlyList<ScaleTick> Takes { get; }
     public IReadOnlyList<ScaleTick> Refs { get; }
-    public bool ShowRefs => Features.ReferenceVoices && Metric.ShowRefs;
-    public bool HideRefs => Features.ReferenceVoices && !Metric.ShowRefs;
+    public bool ShowRefs => _referenceVoices && Metric.ShowRefs;
+    public bool HideRefs => _referenceVoices && !Metric.ShowRefs;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasSelection))]

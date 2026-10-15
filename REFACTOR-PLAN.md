@@ -1,6 +1,6 @@
 # Timbratune refactoring plan
 
-*Status:* agreed 2026-10-15; P0 in progress (all but the phone baselines, HANDOFF §8i).
+*Status:* agreed 2026-10-15; P0 done except the phone baselines (HANDOFF §8i); P1 done (HANDOFF §8j).
 *Base:* `dev/v0.2.1` at `2b33f06`.
 *Work branch:* `dev/v0.3.0`.
 
@@ -582,11 +582,12 @@ Ask the owner before each commit.
   - Baselines, recorded in HANDOFF §8i:
     - [x] bench numbers (`tools/analysis-bench/baseline-p0.json`) and `tools/live-steadiness`;
     - [ ] Pixel 9 and 4a frame times (needs the owner's phones; before P5 at the latest).
-- [ ] **P1. Infrastructure.**
+- [x] **P1. Infrastructure.**
   - MS.DI, `CompositionRoot`/`AddTimbratune()`, `ViewLocator`.
   - `Shared/Navigation`, `Messaging`, `State`, `Platform`.
   - `AppInfo` / `IFeatureFlags` / `IPlatformInfo`.
   - Heads move to DI. `MainViewModel` still exists but gets its services from DI.
+  - *As built (HANDOFF §8j):* `App` became `App/TimbratuneApp` (a class can't share the `App` namespace's name). `Shared/State` is left to the P3 steps that extract its implementations from `MainViewModel`/`RecordViewModel` (`ISettings` to P2). The platform ports with no consumer yet (`ISecureStore`, `IExternalBrowser`, `IProcessRunner`, `IHttpDownloader`) come with their features (P4, later). `OverlayHost`/`RouterBase` and the message records exist but are first used by the Shell and features in P3.
 - [ ] **P2. Storage and scheduling seams** (§7):
   - `ITakeStorage`/`IDataStore` + `FileSystemTakeStorage`;
   - the settings service (§5a: keys, scopes, file store, migrations; local only). The theme and live-window choice become the first persisted settings;

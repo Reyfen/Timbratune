@@ -10,5 +10,6 @@
     <Project Path="tests/Reyfen.Timbratune.Acoustics.Tests/Reyfen.Timbratune.Acoustics.Tests.csproj" />
     <Project Path="tests/Reyfen.Timbratune.Architecture.Tests/Reyfen.Timbratune.Architecture.Tests.csproj" />
     <Project Path="tests/Reyfen.Timbratune.Core.Tests/Reyfen.Timbratune.Core.Tests.csproj" />
+    <Project Path="tests/Reyfen.Timbratune.Tests/Reyfen.Timbratune.Tests.csproj" />
   </Folder>
 </Solution>

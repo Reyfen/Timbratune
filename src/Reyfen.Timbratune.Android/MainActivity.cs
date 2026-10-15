@@ -56,7 +56,7 @@ public sealed class MainActivity : AvaloniaMainActivity
     // whether 12 still needs it can only be checked on such a phone. A new view builds a new Vulkan
     // surface from the current window, so when the surface is replaced the Activity is replaced by
     // a new one (about half a second, with a flash). The process, recorder and view models keep
-    // running; the main view is the same instance (App hands every Activity the same one),
+    // running; the main view is the same instance (TimbratuneApp hands every Activity the same one),
     // attached to the new window.
     // This includes coming back to the app (Home, lock screen, Recents): Android destroys the
     // surface when the app stops and gives a new one on return. Skipping the re-creation when

@@ -4,6 +4,7 @@ using Reyfen.Timbratune.Controls;
 using Reyfen.Timbratune.Core.Analysis;
 using Reyfen.Timbratune.Core.Domain;
 using Reyfen.Timbratune.Core.Models;
+using Reyfen.Timbratune.Shared;
 using static Reyfen.Timbratune.Core.Domain.Zones;
 
 namespace Reyfen.Timbratune.ViewModels;
@@ -22,24 +23,27 @@ public sealed partial class TakeViewModel : ObservableObject
     private readonly IRelayCommand<MetricKey> _openMetric;
 
     /// <param name="liveElapsed">Set while recording: the take so far, shown live (no modal, no saved-take details).</param>
-    public TakeViewModel(Recording r, RecordingDetail? detail, bool isLatest, IRelayCommand<MetricKey> openMetric, double? liveElapsed = null)
+    public TakeViewModel(Recording r, RecordingDetail? detail, bool isLatest, IRelayCommand<MetricKey> openMetric, IFeatureFlags flags,
+        double? liveElapsed = null)
     {
         _isLatest = isLatest;
         _openMetric = openMetric;
         IsLive = liveElapsed is not null;
+        CompareHint = AppInfo.CompareHint(flags.ReferenceVoices);
+        var hint = CompareHint;
         MetricKey? Card(MetricKey key) => IsLive ? null : key; // live cards don't open the reference modal
         StatCards =
         [
-            new StatCardViewModel("Pitch (avg)", "Hz", Zones.Pitch, 100, 260, Card(MetricKey.Pitch), openMetric),
-            new StatCardViewModel("Pitch range", "Hz", null, 0, 0, null, openMetric),
-            new StatCardViewModel("Loudness", "dB", Zones.Loudness, 45, 78, Card(MetricKey.Loudness), openMetric),
-            new StatCardViewModel("Pitch variability", "Hz", Zones.PitchSd, 0, 60, Card(MetricKey.Sd), openMetric),
-            new StatCardViewModel("Clarity (HNR)", "dB", Zones.Hnr, 0, 30, Card(MetricKey.Hnr), openMetric),
-            new StatCardViewModel("Steadiness (jitter)", "%", Zones.Jitter, 0, 3, Card(MetricKey.Jitter), openMetric),
-            new StatCardViewModel("Weight", "dB", Zones.Weight, 0, 20, Card(MetricKey.Weight), openMetric),
+            new StatCardViewModel("Pitch (avg)", "Hz", Zones.Pitch, 100, 260, Card(MetricKey.Pitch), openMetric, hint),
+            new StatCardViewModel("Pitch range", "Hz", null, 0, 0, null, openMetric, hint),
+            new StatCardViewModel("Loudness", "dB", Zones.Loudness, 45, 78, Card(MetricKey.Loudness), openMetric, hint),
+            new StatCardViewModel("Pitch variability", "Hz", Zones.PitchSd, 0, 60, Card(MetricKey.Sd), openMetric, hint),
+            new StatCardViewModel("Clarity (HNR)", "dB", Zones.Hnr, 0, 30, Card(MetricKey.Hnr), openMetric, hint),
+            new StatCardViewModel("Steadiness (jitter)", "%", Zones.Jitter, 0, 3, Card(MetricKey.Jitter), openMetric, hint),
+            new StatCardViewModel("Weight", "dB", Zones.Weight, 0, 20, Card(MetricKey.Weight), openMetric, hint),
         ];
-        F2 = new GaugeViewModel("F2", "main brightness cue", Zones.F2, 1100, 2000, MetricKey.F2, openMetric, !IsLive);
-        F3 = new GaugeViewModel("F3", "supports brightness", Zones.F3, 2100, 3400, MetricKey.F3, openMetric, !IsLive);
+        F2 = new GaugeViewModel("F2", "main brightness cue", Zones.F2, 1100, 2000, MetricKey.F2, openMetric, hint, !IsLive);
+        F3 = new GaugeViewModel("F3", "supports brightness", Zones.F3, 2100, 3400, MetricKey.F3, openMetric, hint, !IsLive);
         Positions = [new PositionBar("phrase starts"), new PositionBar("mid-phrase"), new PositionBar("phrase endings")];
         Update(r, detail, liveElapsed);
     }
@@ -161,6 +165,9 @@ public sealed partial class TakeViewModel : ObservableObject
 
     [ObservableProperty] private Recording _recording = null!;
     public bool IsLive { get; }
+
+    /// <summary>What tapping a metric card offers (depends on whether reference voices are built in).</summary>
+    public string CompareHint { get; }
     /// <summary>The register section's contour; live, it's shown above the cards with zone bands instead.</summary>
     public bool ShowContour => !IsLive;
     [ObservableProperty, NotifyPropertyChangedFor(nameof(HasWhen))] private string _title = "";
@@ -242,7 +249,7 @@ public sealed partial class TrendViewModel(
 
 public sealed partial class StatCardViewModel(
     string title, string unit, IReadOnlyList<Zone>? zones, double lo, double hi,
-    MetricKey? metricKey, IRelayCommand<MetricKey> openMetric) : ObservableObject
+    MetricKey? metricKey, IRelayCommand<MetricKey> openMetric, string compareHint) : ObservableObject
 {
     public string Title { get; } = title;
     [ObservableProperty]
@@ -257,7 +264,7 @@ public sealed partial class StatCardViewModel(
     public double Hi { get; } = hi;
     [ObservableProperty] private string _sub = "";
     public bool IsClickable => metricKey is not null;
-    public string? ToolTip => IsClickable ? Features.CompareHint : null;
+    public string? ToolTip => IsClickable ? compareHint : null;
 
     public void Update(double? value, string sub)
     {
@@ -273,10 +280,10 @@ public sealed partial class StatCardViewModel(
 
 public sealed partial class GaugeViewModel(
     string name, string description, IReadOnlyList<Zone> zones, double lo, double hi,
-    MetricKey key, IRelayCommand<MetricKey> openMetric, bool interactive = true) : ObservableObject
+    MetricKey key, IRelayCommand<MetricKey> openMetric, string compareHint, bool interactive = true) : ObservableObject
 {
     public bool Interactive { get; } = interactive;
-    public string? ToolTip => Interactive ? Features.CompareHint : null;
+    public string? ToolTip => Interactive ? compareHint : null;
     public string Name { get; } = name;
     public string Description { get; } = description;
     [ObservableProperty]

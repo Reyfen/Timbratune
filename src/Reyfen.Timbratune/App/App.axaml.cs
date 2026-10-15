@@ -5,24 +5,32 @@ using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Markup.Xaml;
 using Avalonia.VisualTree;
-using Reyfen.Timbratune.Services;
+using Microsoft.Extensions.DependencyInjection;
+using Reyfen.Timbratune.Shared.Platform;
 using Reyfen.Timbratune.ViewModels;
 using Reyfen.Timbratune.Views;
 
-namespace Reyfen.Timbratune;
+namespace Reyfen.Timbratune.App;
 
-public sealed class App : Application
+/// <summary>
+/// The Avalonia application. A head builds the services (<see cref="CompositionRoot.AddTimbratune"/>
+/// plus its own platform adapters) and passes the container in; the app only resolves from it.
+/// </summary>
+public sealed class TimbratuneApp : Application
 {
-    /// <summary>
-    /// Set by the platform head before start-up: builds the services (store,
-    /// analysis engine, audio). Receives the view layer's file dialogs.
-    /// </summary>
-    public static Func<IFileDialogs, AppServices>? ServicesFactory { get; set; }
+    private readonly IServiceProvider? _services;
+
+    /// <summary>For the XAML previewer only: no services, no view model.</summary>
+    public TimbratuneApp()
+    {
+    }
+
+    public TimbratuneApp(IServiceProvider services) => _services = services;
 
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
-        if (Features.IsMobile) UseMobileLook();
+        if (_services?.GetRequiredService<IPlatformInfo>().IsMobile == true) UseMobileLook();
     }
 
     /// <summary>
@@ -39,9 +47,12 @@ public sealed class App : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
-        var factory = ServicesFactory ?? throw new InvalidOperationException("App.ServicesFactory must be set by the platform head.");
-        var dialogs = new StorageProviderDialogs();
-        var vm = new MainViewModel(factory(dialogs));
+        var services = _services ?? throw new InvalidOperationException("The platform head must create TimbratuneApp with its services.");
+        var locator = services.GetRequiredService<ViewLocator>();
+        DataTemplates.Add(locator);
+        // Resolved only now: some services (PlaybackService's DispatcherTimer) need the UI thread set up.
+        var dialogs = services.GetRequiredService<StorageProviderDialogs>();
+        var vm = services.GetRequiredService<MainViewModel>();
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
@@ -55,7 +66,7 @@ public sealed class App : Application
             // for its view. They all get the same one, so nothing is lost when one is re-created.
             // The previous Activity's window can still hold it when the next one asks (Avalonia
             // 12 detaches it only later), so it is taken out of that window first.
-            var view = new MainView { DataContext = vm };
+            var view = locator.Build(vm);
             dialogs.Attach(view);
             activity.MainViewFactory = () =>
             {
@@ -66,7 +77,7 @@ public sealed class App : Application
         }
         else if (ApplicationLifetime is ISingleViewApplicationLifetime single)
         {
-            var view = new MainView { DataContext = vm };
+            var view = locator.Build(vm);
             dialogs.Attach(view);
             single.MainView = view;
         }

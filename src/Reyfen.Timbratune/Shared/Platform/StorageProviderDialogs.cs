@@ -1,7 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Platform.Storage;
 
-namespace Reyfen.Timbratune.Services;
+namespace Reyfen.Timbratune.Shared.Platform;
 
 /// <summary><see cref="IFileDialogs"/> over Avalonia's cross-platform StorageProvider.</summary>
 public sealed class StorageProviderDialogs : IFileDialogs

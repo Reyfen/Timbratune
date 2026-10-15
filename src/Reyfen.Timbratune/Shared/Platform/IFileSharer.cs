@@ -1,4 +1,4 @@
-namespace Reyfen.Timbratune.Services;
+namespace Reyfen.Timbratune.Shared.Platform;
 
 /// <summary>
 /// The platform's share sheet ("Share via…"): hands a file to another app (messengers, mail,

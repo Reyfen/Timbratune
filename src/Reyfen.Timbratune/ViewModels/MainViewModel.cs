@@ -2,41 +2,61 @@ using System.Collections.ObjectModel;
 using System.Text;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Reyfen.Timbratune.Core.Analysis;
+using Reyfen.Timbratune.Core.Audio;
 using Reyfen.Timbratune.Core.Domain;
 using Reyfen.Timbratune.Core.Json;
 using Reyfen.Timbratune.Core.Models;
 using Reyfen.Timbratune.Core.Storage;
 using Reyfen.Timbratune.Diagnostics;
 using Reyfen.Timbratune.Services;
+using Reyfen.Timbratune.Shared;
+using Reyfen.Timbratune.Shared.Platform;
 
 namespace Reyfen.Timbratune.ViewModels;
 
 /// <summary>App.tsx: the single scrolling dashboard.</summary>
 public sealed partial class MainViewModel : ObservableObject
 {
-    private readonly AppServices _services;
+    private readonly RecordingStore _store;
+    private readonly IAnalysisEngine _engine;
+    private readonly PlaybackService _playback;
+    private readonly IFileDialogs _dialogs;
+    private readonly IFileSharer? _sharer;
+    private readonly IFeatureFlags _flags;
+    private readonly IPlatformInfo _platform;
+    private readonly string? _referenceDir;
     private readonly HashSet<int> _backfilling = [];
     private readonly TakeImporter _importer;
     private List<Recording> _recordings = [];
     private IReadOnlyList<ReferenceVoice> _references = [];
 
-    public MainViewModel(AppServices services)
+    /// <param name="sharer">The share sheet, where the platform has one (then takes are shared instead of saved).</param>
+    public MainViewModel(RecordingStore store, IAnalysisEngine engine, IAudioRecorder recorder, PlaybackService playback,
+        IFileDialogs dialogs, TakeImporter importer, IFeatureFlags flags, IPlatformInfo platform, IPermissions permissions,
+        IThreadPriority threadPriority, ReferenceVoiceFolder referenceVoices, IFileSharer? sharer = null)
     {
-        _services = services;
-        Record = new RecordViewModel(services.Recorder, services.Engine, services.Store, () => ReloadAsync(selectLatest: true),
-            services.RequestMicrophone, services.LowerThreadPriority);
+        _store = store;
+        _engine = engine;
+        _playback = playback;
+        _dialogs = dialogs;
+        _sharer = sharer;
+        _flags = flags;
+        _platform = platform;
+        _referenceDir = referenceVoices.Path;
+        _importer = importer;
+        Record = new RecordViewModel(recorder, engine, store, () => ReloadAsync(selectLatest: true), permissions, threadPriority, flags);
         OpenMetricCommand = new RelayCommand<MetricKey>(OpenMetric);
-        _importer = new TakeImporter(services.Store, services.Engine, services.Decoder);
         // An import's note is about the takes list; a new recording makes it old news.
         Record.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(RecordViewModel.IsRecording) && Record.IsRecording && !IsImporting) ImportStatus = null;
         };
-        if (Features.ReferenceVoices && services.ReferenceDir is { } referenceDir) _references = LoadReferences(referenceDir);
+        if (flags.ReferenceVoices && _referenceDir is { } referenceDir) _references = LoadReferences(referenceDir);
     }
 
     public RecordViewModel Record { get; }
-    public PlaybackService Playback => _services.Playback;
+    public PlaybackService Playback => _playback;
     public IRelayCommand<MetricKey> OpenMetricCommand { get; }
 
     /// <summary>Newest first, for the switcher and "All recordings".</summary>
@@ -65,11 +85,11 @@ public sealed partial class MainViewModel : ObservableObject
     public bool ShowSwitcher => Items.Count > 1;
     public bool NoRecordings => Items.Count == 0;
     /// <summary>The takes folder (one folder per take; files dropped in are imported on the next start).</summary>
-    public string DataFolder => _services.Store.Paths.TakesDir;
+    public string DataFolder => _store.Paths.TakesDir;
 
     /// <summary>Where the folder can't be opened from the app (Android): where to find it instead.</summary>
-    public string? DataFolderHint => _services.DataFolderHint;
-    public bool CanOpenDataFolder => DataFolderHint is null;
+    public string? DataFolderHint => _platform.DataFolderHint;
+    public bool CanOpenDataFolder => _platform.CanOpenDataFolder;
 
     /// <summary>What an import is doing, or how it went; null = nothing to say.</summary>
     [ObservableProperty, NotifyPropertyChangedFor(nameof(HasImportStatus))] private string? _importStatus;
@@ -91,7 +111,7 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task OpenDataFolderAsync()
     {
-        if (!await _services.Dialogs.OpenFolderAsync(DataFolder)) ImportStatus = $"couldn't open the folder here · it's {DataFolder}";
+        if (!await _dialogs.OpenFolderAsync(DataFolder)) ImportStatus = $"couldn't open the folder here · it's {DataFolder}";
     }
 
     /// <summary>Import button: audio files (analyzed) and .tmbr files (taken as they are).</summary>
@@ -99,7 +119,7 @@ public sealed partial class MainViewModel : ObservableObject
     private async Task ImportAsync()
     {
         if (IsImporting) return;
-        var files = await _services.Dialogs.OpenFilesAsync("Import takes", "Audio or Timbratune takes", _importer.Extensions);
+        var files = await _dialogs.OpenFilesAsync("Import takes", "Audio or Timbratune takes", _importer.Extensions);
         var usable = files.Where(f => _importer.CanImport(f.Name)).ToList();
         if (files.Count > 0 && usable.Count == 0)
         {
@@ -113,7 +133,7 @@ public sealed partial class MainViewModel : ObservableObject
     // A picked file may have no path (Android): copied to a temporary file first, then imported.
     private async Task<Recording> ImportPickedAsync(PickedFile file, IProgress<double> progress)
     {
-        var temp = Path.Combine(_services.Store.Paths.Root, ".import", "picked-" + Guid.NewGuid().ToString("N") + Path.GetExtension(file.Name));
+        var temp = Path.Combine(_store.Paths.Root, ".import", "picked-" + Guid.NewGuid().ToString("N") + Path.GetExtension(file.Name));
         Directory.CreateDirectory(Path.GetDirectoryName(temp)!);
         try
         {
@@ -170,10 +190,10 @@ public sealed partial class MainViewModel : ObservableObject
     {
         try
         {
-            _recordings = await Task.Run(_services.Store.Load);
-            LoadError = _services.Store.Unreadable.Count == 0
+            _recordings = await Task.Run(_store.Load);
+            LoadError = _store.Unreadable.Count == 0
                 ? null
-                : $"couldn't read {string.Join(", ", _services.Store.Unreadable)} in the takes folder 🌧️";
+                : $"couldn't read {string.Join(", ", _store.Unreadable)} in the takes folder 🌧️";
         }
         catch (Exception ex)
         {
@@ -194,8 +214,8 @@ public sealed partial class MainViewModel : ObservableObject
         for (var i = _recordings.Count - 1; i >= 0; i--)
         {
             var r = _recordings[i];
-            var item = new RecordingItemViewModel(r, _services.Store.Paths.Resolve(r.Audio), r.Id == latestId,
-                _services.Playback, _services.Dialogs, _services.Sharer, DeleteAsync, ExportDataAsync, RenameAsync);
+            var item = new RecordingItemViewModel(r, _store.Paths.Resolve(r.Audio), r.Id == latestId,
+                _playback, _dialogs, _sharer, DeleteAsync, ExportDataAsync, RenameAsync);
             item.PropertyChanged += OnItemChanged;
             Items.Add(item);
         }
@@ -253,13 +273,13 @@ public sealed partial class MainViewModel : ObservableObject
     /// </summary>
     private async Task<string?> ExportDataAsync(Recording take, string audioPath, bool share)
     {
-        var store = _services.Store;
+        var store = _store;
         var (detail, series) = await Task.Run(() => (store.LoadDetail(take), store.LoadSeries(take)));
         if (detail is null) throw new InvalidOperationException("this take's analysis file is missing");
         if (series is null)
         {
             var floor = take.Register?.FloorHz ?? Core.Analysis.AnalysisPostProcessor.DefaultRegisterFloorHz;
-            var result = await _services.Engine.AnalyzeAsync(audioPath, floor);
+            var result = await _engine.AnalyzeAsync(audioPath, floor);
             series = result.Series ?? throw new InvalidOperationException("the analysis gave no per-frame lists");
             detail = result.Detail;
             var analyzed = series;
@@ -273,13 +293,13 @@ public sealed partial class MainViewModel : ObservableObject
 
         var (d, s) = (detail, series);
         var name = $"voice-take-{take.Id}.{TakeArchive.Extension}";
-        Func<Stream, Task> write = target => Task.Run(() => TakeArchive.Write(target, take, d, s, audioPath, Features.Version));
-        if (share && _services.Sharer is { } sharer)
+        Func<Stream, Task> write = target => Task.Run(() => TakeArchive.Write(target, take, d, s, audioPath, AppInfo.Version));
+        if (share && _sharer is { } sharer)
         {
             await sharer.ShareAsync("Share this take's data", name, "application/octet-stream", write);
             return null;
         }
-        return await _services.Dialogs.SaveAsync("Export this take's data", name,
+        return await _dialogs.SaveAsync("Export this take's data", name,
             "Timbratune take", TakeArchive.Extension, "application/octet-stream", write);
     }
 
@@ -287,14 +307,14 @@ public sealed partial class MainViewModel : ObservableObject
     private async Task RenameAsync(Recording take, string label)
     {
         // A take that is playing keeps its folder name: the player holds its audio open.
-        var playing = _services.Store.Paths.Resolve(take.Audio) is { } audio && _services.Playback.CurrentPath == audio;
-        await Task.Run(() => _services.Store.Rename(take, label, renameFolder: !playing));
+        var playing = _store.Paths.Resolve(take.Audio) is { } audio && _playback.CurrentPath == audio;
+        await Task.Run(() => _store.Rename(take, label, renameFolder: !playing));
         await ReloadAsync();
     }
 
     private async Task DeleteAsync(int id)
     {
-        await Task.Run(() => _services.Store.Delete(id));
+        await Task.Run(() => _store.Delete(id));
         if (_selectedId == id) _selectedId = null;
         await ReloadAsync();
     }
@@ -310,8 +330,8 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
         RecordingDetail? detail;
-        using (Perf.Measure("take.load")) detail = _services.Store.LoadDetail(active);
-        using (Perf.Measure("take.viewmodel")) Active = new TakeViewModel(active, detail, active.Id == latest?.Id, OpenMetricCommand);
+        using (Perf.Measure("take.load")) detail = _store.LoadDetail(active);
+        using (Perf.Measure("take.viewmodel")) Active = new TakeViewModel(active, detail, active.Id == latest?.Id, OpenMetricCommand, _flags);
         if (detail is not null && (detail.Trends?.Version ?? 0) < TakeTrends.CurrentVersion) _ = BackfillTrendsAsync(active);
     }
 
@@ -322,16 +342,16 @@ public sealed partial class MainViewModel : ObservableObject
     /// </summary>
     private async Task BackfillTrendsAsync(Recording take)
     {
-        var audio = _services.Store.Paths.Resolve(take.Audio);
-        if (!_services.Engine.IsAvailable || audio is null || !File.Exists(audio) || !_backfilling.Add(take.Id)) return;
+        var audio = _store.Paths.Resolve(take.Audio);
+        if (!_engine.IsAvailable || audio is null || !File.Exists(audio) || !_backfilling.Add(take.Id)) return;
         try
         {
             var floor = take.Register?.FloorHz ?? Core.Analysis.AnalysisPostProcessor.DefaultRegisterFloorHz;
-            var result = await _services.Engine.AnalyzeAsync(audio, floor);
+            var result = await _engine.AnalyzeAsync(audio, floor);
             await Task.Run(() =>
             {
-                _services.Store.SaveDetail(take, result.Detail);
-                if (result.Series is { } series) _services.Store.SaveSeries(take, series);
+                _store.SaveDetail(take, result.Detail);
+                if (result.Series is { } series) _store.SaveSeries(take, series);
             });
             if (Active?.Recording.Id == take.Id) UpdateActive();
         }
@@ -351,9 +371,9 @@ public sealed partial class MainViewModel : ObservableObject
 
         Modal?.Dispose();
         Modal = new MetricModalViewModel(Metrics.All[key], _recordings, _references, Active?.Recording.Id,
-            r => Existing(_services.Store.Paths.Resolve(r.Audio)),
-            v => v.Audio is { } a && _services.ReferenceDir is { } dir ? Existing(Path.Combine(dir, a)) : null,
-            _services.Playback,
+            r => Existing(_store.Paths.Resolve(r.Audio)),
+            v => v.Audio is { } a && _referenceDir is { } dir ? Existing(Path.Combine(dir, a)) : null,
+            _playback, _flags.ReferenceVoices,
             () =>
             {
                 Modal?.Dispose();

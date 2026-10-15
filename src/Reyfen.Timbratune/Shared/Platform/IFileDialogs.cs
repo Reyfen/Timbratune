@@ -1,4 +1,4 @@
-namespace Reyfen.Timbratune.Services;
+namespace Reyfen.Timbratune.Shared.Platform;
 
 /// <summary>Platform file dialogs, provided by the view layer (Avalonia StorageProvider).</summary>
 public interface IFileDialogs
@@ -23,28 +23,3 @@ public interface IFileDialogs
 
 /// <summary>A file chosen in a picker: its name, and a way to read it (on Android there's often no path).</summary>
 public sealed record PickedFile(string Name, Func<Task<Stream>> OpenRead);
-
-/// <summary>
-/// Everything the view models need from the outside world.
-/// <paramref name="ReferenceDir"/> is the folder holding reference.json and reference-audio/
-/// (only used when <see cref="Features.ReferenceVoices"/> is on).
-/// <paramref name="RequestMicrophone"/> asks for microphone access on platforms that need it
-/// at run time (Android); null elsewhere.
-/// <paramref name="Decoder"/> reads MP3 / FLAC for import (null: WAV and .tmbr only).
-/// <paramref name="DataFolderHint"/>, where the takes folder can't be opened from the app
-/// (Android), says where to find it instead of offering a link.
-/// <paramref name="Sharer"/>: the share sheet (Android). Where it's set, a take's audio and data
-/// are shared instead of saved.
-/// </summary>
-public sealed record AppServices(
-    Core.Storage.RecordingStore Store,
-    Core.Analysis.IAnalysisEngine Engine,
-    Core.Audio.IAudioRecorder Recorder,
-    PlaybackService Playback,
-    IFileDialogs Dialogs,
-    string? ReferenceDir = null,
-    Func<Task<bool>>? RequestMicrophone = null,
-    Action? LowerThreadPriority = null,
-    Core.Audio.IAudioDecoder? Decoder = null,
-    string? DataFolderHint = null,
-    IFileSharer? Sharer = null);

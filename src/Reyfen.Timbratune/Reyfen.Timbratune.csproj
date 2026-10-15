@@ -4,7 +4,7 @@
   <PropertyGroup>
     <RootNamespace>Reyfen.Timbratune</RootNamespace>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
-    <!-- Feature switch (see Features.cs): real reference voices in the metric comparison. -->
+    <!-- Feature switch (see Shared/FeatureFlags.cs): real reference voices in the metric comparison. -->
     <TimbratuneReferenceVoices Condition="'$(TimbratuneReferenceVoices)' == ''">false</TimbratuneReferenceVoices>
     <DefineConstants Condition="'$(TimbratuneReferenceVoices)' == 'true'">$(DefineConstants);REFERENCE_VOICES</DefineConstants>
   </PropertyGroup>
@@ -13,6 +13,7 @@
     <PackageReference Include="Avalonia.Themes.Fluent" />
     <PackageReference Include="Avalonia.Fonts.Inter" />
     <PackageReference Include="CommunityToolkit.Mvvm" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Reyfen.Timbratune.Core\Reyfen.Timbratune.Core.csproj" />

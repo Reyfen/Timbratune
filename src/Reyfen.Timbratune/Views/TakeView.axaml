@@ -3,7 +3,6 @@
              xmlns:vm="using:Reyfen.Timbratune.ViewModels"
              xmlns:c="using:Reyfen.Timbratune.Controls"
              xmlns:v="using:Reyfen.Timbratune.Views"
-             xmlns:e="using:Reyfen.Timbratune"
              x:Class="Reyfen.Timbratune.Views.TakeView"
              x:DataType="vm:TakeViewModel">
   <!-- One take: stat cards, resonance, register & phrasing, per-phrase trends.
@@ -18,7 +17,7 @@
         <TextBlock IsVisible="{Binding HasWhen}" VerticalAlignment="Center" Margin="8,3,0,0" FontSize="14"
                    Foreground="{DynamicResource InkSoftBrush}" Text="{Binding When, StringFormat='· {0}'}" />
       </WrapPanel>
-      <TextBlock Classes="cap" IsVisible="{Binding !IsLive}" Text="{x:Static e:Features.CompareHint}" />
+      <TextBlock Classes="cap" IsVisible="{Binding !IsLive}" Text="{Binding CompareHint}" />
       <ItemsControl ItemsSource="{Binding StatCards}" Margin="0,6,0,0">
         <ItemsControl.ItemsPanel>
           <ItemsPanelTemplate><c:CardGrid MinItemWidth="250" /></ItemsPanelTemplate>

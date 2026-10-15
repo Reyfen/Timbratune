@@ -2,7 +2,7 @@
 
 This file brings a new engineer or agent up to date on everything done so far: what the user asked for, what was decided and why, how the code is organised, what was measured, and what is still open.
 
-Last updated 2026-10-15. The newest work is §8i (refactoring P0: golden, architecture and bench baselines); §8d–§8h cover v0.2.0 (Android performance, export, one folder per take, import, `build.ps1`); §8 is the current state.
+Last updated 2026-10-15. The newest work is §8i–§8j (refactoring P0: golden, architecture and bench baselines; P1: dependency injection and shared ports); §8d–§8h cover v0.2.0 (Android performance, export, one folder per take, import, `build.ps1`); §8 is the current state.
 
 **Name:** the project is **Timbratune — Gender Voice Analysis Tool**, by **Reyfen**.
 - **Before 2026-10-02 it was called Euphonia**, and it is a fork of [Euphonia](https://github.com/Yuuzulight/Euphonia). Older parts of this file and of the transcript say "Euphonia" and "Euphonia-CSharp"; read those as Timbratune and the repo root (the code moved from `Timbratune/` to the root on 2026-10-06).
@@ -265,7 +265,7 @@ Two takes (voice-take-8/9, noisy: 6–12 kHz hiss about as loud as the voice) sh
 ```powershell
 cd C:\Projects\Reyfen\Timbratune
 dotnet build Timbratune.slnx
-dotnet test Timbratune.slnx                     # 148 tests; the Praat oracle tests skip without Praat
+dotnet test Timbratune.slnx                     # 158 tests; the Praat oracle tests skip without Praat
 dotnet run --project src/Reyfen.Timbratune.Desktop
 ./build.ps1 [win] [linux] [android]             # all published builds into publish/ (§8h)
 ```
@@ -771,6 +771,7 @@ Branch `dev/v0.3.0`, phase P0 of `REFACTOR-PLAN.md` §9. No app code changed; th
 - **`tools/analysis-bench`** (dev tool, not in the solution; Stopwatch and `GC.GetTotalAllocatedBytes(precise)`, no package). Without a WAV it builds the 27.6 s `long.wav` of `make-long-wav.ps1` from the fixtures. It measures the full analysis (`AnalyzeAsync`, all cores), then replays the take through `LiveAnalyzer` the way the app does: 10 ms chunks, an update every 100 ms (a full one every 10th), on one thread limited to 2 cores like `LiveWorker`, plus `LiveTimelinesViewModel.Compute` on each snapshot. It also prints SHA-256 hashes of the saved and live results. `-types` lists live allocations by type (an `AllocationTick` listener); `-out` writes the numbers; `-baseline` checks the gate.
   - **Allocations aren't exactly repeatable:** `ArrayPool.Shared` keeps per-thread caches, so a run's allocations depend on which pool threads the loops land on. The full analysis varies 109–185 MB between runs, and its median by about 4 % between sessions. Live allocation is steady (median 8.857–8.858 MB/s in three sessions). The gate therefore allows +5 % on the full analysis' allocations and +1 % on the live ones. Time medians also move by about ±4 % between sessions on this machine, so re-run once before calling a miss.
   - Run: `cd tools/analysis-bench; dotnet run -c Release -- -baseline baseline-p0.json`.
+  - **A stored baseline drifts; gate with an A/B in one session.** At P1 (no analysis code changed) the same `86944bb` code measured 168 MB full-analysis allocation and 8.93–9.01 MB/s live, against 154 MB and 8.86 MB/s for the P0 baseline a few hours earlier, and `live.compute` 295–299 ms against 292 ms. Comparing with `baseline-p0.json` then shows false misses. For the gate: check out the base commit in a temporary worktree (`git worktree add --detach <tmp> <base>`), build its bench in Release, and run old and new alternately, at least twice each, with `-out`; compare those medians. `baseline-p0.json` stays as a rough reference only.
 
 **Baselines** (this machine: 24 cores, .NET 10.0.11, x64, Release; 27.6 s `long.wav`; medians of 10 runs; stored in `tools/analysis-bench/baseline-p0.json`):
 
@@ -790,6 +791,32 @@ Top live allocations by type (sampled): `double[]` 186 MB, `TimedValue[]` 36 MB,
 **Not done: phone baselines.** The Pixel 9 and 4a frame times (Release profiling build, §8d) need the owner's phones over USB. They must be taken before P5, the first phase that touches the analysis.
 
 **Tests:** 148 pass with Praat (17 architecture, 57 acoustics, 74 core).
+
+## 8j. Refactoring P1: dependency injection and shared ports (2026-10-15)
+
+Phase P1 of `REFACTOR-PLAN.md`. No user-visible change.
+
+- **Composition** (`src/Reyfen.Timbratune/App/`):
+  - `CompositionRoot.AddTimbratune()` registers Core (`IAnalysisEngine`, `RecordingStore`, `TakeImporter`), Shared (`IMessenger` = a `WeakReferenceMessenger`, `IOverlayHost`, `IFeatureFlags`, defaults for `IPermissions`, `IThreadPriority` and `ReferenceVoiceFolder`, `StorageProviderDialogs` as `IFileDialogs`, `PlaybackService`) and the UI (`ViewLocator`, `MainViewModel`). All singletons, constructor injection, `TryAdd` so a head's own registration wins.
+  - A head must add `DataPaths`, `IAudioRecorder`, `IAudioPlayer` and `IPlatformInfo`; it may add `IAudioDecoder`, `IFileSharer` (an optional constructor parameter of `MainViewModel`) and its own `IPermissions`/`IThreadPriority`/`ReferenceVoiceFolder`. `CompositionTests` checks both cases with `ValidateOnBuild`.
+  - `App` is now `App/TimbratuneApp` (namespace `Reyfen.Timbratune.App`; a class can't share that name). It takes the container in its constructor; the parameterless one is for the XAML previewer. Services are resolved in `OnFrameworkInitializationCompleted`, after the UI thread exists (`PlaybackService` owns a `DispatcherTimer`), so nothing is created earlier than before.
+  - `ViewLocator`: a hand-written type → view map, added to the app's data templates; it also builds the root view on Android.
+  - Removed: `App.ServicesFactory`, the `AppServices` record, `Features.cs`.
+- **Heads:**
+  - **Desktop** (`Program.cs`): one `ServiceProvider` (validated on build) for the window and for `--import`, which now resolves `RecordingStore` and `TakeImporter` from it. It is disposed on exit, newest first: player and recorder before `SoundFlowAudio`, as the old `using`s did.
+  - **Android** (`AndroidApp`): the container is built in `OnCreate`, and `CreateAppBuilder` (a protected virtual of `AvaloniaAndroidApplication<T>`, checked in its metadata: it was `Configure<TApp>().UseAndroid()`) is overridden to construct `TimbratuneApp` with it. The old `_audio`/`_recorder` fields are singletons now. `AndroidPlatform.cs` holds `AndroidPermissions` (through `MainActivity.Current`) and `AndroidThreadPriority`. `MainActivity.Current` stays.
+- **`Features.cs` split:** `Shared/AppInfo` (version, credits, links, `CompareHint(bool)`), `Shared/FeatureFlags` (`IFeatureFlags`, `BuildFeatureFlags` with the build-time `ReferenceVoicesBuilt`), `Shared/Platform/IPlatformInfo` + the `PlatformInfo` record (`IsMobile`, `IsBrowser`, `SupportsThreads`, `CanOpenDataFolder`, `DataFolderHint`, `CanShare`, `CanRunProcesses`). The view models that `MainViewModel` still creates get the flag passed in (`TakeViewModel` and `RecordViewModel` take `IFeatureFlags`, `MetricModalViewModel` a bool); `TakeView` binds `CompareHint` instead of `x:Static`. `RecordViewModel` takes `IPermissions` and `IThreadPriority` instead of two optional delegates; the desktop defaults ask nothing and leave the priority alone, as the null delegates did.
+- **Shared ports:** `Platform/` (`IFileDialogs`, `PickedFile`, `IFileSharer`, `StorageProviderDialogs` moved from `Services/`; new `IPlatformInfo`, `IPermissions`, `IThreadPriority`, `ReferenceVoiceFolder`), `Navigation/` (`IOverlayHost` + `OverlayHost`, a stack with move-to-front, and `RouterBase`, which disposes what it closes), `Messaging/Messages.cs` (`TakeSaved`, `TakeRenamed`, `TakeDeleted`, `ImportFinished`, `TakeAnalysisUpdated`; ids and values only). Navigation and messages are first used in P3.
+- **Not done in P1, on purpose** (noted in the plan):
+  - `Shared/State` (`IActiveTakeService`, `ITakeCatalog`, `ILiveSession`) comes with the P3 steps that move that state out of `MainViewModel` and `RecordViewModel`, so the interfaces are shaped by their implementations. `ISettings` comes in P2.
+  - `ISecureStore`, `IExternalBrowser`, `IProcessRunner`, `IHttpDownloader` come with their first consumer (P4, later).
+  - `StorageProviderDialogs` still checks `OperatingSystem.IsAndroid()` for the Android picker's extension quirk; it's adapter code, so it stays.
+- **New test project** `tests/Reyfen.Timbratune.Tests` (UI library without a UI): `CompositionTests` (5) and `OverlayHostTests` (5). **Tests:** 158 pass with Praat (10 UI, 17 architecture, 57 acoustics, 74 core).
+- **Checked:**
+  - Desktop (Debug, fake mic, throwaway data folder): start, the `--import` CLI (same values as the golden file), record with live graphs, stop & analyze, the metric modal.
+  - Android (Debug APK on the `EuphoniaPixel` emulator, fake mic): start, recording with live graphs (permission and thread priority through DI), stop & analyze (take saved and shown).
+  - The Android profiling configuration (`-p:TimbratuneProfiling=true`) compiles.
+  - The bench: hashes identical, and an A/B against `86944bb` in the same session shows no difference (see the §8i note on drift).
 
 ## 8. Current state, at the time of writing
 

@@ -9,6 +9,8 @@ using Reyfen.Timbratune.Core.Audio;
 using Reyfen.Timbratune.Core.Domain;
 using Reyfen.Timbratune.Core.Models;
 using Reyfen.Timbratune.Core.Storage;
+using Reyfen.Timbratune.Shared;
+using Reyfen.Timbratune.Shared.Platform;
 
 namespace Reyfen.Timbratune.ViewModels;
 
@@ -35,21 +37,20 @@ public sealed partial class RecordViewModel : ObservableObject
     private LiveAnalyzer? _live;
     private bool _liveBusy;
 
-    private readonly Func<Task<bool>>? _requestMicrophone;
-    private readonly Action? _lowerThreadPriority;
+    private readonly IPermissions _permissions;
+    private readonly IThreadPriority _threadPriority;
+    private readonly IFeatureFlags _flags;
     private LiveWorker? _worker;
     private long _liveStarted;
 
-    /// <param name="requestMicrophone">
-    /// Platforms that ask for microphone access at run time (Android) pass this: it asks if
-    /// needed and returns whether recording is allowed. Desktop platforms pass null.
-    /// </param>
-    /// <param name="lowerThreadPriority">Lowers the calling thread's OS priority (the live analysis' thread), where the platform can.</param>
+    /// <param name="permissions">Asks for microphone access where the platform needs that at run time (Android).</param>
+    /// <param name="threadPriority">Lowers the live analysis thread's OS priority, where the platform can.</param>
     public RecordViewModel(IAudioRecorder recorder, IAnalysisEngine engine, RecordingStore store, Func<Task> onRecorded,
-        Func<Task<bool>>? requestMicrophone = null, Action? lowerThreadPriority = null)
+        IPermissions permissions, IThreadPriority threadPriority, IFeatureFlags flags)
     {
-        _requestMicrophone = requestMicrophone;
-        _lowerThreadPriority = lowerThreadPriority;
+        _permissions = permissions;
+        _threadPriority = threadPriority;
+        _flags = flags;
         _recorder = recorder;
         _engine = engine;
         _store = store;
@@ -133,7 +134,7 @@ public sealed partial class RecordViewModel : ObservableObject
     {
         try
         {
-            if (_requestMicrophone is not null && !await _requestMicrophone())
+            if (!await _permissions.RequestMicrophoneAsync())
             {
                 ErrorDetail = "Timbratune needs microphone access to record 🎙️ — allow it when asked, or in the system settings.";
                 State = RecordState.Error;
@@ -179,7 +180,7 @@ public sealed partial class RecordViewModel : ObservableObject
                 // 90, not 100: the 100 ms timer can fire a little early (Avalonia 12 on a Pixel 9),
                 // and skipping that tick made every other update wait 200 ms (237 → 197 per take).
                 if (_liveStarted != 0 && Stopwatch.GetElapsedTime(_liveStarted).TotalMilliseconds < 90) return;
-                _worker ??= new LiveWorker(lowPriority, _lowerThreadPriority);
+                _worker ??= new LiveWorker(lowPriority, _threadPriority.LowerCurrentThread);
             }
             _liveStarted = Stopwatch.GetTimestamp();
             // The whole-take statistics are only needed when the take's cards refresh.
@@ -222,7 +223,7 @@ public sealed partial class RecordViewModel : ObservableObject
         {
             // Updated in place: the view keeps its controls and only re-lays out what changed.
             if (LiveTake is { } take) take.Update(result.Metrics, result.Detail, snapshot.Elapsed);
-            else LiveTake = new TakeViewModel(result.Metrics, result.Detail, isLatest: true, NoModal, liveElapsed: snapshot.Elapsed);
+            else LiveTake = new TakeViewModel(result.Metrics, result.Detail, isLatest: true, NoModal, _flags, liveElapsed: snapshot.Elapsed);
         }
     }
 
