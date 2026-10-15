@@ -1,7 +1,6 @@
 using Android;
 using Android.App;
 using Android.Content.PM;
-using Android.Content.Res;
 using Android.OS;
 using Android.Views;
 using Avalonia;
@@ -32,29 +31,17 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
     private static IAudioRecorder? s_recorder;
     private TaskCompletionSource<bool>? _microphone;
 
-    // Renderer switching (see RendererSwitch): the backend the next OnCreate has to build, set
-    // just before Recreate(); and whether Vulkan failed to start, so we stop trying it.
-    private static bool? s_switchTo;
-    private static bool s_vulkanUnavailable;
-
     // The live Activity. The app's services are built once per process, but the Activity can be
-    // re-created (the renderer switch), so anything needing it (permission requests, the share
-    // sheet) goes through this rather than holding on to the first one.
+    // re-created (when the surface is replaced, see WatchSurface), so anything needing it
+    // (permission requests, the share sheet) goes through this rather than holding on to the
+    // first one.
     private static MainActivity? s_current;
+
+    // Vulkan is the first renderer asked for: its surface needs the watcher below.
+    private static bool s_vulkanWanted;
 
     protected override void OnCreate(Bundle? savedInstanceState)
     {
-        // A renderer switch: the old Activity and its view are gone by now (Recreate destroys
-        // before it creates), so Avalonia's graphics can be rebuilt before the new view exists.
-        if (s_switchTo is { } toVulkan)
-        {
-            s_switchTo = null;
-            if (!RendererSwitch.TryRebuild(toVulkan, out var error))
-            {
-                global::Android.Util.Log.Warn("Timbratune", $"couldn't switch to {(toVulkan ? "Vulkan" : "OpenGL ES")}: {error}");
-                if (toVulkan) s_vulkanUnavailable = true;
-            }
-        }
 #if PROFILING
         // Experiment switches are read first: some (e.g. "vulkan") apply while the app is built.
         var flagsFile = System.IO.Path.Combine(GetExternalFilesDir(null)!.AbsolutePath, "perf-flags.txt");
@@ -88,9 +75,8 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
         if (!Diagnostics.Perf.Flags.Contains("noprobes")) Diagnostics.Perf.Sink = line => global::Android.Util.Log.Info("Timbratune", line);
 #endif
         base.OnCreate(savedInstanceState);
-        global::Android.Util.Log.Info("Timbratune", $"renderer: {RendererSwitch.Describe()}, multi-window: {IsInMultiWindowMode}");
-        // Vulkan was wanted but Avalonia fell back: don't keep trying to switch to it.
-        if (ForcedRenderer() is null && !IsInMultiWindowMode && !RendererSwitch.IsVulkan) s_vulkanUnavailable = true;
+        global::Android.Util.Log.Info("Timbratune", $"started: vulkan wanted: {s_vulkanWanted}, multi-window: {IsInMultiWindowMode}");
+        WatchSurface();
 #if PROFILING
         if (Avalonia.Application.Current is { } app)
             Avalonia.Threading.Dispatcher.UIThread.Post(() => Diagnostics.Perf.ApplyExperiments(app,
@@ -167,35 +153,33 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
             .With(new AndroidPlatformOptions { RenderingMode = RenderingModes() });
 
     /// <summary>
-    /// OpenGL ES, then software. Vulkan is faster (measured scrolling: on a Pixel 9, Android 17,
-    /// where OpenGL ES runs through a translation layer on Vulkan, ~33 fps with OpenGL ES against
-    /// ~56 fps; on a Pixel 4a 52 → 56 fps), but with Vulkan the picture goes black or partly black
-    /// when the window is resized in split screen (Pixel 9, next to Discord; gone with OpenGL ES).
-    /// The renderer can't change while the app runs, so Vulkan is opt-in: "vulkan" in renderer.txt.
+    /// Vulkan first, then OpenGL ES, then software. Measured scrolling on a Pixel 9 (Android 17,
+    /// where OpenGL ES runs through a translation layer on Vulkan): ~15 % janky frames with
+    /// Vulkan against ~62 % with OpenGL ES; live recording ~2 % against ~10 %. If Vulkan can't
+    /// start, Avalonia falls back to the next. Its surface needs one workaround: WatchSurface.
     /// </summary>
     private IReadOnlyList<AndroidRenderingMode> RenderingModes()
     {
 #if PROFILING
-        // A/B switch: "egl" renders through OpenGL ES as before.
+        // A/B switch: "egl" renders through OpenGL ES.
         if (Diagnostics.Perf.Flags.Contains("egl")) return [AndroidRenderingMode.Egl, AndroidRenderingMode.Software];
 #endif
         switch (ForcedRenderer())
         {
-            case "vulkan": return [AndroidRenderingMode.Vulkan, AndroidRenderingMode.Egl, AndroidRenderingMode.Software];
-            case "egl": return [AndroidRenderingMode.Egl, AndroidRenderingMode.Software];
-            case "software": return [AndroidRenderingMode.Software];
+            case "egl":
+                s_vulkanWanted = false;
+                return [AndroidRenderingMode.Egl, AndroidRenderingMode.Software];
+            case "software":
+                s_vulkanWanted = false;
+                return [AndroidRenderingMode.Software];
         }
-        // Vulkan, except in split screen / multi-window, where it goes black or partly black
-        // when the window is resized (Pixel 9, Android 17): OpenGL ES there. Entering or leaving
-        // multi-window while running switches (OnMultiWindowModeChanged).
-        return IsInMultiWindowMode
-            ? [AndroidRenderingMode.Egl, AndroidRenderingMode.Software]
-            : [AndroidRenderingMode.Vulkan, AndroidRenderingMode.Egl, AndroidRenderingMode.Software];
+        s_vulkanWanted = true;
+        return [AndroidRenderingMode.Vulkan, AndroidRenderingMode.Egl, AndroidRenderingMode.Software];
     }
 
     /// <summary>
     /// renderer.txt in the app's folder ("vulkan", "egl" or "software"; adb push, then restart
-    /// the app) fixes the renderer, with no switching. Null: automatic.
+    /// the app) picks the renderer, for tests. Null: the default.
     /// </summary>
     private string? ForcedRenderer()
     {
@@ -215,75 +199,66 @@ public sealed class MainActivity : AvaloniaMainActivity<App>
         return null;
     }
 
-    /// <summary>
-    /// Makes the renderer match the window: Vulkan full-screen, OpenGL ES in multi-window.
-    /// While a take is being recorded it waits (the switch re-creates the Activity).
-    /// </summary>
-    private void ApplyRendererPolicy()
+    // Vulkan and a replaced surface. Entering (or leaving) split screen replaces the SurfaceView's
+    // Surface: a new native window, and the old one's buffer queue is abandoned. Avalonia's
+    // Vulkan display (11.3.22) keeps its VkSurfaceKHR from the old window and only re-creates
+    // the swapchain on it, every frame, against a dead window: logcat fills with "BufferQueue has
+    // been abandoned" and the pane stays black, however it is resized or repainted (a forced
+    // full repaint and a layout refresh were tried). A new view builds a new Vulkan surface from
+    // the current window, so when the surface is replaced the Activity is re-created (about
+    // half a second, with a flash). The process, recorder and view models keep running; the main
+    // view is the same instance (SingleViewLifetime), attached to the new window.
+    // This includes coming back to the app (Home, lock screen, Recents): Android destroys the
+    // surface when the app stops and gives a new one on return. Skipping the re-creation when
+    // the window came back at the same size was tried: it usually worked, but once (unlocking
+    // in split screen) the display presented to the dead window for 3 s until a later resize.
+    private sealed class SurfaceWatcher(MainActivity owner, bool hadSurface) : Java.Lang.Object, ISurfaceHolderCallback
     {
-        if (IsFinishing || IsDestroyed || ForcedRenderer() is not null || !RendererSwitch.Supported) return;
-        var wantVulkan = !IsInMultiWindowMode;
-        if (RendererSwitch.IsVulkan == wantVulkan || (wantVulkan && s_vulkanUnavailable)) return;
-        if (s_recorder?.IsRecording == true)
+        private bool _seen = hadSurface;
+
+        public void SurfaceCreated(ISurfaceHolder holder)
         {
-            new Handler(Looper.MainLooper!).PostDelayed(ApplyRendererPolicy, 1000);
+            if (_seen) owner.OnSurfaceReplaced();
+            _seen = true;
+        }
+
+        public void SurfaceChanged(ISurfaceHolder holder, global::Android.Graphics.Format format, int width, int height) { }
+        public void SurfaceDestroyed(ISurfaceHolder holder) { }
+    }
+
+    private static long s_lastSurfaceRecreate;
+
+    private void WatchSurface(int attempts = 20)
+    {
+        if (IsFinishing || IsDestroyed) return;
+        if (FindSurfaceView(Window?.DecorView) is { } surfaceView)
+        {
+            var had = surfaceView.Holder?.Surface?.IsValid == true;
+            surfaceView.Holder?.AddCallback(new SurfaceWatcher(this, had));
             return;
         }
-        s_switchTo = wantVulkan;
+        if (attempts > 1) new Handler(Looper.MainLooper!).PostDelayed(() => WatchSurface(attempts - 1), 50);
+    }
+
+    private static SurfaceView? FindSurfaceView(View? view)
+    {
+        if (view is SurfaceView surfaceView) return surfaceView;
+        if (view is not ViewGroup group) return null;
+        for (var i = 0; i < group.ChildCount; i++)
+            if (FindSurfaceView(group.GetChildAt(i)) is { } found) return found;
+        return null;
+    }
+
+    private void OnSurfaceReplaced()
+    {
+        // OpenGL ES and software take a replaced surface in their stride; only Vulkan needs this.
+        if (IsFinishing || IsDestroyed || !s_vulkanWanted) return;
+        // Never in a loop: at most one re-creation a second.
+        var now = System.Environment.TickCount64;
+        if (now - s_lastSurfaceRecreate < 1000) return;
+        s_lastSurfaceRecreate = now;
+        global::Android.Util.Log.Info("Timbratune", "surface replaced under Vulkan: re-creating the window");
         Recreate();
-    }
-
-    // Split screen: the activity handles its own configuration changes (no re-creation), so
-    // when the window is resized, or moved into or out of multi-window, nothing makes the
-    // render surface follow and it can stay black or partly drawn. Kick layout and a repaint
-    // right away and once more after the system has settled the new bounds.
-    public override void OnConfigurationChanged(Configuration newConfig)
-    {
-        base.OnConfigurationChanged(newConfig);
-        RefreshSurface();
-    }
-
-    public override void OnMultiWindowModeChanged(bool isInMultiWindowMode, Configuration? newConfig)
-    {
-        base.OnMultiWindowModeChanged(isInMultiWindowMode, newConfig);
-        RefreshSurface();
-        // Let the system settle the new bounds first.
-        new Handler(Looper.MainLooper!).PostDelayed(ApplyRendererPolicy, 250);
-    }
-
-    private void RefreshSurface()
-    {
-        Refresh();
-        var handler = new Handler(Looper.MainLooper!);
-        handler.PostDelayed(Refresh, 100);
-        handler.PostDelayed(Refresh, 400);
-    }
-
-    private void Refresh()
-    {
-        try
-        {
-            if (IsFinishing || IsDestroyed) return;
-            Invalidate(Window?.DecorView);
-            if (Avalonia.Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.ISingleViewApplicationLifetime { MainView: { } view })
-            {
-                view.InvalidateMeasure();
-                view.InvalidateVisual();
-            }
-        }
-        catch (Exception e)
-        {
-            global::Android.Util.Log.Warn("Timbratune", $"surface refresh failed: {e.Message}");
-        }
-    }
-
-    private static void Invalidate(View? view)
-    {
-        if (view is null) return;
-        view.RequestLayout();
-        view.Invalidate();
-        if (view is not ViewGroup group) return;
-        for (var i = 0; i < group.ChildCount; i++) Invalidate(group.GetChildAt(i));
     }
 
     protected override void OnDestroy()

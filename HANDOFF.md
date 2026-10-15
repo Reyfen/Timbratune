@@ -488,28 +488,34 @@ The algorithm itself wasn't the problem: each update is fast enough, but it comp
   - **Mobile-only cheaper look** (set up in code in `App.Initialize`, not with `OnPlatform` in XAML, which crashed on desktop): a crisp card shadow instead of a blurred one, and a two-stop vertical page gradient. iOS should get the same when added.
   - **Cheaper FFT:** real input as a half-size complex FFT, with pooled buffers. Results are identical.
   - The **profiling build** (see below).
-- **`750b29a`:** `AndroidPlatformOptions.RenderingMode` = Vulkan, then Egl, then Software. **v0.2.1: OpenGL ES in multi-window, switched at runtime.** With Vulkan the picture went black or partly black when the window was resized in split screen (Pixel 9, Android 17, next to Discord). Refreshing layout/invalidating on `OnConfigurationChanged`/`OnMultiWindowModeChanged` didn't help; OpenGL ES fixed it. So:
-  - **Policy** (`MainActivity`): Vulkan full screen, OpenGL ES in multi-window. At launch `RenderingModes()` picks by `IsInMultiWindowMode`. Entering or leaving multi-window calls `ApplyRendererPolicy()` (250 ms after `OnMultiWindowModeChanged`). It waits while a take is recording and gives up on Vulkan if it once failed to start.
-  - **Switch** (`RendererSwitch.cs`): Avalonia 11.3.22 builds its graphics once, in `AndroidPlatform.Initialize`. It produces an internal static `Compositor` on the chosen `IPlatformGraphics`, which `TopLevelImpl.Compositor` reads on every use. The switch sets the target and calls `Recreate()`. The old Activity's `OnDestroy` detaches the main view and disposes its `AvaloniaView`. Then, in the new `OnCreate` before `base.OnCreate`, reflection builds the new graphics (`EglPlatformGraphics.TryCreate` / `VulkanSupport.TryInitialize`) and a new `Compositor(graphics, false)`. It stores them in `AndroidPlatform.Compositor` and the locator. The new view re-attaches the same main view (static `SingleViewLifetime`). The process, services, recorder and view models keep running.
-  - **Limits:**
-    - The switch is gated to Avalonia 11.3.x; re-check `AndroidPlatform`, `AvaloniaMainActivity` and `TopLevelImpl` (decompile) on upgrade.
-    - The old compositor and graphics are left to the GC (no teardown API).
-    - `renderer.txt` (`vulkan`, `egl` or `software`) in the app's external files folder fixes the renderer and disables switching.
-  - **Measured** (Pixel 9, Release profiling build, 15 s of scrolling, 60 Hz):
-
-    | | fps while drawing | janky |
-    |---|---|---|
-    | full screen, Vulkan | 52.8 | 13.6 % |
-    | split top pane, OpenGL ES | 42.8 | 33.7 % |
-    | back to full screen, Vulkan | 53.8 | 10.5 % |
-
-    All in one process. Full-screen OpenGL ES on the same build measured about 62 % janky when scrolling, against about 15 % for Vulkan. Live recording was 9–10 % vs 2 % janky.
-  - **Not yet checked:**
-    - many switches in a row (memory);
-    - Home and back again;
-    - rotation after a switch;
-    - entering split screen while recording;
-    - the Pixel 4a.
+- **`750b29a`:** `AndroidPlatformOptions.RenderingMode` = Vulkan, then Egl, then Software.
+- **v0.2.1, Vulkan and a replaced surface (2026-10-15).** With Vulkan the app went black in split screen (Pixel 9, Android 17, next to Discord).
+  - **Cause, from logcat and decompiled Avalonia 11.3.22:**
+    - Entering split screen (and coming back to the app at all) replaces the SurfaceView's `Surface`: there is a new native window, and the old one's buffer queue is abandoned.
+    - Avalonia's `VulkanDisplay` keeps its `VkSurfaceKHR` from the old window. `EnsureSwapchainAvailable` sees a size mismatch and re-creates the swapchain on that dead surface every frame. Logcat shows `BufferQueue ... has been abandoned` and `NATIVE_WINDOW_MIN_UNDEQUEUED_BUFFERS query failed` at 60 Hz (4,476 in 75 s), and the pane stays black.
+    - The surface is only rebuilt on `VK_ERROR_SURFACE_LOST_KHR`. `AndroidVulkanSurface.CreateSurface` itself reads the current window each time.
+    - The same code is in Avalonia 12.1.4: the decompiled `Avalonia.Vulkan` differs only in composite-alpha selection and interfaces.
+  - **What didn't help:**
+    - refreshing layout and invalidating on `OnConfigurationChanged` / `OnMultiWindowModeChanged`;
+    - a forced full repaint after resizing (nudging the root's opacity), tried on the theory that only damaged regions were redrawn (Uno #24865).
+  - **Fix** (`MainActivity.WatchSurface`): an `ISurfaceHolderCallback` on Avalonia's SurfaceView. When its surface is created again (any replacement) and Vulkan is in use, the Activity is re-created; at most once a second. A new view builds a new Vulkan surface from the current window.
+    - It takes about half a second and flashes. The process, recorder, view models and the main view itself (static `SingleViewLifetime`) carry on.
+    - This happens on entering and leaving split screen via Recents, and on every return to the app (Home, lock screen).
+    - Resizing the split, or dragging the divider to full screen, only changes the surface's size and needs nothing.
+  - **Tried and dropped: skipping the re-creation when the app came back from a stop at the same size.** It usually worked, but once, unlocking in split screen, the display presented to the dead window for 3 s (183 errors) until a later resize.
+  - **Before this:** a runtime renderer switch, `RendererSwitch.cs` (Vulkan full screen, OpenGL ES in multi-window, rebuilding Avalonia's internal compositor by reflection). It has been removed, together with the earlier refresh code.
+  - `renderer.txt` (`vulkan`, `egl` or `software`) in the app's external files folder still picks the renderer, for tests.
+  - **Measured** (Pixel 9, Release profiling build, 60 Hz):
+    - Scrolling, 15 s: full-screen Vulkan 52.8–53.8 fps while drawing with 10–14 % janky frames; OpenGL ES about 62 % janky; in a split pane OpenGL ES 33.7 %.
+    - Live recording: 2 % janky with Vulkan, 9–10 % with OpenGL ES.
+  - **Checked on the Pixel 9 (debug build):**
+    - entering and leaving split screen with Discord, also via Recents;
+    - dragging the divider and swapping panes;
+    - Home and back;
+    - rotation;
+    - lock and unlock;
+    - a re-creation 40 s into a recording: the timer and live graphs carried on and it is one take.
+  - **Not checked:** the Pixel 4a, freeform or desktop windows, and picture-in-picture.
 - **`b5d73f4`** (jank round):
   - **Scheduling:** live updates run on one dedicated thread (`Analysis/LiveWorker.cs`) at Android background priority (`AppServices.LowerThreadPriority`). At most one update starts per 100 ms, and nested parallelism is capped at 2 cores through an ambient limit (`Acoustics/Numerics/Parallelism.cs`, `Parallelism.Limit(n)` / `Parallelism.Options`, used by every `Parallel.*` in the analysis). The analysis after Stop keeps all cores.
   - **Mono GC:** `Properties/GcEnvironment.txt` sets `MONO_GC_PARAMS=nursery-size=16m,major=marksweep-conc` (an `AndroidEnvironment` item; `-p:TimbratuneGcEnv=false` leaves the defaults). **32 MB makes the runtime fail at startup** (LinkageError).
@@ -564,7 +570,7 @@ The 💾 button on each "All recordings" card now opens a menu with three choice
   - Android side, `AndroidFileSharer.cs`: the file is written to `cache/share/` and handed out as a `content://` URI by `ShareFileProvider` (an AndroidX `FileProvider`, declared by attribute so both manifests get it; paths in `Resources/xml/share_paths.xml`), with read permission granted through `ClipData`. Then `Intent.CreateChooser`.
   - Shared files are kept an hour (the receiving app may still be uploading), then deleted on the next share.
   - Checked on the Pixel 9: the sheet opens with `voice-take-N.tmbr` / `.wav`. Sending to an app wasn't tried.
-- **Current Activity:** `MainActivity.s_current` is what the share sheet and the microphone request use. The services are built once per process, and they used to hold the first Activity, which the renderer switch (§8d) can replace.
+- **Current Activity:** `MainActivity.s_current` is what the share sheet and the microphone request use. The services are built once per process, and they used to hold the first Activity, which can be re-created when its surface is replaced (§8d).
 - **The name:** it is a `Button.label-link` (plain text, accent and underlined on hover), so clicking it renames without selecting the take. `RecordingCardView.OnCardClicked` skips buttons; the rest of the card still selects it.
 - **Closing:** the background (scrim, or the scroller over it outside the card: `OnBackgroundPressed`), ✕, cancel, Esc, and Android's back button (`MainView.OnBackRequested`, which also closes the metric modal) close it as cancel.
 - **Styles:** the save choices are `Button.choice` in `Styles.axaml`; "coming soon" is disabled and faded.
@@ -576,7 +582,7 @@ The 💾 button on each "All recordings" card now opens a menu with three choice
   - delete of a throwaway take;
   - export data opens the system picker.
 - **File pickers** (`StorageProviderDialogs`):
-  - The TopLevel is now looked up on every call. It was cached, which would break after the Activity is re-created by the renderer switch (§8d).
+  - The TopLevel is now looked up on every call. It was cached, which would break after the Activity is re-created (§8d).
   - On Android the extension is taken off the suggested name, because the picker adds it again (it showed `voice-take-15.tmbr.tmbr`).
 
 The choices:
