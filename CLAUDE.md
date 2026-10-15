@@ -6,6 +6,8 @@
 
 `REFACTOR-PLAN.md` is the agreed target architecture and the step-by-step refactoring plan (feature modules, per-metric analysis, import formats, analytics, future accounts and browser build). Read it before structural changes and tick its checklist as phases land.
 
+`NOISE-PLAN.md` is the measured plan for noise and microphone robustness (high-pass, noise reduction, stray voicing, recording-quality notes), with the bench in `tools/noise-bench`. Read it before changing the analysis input or pitch post-processing.
+
 ## Ground rules
 
 - **Commit only when asked.** The main branch is `main` (tracks `origin/main` on https://github.com/Reyfen/Timbratune; it was called `dev` until 2026-10-10). Version work happens on `dev/v<version>` branches, each tracking `origin/dev/v<version>` and merged into `main` by pull request. The current work branch is the newest one: the first line of `git branch -a --list '*dev/v*' --sort=-version:refname`. Its first commit bumps `<Version>` in `Directory.Build.props` to match. Check `git status` and HANDOFF §8 before starting. Releases are tagged `v<version>` (`git tag --list 'v*'`); a branch can't be called `dev` again while `dev/…` branches exist. Write commit messages to a file without a BOM (PowerShell 5.1's `Out-File -Encoding utf8` adds one) and pass it with `git commit -F`.
@@ -27,6 +29,7 @@
 | `src/Reyfen.Timbratune.Android` | Android head. **Not in `Timbratune.slnx`** so the solution builds without the Android workload. |
 | `tests/` | Acoustics tests (synthetic, Praat oracle, streaming) and Core tests (parity with `analyze.py` on VCTK fixtures, live-vs-saved). |
 | `tools/live-steadiness` | Dev tool measuring how steady and accurate the live dots are. |
+| `tools/noise-bench` | Dev tool: noisy and degraded copies of the fixtures, candidate clean-up chains, analysis and scoring (see `NOISE-PLAN.md`). |
 | `scripts/` | `fetch-praat.ps1`, `make-long-wav.ps1`, `screenshot.ps1` (Windows UI checks), `linux-ui.sh`, `package-linux.sh`, `make-emoji-font.py` (re-run when adding emoji to the UI). |
 
 Live analysis shares per-frame kernels with the full analysis, so live ≈ saved (exact for pitch, jitter, shimmer, phrases; small tolerances elsewhere). On Stop the WAV is trimmed by ≤ 10 ms so both frame grids line up. Don't break this; `LiveAnalysisTests` checks it.
