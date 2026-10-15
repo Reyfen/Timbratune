@@ -55,12 +55,15 @@ public sealed class RecordingManagerTests(ITestOutputHelper output) : IDisposabl
         messenger.Register<RecordingManagerTests, TakeSaved>(this, (_, m) => saved = m);
         messenger.Register<RecordingManagerTests, RecordingStarted>(this, (_, _) => recordingStarted++);
 
+        var recording = System.Diagnostics.Stopwatch.StartNew();
         Assert.True(await manager.StartAsync());
         Assert.True(manager.IsLive && manager.IsRecording);
         const double seconds = 9.81; // vctk_f294
         await Task.Delay(TimeSpan.FromSeconds(seconds + 0.4));
         var progress = new List<double>();
-        var take = await manager.StopAsync("  a test take  ", new SyncProgress(progress.Add));
+        var stopping = manager.StopAsync("  a test take  ", new SyncProgress(progress.Add));
+        var recorded = recording.Elapsed.TotalSeconds; // the live loop ticks until Stop, past the end of the clip
+        var take = await stopping;
         Assert.True(manager.IsLive); // frozen on the final snapshot until the take is shown
         Assert.False(manager.IsRecording);
         await manager.FinishAsync();
@@ -70,10 +73,11 @@ public sealed class RecordingManagerTests(ITestOutputHelper output) : IDisposabl
         Assert.Equal(1, ended);
         Assert.Equal(1, recordingStarted);
         Assert.False(manager.IsLive);
-        // Never more than one update per 100 ms tick (plus the final one). Fewer when the machine is
-        // busy (e.g. the other test assemblies running in parallel): a slow update makes the next one
-        // wait for the next tick, by design; alone on this machine it is 99–100 for 9.81 s.
-        Assert.InRange(snapshots, (int)seconds * 2, (int)(seconds * 10) + 3);
+        // Never more than one update per 100 ms tick of the whole recording (plus the final one).
+        // Fewer when the machine is busy (e.g. the other test assemblies running in parallel): a slow
+        // update makes the next one wait for the next tick, by design. Alone it is about 100–103 for
+        // the ~10.2 s recorded.
+        Assert.InRange(snapshots, (int)seconds * 2, (int)(recorded * 10) + 2);
         // Full updates (with the whole take's statistics) at most about once a second, and the final one.
         Assert.InRange(results, 3, (int)seconds + 3);
         Assert.Equal(0, offWorker); // raised on the analysis threads

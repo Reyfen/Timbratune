@@ -106,7 +106,7 @@ adb install -r publish\Timbratune-android\Timbratune-v0.2.1-android.apk
 Other useful commands:
 
 ```powershell
-# import audio (.wav, .mp3, .flac) or .tmbr files without the UI (like `uv run analyze.py clip.wav --label …`)
+# import audio (WAV, MP3, FLAC, and whatever the system's decoders or FFmpeg read) or .tmbr files without the UI (like `uv run analyze.py clip.wav --label …`)
 dotnet run --project src/Reyfen.Timbratune.Desktop -- --import take1.wav take2.mp3 --label "rainbow passage"
 
 # use a throwaway data folder
@@ -128,7 +128,7 @@ takes/003 rainbow passage/
   series.json     per-frame lists (pitch, loudness, HNR, F1–F3, weight, jitter), used for export
 ```
 
-Audio (`.wav`, `.mp3`, `.flac`) or `.tmbr` files dropped into `takes/` are imported on the next start; the 📥 import
+Audio or `.tmbr` files dropped into `takes/` are imported on the next start; the 📥 import
 button does the same from a file picker. Data folders from earlier versions (`recordings.json` + `audio/` +
 `analysis/`, the Electron app's layout) are converted on first start; `recordings.json` is kept as
 `recordings.json.migrated`. Takes from builds made before the rename, in `Euphonia-CSharp`, are moved over first.
@@ -140,7 +140,10 @@ This is deliberately separate from the original Electron app's `%APPDATA%\Euphon
 |---|---|---|
 | `src/Reyfen.Timbratune.Acoustics` | Speech-acoustics algorithms: pitch (autocorrelation / cross-correlation + Viterbi path), harmonicity, glottal pulses, jitter/shimmer, intensity, silence detection, Burg formants, spectrum, LTAS, WAV decoding. No dependencies, no native code, trim/AOT safe; usable on its own in other apps | No |
 | `src/Reyfen.Timbratune.Core` | Models, zones and metric registry, JSON, `RecordingStore`, the analysis pipeline (`AcousticsAnalysisEngine` + `AnalysisPostProcessor`), WAV writer and waveform peaks | No |
-| `src/Reyfen.Timbratune.Audio.SoundFlow` | Microphone capture and playback via [SoundFlow](https://github.com/LSXPrime/SoundFlow) (miniaudio) | No — ships natives for Win/macOS/Linux/Android/iOS |
+| `src/Reyfen.Timbratune.Audio.SoundFlow` | Microphone capture and playback via [SoundFlow](https://github.com/LSXPrime/SoundFlow) (miniaudio), MP3/FLAC import | No — ships natives for Win/macOS/Linux/Android/iOS |
+| `src/Reyfen.Timbratune.Audio.MediaFoundation` | Import decoding with Windows Media Foundation | Windows only (builds everywhere) |
+| `src/Reyfen.Timbratune.Audio.Ffmpeg` | Import decoding by running `ffmpeg` (found or downloaded on request; LGPL, never bundled) | Desktop |
+| `src/Reyfen.Timbratune.Audio.Android` | Import decoding with Android's MediaCodec | Android only |
 | `src/Reyfen.Timbratune` | Avalonia UI: views, view models (CommunityToolkit.Mvvm), custom-drawn charts | No |
 | `src/Reyfen.Timbratune.Desktop` | Desktop head (Windows, Linux, macOS): `Program.cs`, `--import`, single-file publish profiles | No |
 | `src/Reyfen.Timbratune.Android` | Android head: `MainActivity` (services, microphone permission, emoji font) | Android only |
@@ -268,7 +271,7 @@ using the microphone.
 - the recordings list: waveform player, rename in place, delete with confirmation, and a save menu: **save audio**
   (`.wav`), **export data** (`.tmbr`: a zip with the WAV and `take.json` holding the metrics, contour, trends and the
   per-frame lists with their frame spacing, for a later import) and **export PDF** (shown, not implemented yet)
-- **import** of `.wav`, `.mp3`, `.flac` and `.tmbr` files (button beside Record, or drop them into the takes folder)
+- **import** of audio and `.tmbr` files (button beside Record, or drop them into the takes folder): WAV, AIFF, MP3 and FLAC everywhere; M4A/AAC, ALAC, WMA, AMR, WebM and video files' audio through Windows' and Android's own decoders; nearly anything with FFmpeg (used when it's installed; on Linux the app offers to download it). The picker shows only what this device can read
 - the take switcher
 - the cheat sheet
 - light (blossom) and dark (dusk-plum) themes that follow the OS, with a toggle

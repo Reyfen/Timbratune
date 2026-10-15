@@ -119,6 +119,21 @@ public sealed class DependencyRuleTests
     }
 
     [Fact]
+    public void FeaturesDecodeOnlyThroughTheRegistry()
+    {
+        // §4.1: which decoders exist is the heads' business; features see DecoderRegistry and IDecoderInstaller.
+        var decoding = typeof(Reyfen.Timbratune.Core.Audio.Decoding.DecoderRegistry);
+        var forbidden = Core.GetTypes()
+            .Where(t => t.GetInterfaces().Any(i => i.Name is "IAudioDecoderProvider" or "IAudioDecoder") || t.Name is "IAudioDecoderProvider" or "IAudioDecoder" or "AnalysisWavSink")
+            .Select(t => t.FullName!).ToHashSet();
+        Assert.Contains(decoding.Namespace + ".ManagedDecoderProvider", forbidden); // the rule sees the providers
+        var violations = new List<string>();
+        foreach (var type in UiTypes().Where(t => FeatureOf(t.Namespace) is not null))
+            violations.AddRange(TypeReferences.Of(type).Where(forbidden.Contains).Select(u => $"{type.FullName} → {u}"));
+        Assert.Empty(violations);
+    }
+
+    [Fact]
     public void FeatureViewsDontBindToAParentsViewModel()
     {
         // `$parent[v:MainView].((vm:MainViewModel)DataContext)` couples a view to another one's

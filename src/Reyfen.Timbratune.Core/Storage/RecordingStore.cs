@@ -129,6 +129,12 @@ public sealed class RecordingStore
         lock (_gate) _storage.MoveIn(TakeOf(recording), fileName, sourcePath);
     }
 
+    /// <summary>Copies a local file into a take's folder as <paramref name="fileName"/> (e.g. the original of an M4A import).</summary>
+    public void CopyIntoTake(Recording recording, string fileName, string sourcePath)
+    {
+        lock (_gate) _storage.CopyIn(TakeOf(recording), fileName, sourcePath);
+    }
+
     /// <summary>Rewrites a take's detail.json (e.g. after re-analyzing its audio).</summary>
     public void SaveDetail(Recording recording, RecordingDetail detail)
     {

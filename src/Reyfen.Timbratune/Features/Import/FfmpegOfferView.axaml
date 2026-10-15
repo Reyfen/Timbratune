@@ -1,0 +1,57 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:im="using:Reyfen.Timbratune.Features.Import"
+             x:Class="Reyfen.Timbratune.Features.Import.FfmpegOfferView"
+             x:DataType="im:FfmpegOfferViewModel">
+  <!-- The FFmpeg offer over the page: scrim + card, like a take's dialog. ✕, Esc or Back close it. -->
+  <Grid>
+    <Border Background="{DynamicResource ScrimBrush}" />
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+      <Border Classes="card" MaxWidth="520" Margin="24" Padding="24,20" VerticalAlignment="Center"
+              BoxShadow="0 18 48 0 #55000000">
+        <StackPanel Spacing="14">
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Classes="section" Text="🎞️ more formats" />
+            <Button Grid.Column="1" Classes="ghost" VerticalAlignment="Top" Content="✕" ToolTip.Tip="close"
+                    Command="{Binding CloseCommand}" />
+          </Grid>
+          <TextBlock Classes="sub" TextWrapping="Wrap" Text="{Binding Question}" />
+          <WrapPanel>
+            <TextBlock Classes="footnote" TextWrapping="Wrap" Text="{Binding Licence}" />
+            <HyperlinkButton Classes="footlink" Content="licence" NavigateUri="{Binding LicenceUri}" />
+            <TextBlock Classes="footnote" Text=" · " />
+            <HyperlinkButton Classes="footlink" Content="source" NavigateUri="{Binding SourceUri}" />
+          </WrapPanel>
+
+          <!-- the choice -->
+          <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" IsVisible="{Binding IsAsking}">
+            <Button Classes="ghost" Content="not now" Command="{Binding NotNowCommand}" />
+            <Button Classes="ghost" Content="use my package manager" Command="{Binding UsePackageManagerCommand}" />
+            <Button Classes="primary" Content="download" Command="{Binding DownloadCommand}" />
+          </StackPanel>
+
+          <!-- downloading -->
+          <StackPanel Spacing="8" IsVisible="{Binding IsDownloading}">
+            <ProgressBar Minimum="0" Maximum="100" Value="{Binding Progress}" />
+            <Button Classes="ghost" HorizontalAlignment="Right" Content="cancel" Command="{Binding CancelDownloadCommand}" />
+          </StackPanel>
+
+          <!-- the package manager's command, to copy (the app never runs it) -->
+          <StackPanel Spacing="8" IsVisible="{Binding IsShowingCommand}">
+            <TextBlock Classes="sub" TextWrapping="Wrap" IsVisible="{Binding HasPackageCommand}"
+                       Text="Run this in a terminal, then press done:" />
+            <TextBox IsReadOnly="True" Text="{Binding PackageCommand}" IsVisible="{Binding HasPackageCommand}" FontFamily="monospace" />
+            <TextBlock Classes="sub" TextWrapping="Wrap" IsVisible="{Binding !HasPackageCommand}"
+                       Text="Install the ffmpeg package with your system's package manager, then press done." />
+            <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+              <Button Classes="ghost" Content="back" Command="{Binding BackCommand}" />
+              <Button Classes="primary" Content="done" Command="{Binding PackageManagerDoneCommand}" />
+            </StackPanel>
+          </StackPanel>
+
+          <TextBlock Classes="footnote" TextWrapping="Wrap" Text="{Binding Message}" IsVisible="{Binding HasMessage}" />
+        </StackPanel>
+      </Border>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

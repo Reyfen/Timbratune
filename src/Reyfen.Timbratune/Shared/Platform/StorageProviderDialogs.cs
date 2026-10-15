@@ -51,14 +51,19 @@ public sealed class StorageProviderDialogs : IFileDialogs
         return file.TryGetLocalPath() ?? file.Name;
     }
 
-    public async Task<IReadOnlyList<PickedFile>> OpenFilesAsync(string title, string typeName, IReadOnlyList<string> extensions)
+    public async Task<IReadOnlyList<PickedFile>> OpenFilesAsync(string title, IReadOnlyList<FileTypeFilter> types)
     {
         if (CurrentTopLevel is not { } topLevel) return [];
         var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
             Title = title,
             AllowMultiple = true,
-            FileTypeFilter = [new FilePickerFileType(typeName) { Patterns = [.. extensions.Select(e => "*." + e)] }, FilePickerFileTypes.All],
+            FileTypeFilter = [.. types.Select(t => new FilePickerFileType(t.Name)
+            {
+                Patterns = [.. t.Extensions.Select(e => "*." + e)],
+                MimeTypes = t.MimeTypes.Count > 0 ? [.. t.MimeTypes] : null,
+                AppleUniformTypeIdentifiers = t.AppleUtis is { Count: > 0 } utis ? [.. utis] : null,
+            })],
         });
         return [.. files.Select(f => new PickedFile(f.Name, f.OpenReadAsync))];
     }

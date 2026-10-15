@@ -2,7 +2,7 @@
 
 This file brings a new engineer or agent up to date on everything done so far: what the user asked for, what was decided and why, how the code is organised, what was measured, and what is still open.
 
-Last updated 2026-10-15. The newest work is §8i–§8l (refactoring P0: golden, architecture and bench baselines; P1: dependency injection and shared ports; P2: storage, settings and scheduling seams; P3: UI feature modules); §8d–§8h cover v0.2.0 (Android performance, export, one folder per take, import, `build.ps1`); §8 is the current state.
+Last updated 2026-10-16. The newest work is §8i–§8m (refactoring P0: golden, architecture and bench baselines; P1: dependency injection and shared ports; P2: storage, settings and scheduling seams; P3: UI feature modules; P4: import formats); §8d–§8h cover v0.2.0 (Android performance, export, one folder per take, import, `build.ps1`); §8 is the current state.
 
 **Name:** the project is **Timbratune — Gender Voice Analysis Tool**, by **Reyfen**.
 - **Before 2026-10-02 it was called Euphonia**, and it is a fork of [Euphonia](https://github.com/Yuuzulight/Euphonia). Older parts of this file and of the transcript say "Euphonia" and "Euphonia-CSharp"; read those as Timbratune and the repo root (the code moved from `Timbratune/` to the root on 2026-10-06).
@@ -267,7 +267,7 @@ Two takes (voice-take-8/9, noisy: 6–12 kHz hiss about as loud as the voice) sh
 ```powershell
 cd C:\Projects\Reyfen\Timbratune
 dotnet build Timbratune.slnx
-dotnet test Timbratune.slnx                     # 189 tests; the Praat oracle tests skip without Praat
+dotnet test Timbratune.slnx                     # 239 tests; the Praat oracle tests skip without Praat
 dotnet run --project src/Reyfen.Timbratune.Desktop
 ./build.ps1 [win] [linux] [android]             # all published builds into publish/ (§8h)
 ```
@@ -762,6 +762,13 @@ Branch `dev/v0.3.0`, phase P0 of `REFACTOR-PLAN.md` §9. No app code changed; th
   - Saved values must be identical; live values may move by at most 1e-7. Keys, their order and array lengths must match exactly.
   - `TIMBRATUNE_UPDATE_GOLDEN=1` rewrites the files. Do that only on purpose, and say why in the commit.
   - The files were made on Windows x64. Another OS's `libm` could change last digits; if the WSL run in P9 shows that, loosen the saved comparison for that case rather than regenerating.
+  - **Linux (2026-10-16): one live series has its own tolerance, `$.series.weight.v` at 1e-4 dB** (`LiveWeightTolerance`). WSL Ubuntu 24.04 failed `vctk_m311.live.json` at `weight.v[0]`, 12.7885677067799 expected, 12.788565828856093 got (1.9e-6), also on `c6a3160`, so not a refactoring regression. Measured:
+    - The cause is `libm`. Over 200,000 arguments, Windows' CRT and glibc give results 1 ulp apart for 3.1 % of `Math.Sin`, 3.1 % of `Cos`, 3.6 % of `Log10`, 0.5 % of `Exp` and 0.2 % of `Pow(x, 2)` calls (never more than 1 ulp). The decoded WAV and every other input are identical.
+    - Saved results are identical on Linux (all `take`/`detail`/`series.json` files), because the saved series are rounded. So are the live metrics and detail. The unrounded live series differ only in the last bits: loudness ≤ 3e-16 relative, HNR ≤ 8e-13, F2/F3 ≤ 9e-14, jitter ≤ 4e-13.
+    - Weight is amplified because it is the one live output that uses F0 unrounded. F0 comes from Brent's maximization of the sinc-interpolated autocorrelation (`PeakRefinement.SincMaximum`), which stops within about √ε·x of the peak. A 1-ulp change in the interpolant can move it inside that tolerance. Of 1,124 weight frames on the four clips, F0 is identical on 124, ≤ 1.2e-10 relative on 999, and 3.8e-8 on one (m311 at 0.83 s; formants, bandwidths, H1 and A3 match to ≤ 4e-13). The Iseli–Alwan corrections give |dW / d ln F0| up to 630 dB on these clips (median 50–90), so that frame's weight moves 1.9e-6 dB. Every other weight value is within 2.1e-8.
+    - The bound is 630 dB × 4e-8 ≈ 2.5e-5 dB, so the tolerance is 1e-4 dB, which is far below the 0.01 dB a saved take stores. Everything else keeps 1e-7 (live) and 0 (saved), including `weight.t`.
+    - I didn't make the computation platform-stable. That would need our own `Sin`/`Cos`/`Log10`/`Exp`/`Pow` throughout pitch, FFT, windows and formants (the sinc interpolant is a hot loop). It would also change saved results that Praat oracle tests check, and it would buy bit-identity for a value shown to 0.1 dB. Tightening Brent doesn't help: below √ε·x the interpolant is flat to the last bit.
+    - If a later platform (Android's bionic, ARM64, macOS) breaks a saved file, it would most likely be a 0.01-dB weight or 0.1-Hz F0 rounding flip near a half step. Check that before regenerating.
 - **Architecture tests** (`tests/Reyfen.Timbratune.Architecture.Tests`, in the solution). A small IL scanner (`TypeReferences.cs`, reflection only) collects every type a type uses, from its signatures and method bodies; lambdas and async methods are covered through their nested compiler-generated types. Rules:
   - Acoustics references only the .NET runtime; Core only Acoustics and the runtime.
   - Acoustics, Core and the UI library reference nothing native-only (SoundFlow, Avalonia.Desktop/Android/Native/Win32/X11, Mono.Android, the `Audio.*` adapters, the heads).
@@ -913,6 +920,64 @@ Phase P3 of `REFACTOR-PLAN.md`. No user-visible change except the two small ones
 **User-visible differences** (small, on purpose):
 - "couldn't open the folder here · it's …" now shows under the folder link in the footer, not in the import line (that line belongs to Import now).
 - The live-window choice is stored as `liveMonitor.windowSeconds`. The unreleased P2 id `recording.liveWindowSeconds` is not read; it stays in the file as an unknown key.
+
+## 8m. Refactoring P4: import formats (2026-10-16)
+
+Phase P4 of `REFACTOR-PLAN.md` (§4): import reads almost any audio format, on every platform, and the picker offers only what the device can read.
+
+**Decoding layer** (`Core/Audio/Decoding`):
+- `AudioFormatCatalog`: the known formats (wav, aiff, mp3, flac, ogg, opus, aac, m4a, mp4, 3gp, amr, caf, webm, mkv, wma) with extensions, MIME types and Apple type identifiers.
+- `FormatSniffer`: the format from the first 64 KB (after any ID3 tags, however large), never from the extension. MP3 and ADTS need two consecutive frame headers. The extension only picks within the MP4 family.
+- `IAudioDecoderProvider` (id, priority, `ProbeAsync`, `Create`) and `IAudioDecoder` (PCM at the file's own rate and channels into an `IPcmSink`).
+- `AnalysisWavSink`: mono at 44.1 kHz PCM16. Audio at 44.1 kHz streams through; other rates are collected and resampled once at the end (Acoustics `Resampler`).
+- `DecoderRegistry`: probes every provider once in the background (first asked at start-up by the dropped-file scan), sniffs, tries the providers that read the format by priority, and rewrites the target for each attempt. `RefreshAsync` re-probes and raises `CapabilitiesChanged`.
+- `IDecoderInstaller`, `UnsupportedAudioException` (unknown format, or none of this device's decoders reads it).
+
+**Providers:**
+
+| Priority | Provider | Where | Reads |
+|---|---|---|---|
+| 1 | `ManagedDecoderProvider` (Core) | everywhere | WAV (incl. RF64), AIFF/AIFC |
+| 2 | `MiniaudioDecoderProvider` (`Audio.SoundFlow`) | native heads | MP3, FLAC, WAV; still asks miniaudio for 44.1 kHz mono, so these imports are unchanged |
+| 3 | `MediaFoundationDecoderProvider` (`Audio.MediaFoundation`) | Windows | here: M4A, ALAC, AAC, 3GP, MP4, WMA, AMR, WebM, MKV (with AAC/Opus), MP3, FLAC |
+| 4 | `MediaCodecDecoderProvider` (`Audio.Android`) | Android | by `MediaCodecList`: M4A, MP4, AAC, 3GP, AMR, Ogg, Opus, WebM, MKV, MP3, FLAC |
+| 6 | `FfmpegDecoderProvider` (`Audio.Ffmpeg`) | desktop | by `ffmpeg -demuxers` / `-decoders`: everything in the catalog |
+
+- **Media Foundation:** source-generated COM interop (`[GeneratedComInterface]`), Source Reader to float at the native rate. A file whose extension doesn't match its content gets a temporary copy with the right one (the reader picks its parser by extension). The type change AAC decoders report on their first sample is accepted. The probe decodes an embedded 0.1 s sine clip per format (~0.5 s, background): Store codecs (Web Media Extensions is installed here) don't show in the registry and, here, aren't usable from a desktop app, so Ogg/Opus/CAF fall to FFmpeg.
+- **MediaCodec:** synchronous API, first audio track, 16-bit or float output.
+- **FFmpeg:** `ffmpeg -i <file> -map 0:a:0 -c:a pcm_f32le -f wav -`, the piped WAV read to its end (placeholder sizes). Found on the PATH, or the downloaded copy first. Its own error line comes through ("ffmpeg: …").
+
+**Import** (`Core/Storage/TakeImportService.cs`, was `TakeImporter`):
+- A RIFF WAV the analysis reads is stored as it is (unchanged).
+- Everything else is decoded to `take.wav`, and the original is kept as `source.<ext>`: moved for dropped and picked files, copied for the CLI. Before, only dropped MP3/FLAC kept theirs.
+- **Bug fixed:** `WavDecoder` read compressed WAVE data (ADPCM, µ-law…) as 8-bit PCM and analyzed noise. It now refuses it, so miniaudio decodes it (pitch 228 Hz instead of 485 on the test file). RF64/BW64 are read.
+- The desktop CLI reports an unreadable file and carries on (exit code 1) instead of crashing.
+
+**Picker and dropped files** (`Features/Import`):
+- `ImportFilters`: "Audio and Timbratune takes" first, then one group per decodable format, then `.tmbr`, never "All files". Picked files are no longer filtered by extension; their content decides, with a reason when it can't be read (some Android file managers ignore the types).
+- `IFileDialogs.OpenFilesAsync` takes `FileTypeFilter`s (extensions, MIME types, Apple type identifiers).
+- Dropped audio files nothing here decodes stay in the takes folder, mentioned once in the import line at start.
+
+**FFmpeg download** (§4.3; owner's decisions of 2026-10-15):
+- **Build:** BtbN FFmpeg-Builds `autobuild-2026-10-15-13-03`, FFmpeg n9.0.2-28-g669f5ab083, LGPL static, for linux-x64/arm64 and win-x64/arm64. `scripts/mirror-ffmpeg.ps1` checks BtbN's `checksums.sha256` and repacks each to `ffmpeg-9.0.2-<rid>.tar.gz` with only `ffmpeg`, `LICENSE.txt` and a README (36–57 MB instead of 117–171 MB). The owner hosts them on Reyfen/github-releases-as-file-hosting, release `ffmpeg-n9.0.2-28-g669f5ab083`. URL, size and SHA-256 are pinned in `FfmpegInstaller.Pinned`; the uploads were checked against them.
+- **Installer:** download over HTTPS (`IHttpDownloader`), hash and size checked before anything is unpacked (a mismatch deletes the file), only the program and licence/readme files unpacked by .NET's `TarReader`, flat, into `<LocalApplicationData>/Timbratune/tools/ffmpeg/<version>/` (`~/.local/share/…` on Linux), marked executable, older versions removed. No root, nothing system-wide. Flatpak: unavailable.
+- **Offer** (`FfmpegOfferViewModel`, an overlay through `ImportRouter`): shown on Linux when no ffmpeg is found, before the picker, and after a batch with a file in a known but undecodable format. Download (progress, cancel), use my package manager (the command for apt/dnf/pacman/zypper to copy; "done" re-probes), not now (remembered: `import.ffmpegOfferDeclined`). On Windows the installer is registered but `IsOffered` is false: hidden until the settings page offers it.
+- **Licence:** the offer names FFmpeg's LGPL with links to the licence and source; the About line says "some imports decoded by FFmpeg (LGPL)" whenever an ffmpeg is in use. `package-linux.sh` recommends `ffmpeg`.
+
+**Tests:** 239, on Windows and on Linux (19 UI, 19 architecture, 57 acoustics, 141 core).
+- New: `DecodingTests` (sniffer on 20 fixtures, renamed and non-seekable; big ID3 tags; AIFF and RF64 sample-exact; sink pass-through, downmix and resampling; registry priority, fallback and probing), `MediaFoundationTests` and `FfmpegTests` (pass with a note where unavailable; ALAC is sample-exact through both), `FfmpegInstallerTests` (offline: hash check before unpacking, nothing else unpacked, update, cancel), `ImportFiltersTests`, and new import tests.
+- New architecture rule: features reach decoders only through `DecoderRegistry` / `IDecoderInstaller`.
+- `RecordingManagerTests` (P3): the upper bound on snapshots now uses the measured recording time. The live loop ticks until Stop, 0.4 s past the clip, so 102 ticks plus the final snapshot is right; it failed on an idle Linux run with 103.
+- Fixtures: `Fixtures/formats/`, half a second of `vctk_f339` in each format (FFmpeg 9.0). The probe clips are synthetic sines.
+
+**Checked:**
+- **Byte identity:** the same MP3 (44.1 kHz mono and 48 kHz stereo), FLAC and WAV files imported with the P3 CLI and the P4 CLI give identical `take.wav` hashes. 16-bit AIFF, RF64 and ALAC (through Media Foundation and FFmpeg) give the same `take.wav` as the FLAC.
+- **Windows:** Media Foundation and FFmpeg imports through the CLI and the published single-file exe. In the app, dropped files (M4A/WMA imported, Opus left with the info line before FFmpeg was on the PATH) and the picker's type list.
+- **Android emulator (Debug):** dropped M4A, 3GP, AMR, Ogg, Opus, WebM and MP4 imported through MediaCodec (pitch within 0.6 Hz of the desktop's), WMA left with the info line, and the system picker greys out WMA.
+- **Linux (WSL):** the offer, the package-manager path, a failed download (404 before the upload: a clear message, nothing left), and the real download. It took ~2 s, unpacked only the three files and marked `ffmpeg` executable. Then the picker listed the new formats, dropped Ogg and M4A files imported, and the About line appeared. With the copy in place, nine formats import through the CLI.
+- **Bench:** not run, since P4 doesn't touch the analysis. The golden snapshots pass unchanged on Windows.
+
+**Linux golden test:** `GoldenTests.FinalLiveSnapshotMatchesTheGoldenFile(vctk_m311)` failed on Linux by 1.9e-6 in one live weight value, also on the P3 commit (not from P4); a separate session measured the cause and gave that one series its own tolerance (§8i).
 
 ## 8. Current state, at the time of writing
 

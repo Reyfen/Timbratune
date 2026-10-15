@@ -1,8 +1,12 @@
 using Avalonia;
 using Microsoft.Extensions.DependencyInjection;
 using Reyfen.Timbratune.App;
+using Reyfen.Timbratune.Audio.Ffmpeg;
+using Reyfen.Timbratune.Audio.MediaFoundation;
 using Reyfen.Timbratune.Audio.SoundFlow;
 using Reyfen.Timbratune.Core.Audio;
+using Reyfen.Timbratune.Core.Audio.Decoding;
+using Reyfen.Timbratune.Core.Platform;
 using Reyfen.Timbratune.Core.Storage;
 using Reyfen.Timbratune.Shared;
 using Reyfen.Timbratune.Shared.Platform;
@@ -28,7 +32,15 @@ internal static class Program
         services.AddSingleton(_ => DataPaths.Default());
         services.AddSingleton<IPlatformInfo>(new PlatformInfo());
         services.AddSingleton(_ => new SoundFlowAudio());
-        services.AddSingleton<IAudioDecoder>(sp => sp.GetRequiredService<SoundFlowAudio>());
+        services.AddSingleton<IAudioDecoderProvider>(sp => new MiniaudioDecoderProvider(sp.GetRequiredService<SoundFlowAudio>));
+        if (OperatingSystem.IsWindows()) services.AddSingleton<IAudioDecoderProvider, MediaFoundationDecoderProvider>();
+        // FFmpeg: an ffmpeg on the PATH, or one downloaded at the user's request (offered on Linux).
+        services.AddSingleton<IProcessRunner, SystemProcessRunner>();
+        services.AddSingleton<IHttpDownloader, HttpClientDownloader>();
+        services.AddSingleton(sp => new FfmpegInstaller(sp.GetRequiredService<IHttpDownloader>(), sp.GetRequiredService<IProcessRunner>()));
+        services.AddSingleton<IDecoderInstaller>(sp => sp.GetRequiredService<FfmpegInstaller>());
+        services.AddSingleton<IAudioDecoderProvider>(sp => new FfmpegDecoderProvider(sp.GetRequiredService<IProcessRunner>(),
+            sp.GetRequiredService<FfmpegInstaller>().InstalledPrograms));
         // TIMBRATUNE_FAKE_MIC=take.wav replays a file as if it were being spoken (developer aid).
         services.AddSingleton<IAudioRecorder>(sp =>
             Environment.GetEnvironmentVariable(FileReplayRecorder.EnvVar) is { } fakeMic && !string.IsNullOrWhiteSpace(fakeMic)
@@ -41,7 +53,7 @@ internal static class Program
     }
 
     /// <summary>
-    /// <c>Reyfen.Timbratune.Desktop --import take.wav [more.mp3 / .flac / .tmbr…] [--label "…"]</c> —
+    /// <c>Reyfen.Timbratune.Desktop --import take.wav [more.mp3 / .flac / .m4a / .tmbr…] [--label "…"]</c> —
     /// analyzes audio files (or unpacks .tmbr files) and adds them as takes, like
     /// <c>uv run analyze.py clip.wav --label …</c> did for the React app.
     /// Honors TIMBRATUNE_DATA_DIR.
@@ -57,22 +69,30 @@ internal static class Program
         }
         if (files.Count == 0)
         {
-            Console.Error.WriteLine("usage: Reyfen.Timbratune.Desktop --import <file.wav|.mp3|.flac|.tmbr> [more…] [--label \"text\"]");
+            Console.Error.WriteLine("usage: Reyfen.Timbratune.Desktop --import <audio file|.tmbr> [more…] [--label \"text\"]");
             return 2;
         }
 
         var store = services.GetRequiredService<RecordingStore>();
         store.Load(); // converts an older data folder first
-        var importer = services.GetRequiredService<TakeImporter>();
+        var importer = services.GetRequiredService<TakeImportService>();
+        var failed = 0;
         foreach (var file in files)
         {
-            var saved = await importer.ImportAsync(file, label: label);
-            var entry = saved;
-            Console.WriteLine($"#{saved.Id} {entry.Label}: pitch ~{entry.Pitch.MeanHz} Hz, F2 {entry.Formants.F2Hz} Hz, " +
-                              $"weight {entry.Weight?.H1a3cDb} dB, {entry.Register?.InRegisterPct}% in register");
+            try
+            {
+                var entry = await importer.ImportAsync(file, label: label);
+                Console.WriteLine($"#{entry.Id} {entry.Label}: pitch ~{entry.Pitch.MeanHz} Hz, F2 {entry.Formants.F2Hz} Hz, " +
+                                  $"weight {entry.Weight?.H1a3cDb} dB, {entry.Register?.InRegisterPct}% in register");
+            }
+            catch (Exception e) when (e is IOException or InvalidDataException or NotSupportedException or FormatException or UnauthorizedAccessException)
+            {
+                Console.Error.WriteLine($"{file}: {e.Message}");
+                failed++;
+            }
         }
         Console.WriteLine($"saved to {store.Paths.Root}");
-        return 0;
+        return failed == 0 ? 0 : 1;
     }
 
     // Also used by the Avalonia XAML previewer (with the parameterless app: no services).

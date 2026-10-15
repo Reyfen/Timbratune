@@ -27,6 +27,7 @@ public sealed class ViewLocator : IDataTemplate
         [typeof(TakeDialogViewModel)] = () => new TakeDialogView(),
         [typeof(ImportViewModel)] = () => new ImportButtonView(),
         [typeof(ImportStatusViewModel)] = () => new ImportStatusView(),
+        [typeof(FfmpegOfferViewModel)] = () => new FfmpegOfferView(),
     };
 
     public bool Match(object? data) => data is not null && _views.ContainsKey(data.GetType());

@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Import decoding through Windows Media Foundation (AAC/M4A, ALAC, WMA, AMR, video files'
+       audio; Ogg, Opus and WebM when the Store's Web Media Extensions are installed). Plain
+       P/Invoke and source-generated COM interop: builds everywhere, trim/AOT safe, only
+       registered (and only loads mfplat.dll) on Windows. -->
+  <PropertyGroup>
+    <RootNamespace>Reyfen.Timbratune.Audio.MediaFoundation</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsTrimmable>true</IsTrimmable>
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Reyfen.Timbratune.Core\Reyfen.Timbratune.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Probes\probe.*" LogicalName="probe%(Extension)" />
+  </ItemGroup>
+</Project>

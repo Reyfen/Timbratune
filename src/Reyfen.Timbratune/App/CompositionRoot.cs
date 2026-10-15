@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Reyfen.Timbratune.Core.Analysis;
 using Reyfen.Timbratune.Core.Audio;
+using Reyfen.Timbratune.Core.Audio.Decoding;
 using Reyfen.Timbratune.Core.Storage;
 using Reyfen.Timbratune.Core.Storage.Settings;
 using Reyfen.Timbratune.Diagnostics;
@@ -38,7 +39,8 @@ public static class CompositionRoot
     /// <item><see cref="IAudioRecorder"/> and <see cref="IAudioPlayer"/>;</item>
     /// <item><see cref="IPlatformInfo"/>.</item>
     /// </list>
-    /// It may register <see cref="IAudioDecoder"/> (MP3/FLAC import), <see cref="IFileSharer"/>
+    /// It may add <see cref="IAudioDecoderProvider"/>s (miniaudio, the OS's decoders, FFmpeg; the
+    /// managed WAV/AIFF one is always there), register <see cref="IFileSharer"/>
     /// (a share sheet), and replace the defaults of <see cref="IPermissions"/>,
     /// <see cref="IThreadPriority"/>, <see cref="ReferenceVoiceFolder"/> and <see cref="IDataStore"/>
     /// (the app's own files, such as settings; default: the data folder's root).
@@ -50,8 +52,10 @@ public static class CompositionRoot
             new NativeAnalysisScheduler(LiveCores(), sp.GetRequiredService<IThreadPriority>().LowerCurrentThread));
         services.TryAddSingleton<IAnalysisEngine>(sp => new AcousticsAnalysisEngine(sp.GetRequiredService<IAnalysisScheduler>()));
         services.TryAddSingleton(sp => new RecordingStore(sp.GetRequiredService<DataPaths>()));
-        services.TryAddSingleton(sp => new TakeImporter(sp.GetRequiredService<RecordingStore>(),
-            sp.GetRequiredService<IAnalysisEngine>(), sp.GetService<IAudioDecoder>()));
+        services.AddSingleton<IAudioDecoderProvider, ManagedDecoderProvider>();
+        services.TryAddSingleton(sp => new DecoderRegistry(sp.GetServices<IAudioDecoderProvider>()));
+        services.TryAddSingleton(sp => new TakeImportService(sp.GetRequiredService<RecordingStore>(),
+            sp.GetRequiredService<IAnalysisEngine>(), sp.GetRequiredService<DecoderRegistry>()));
         services.TryAddSingleton<IDataStore>(sp => new FileSystemDataStore(sp.GetRequiredService<DataPaths>().Root));
         services.TryAddSingleton<ISettingsStore>(sp => new DataStoreSettingsStore(sp.GetRequiredService<IDataStore>()));
         services.TryAddSingleton<ISettings>(sp => new SettingsService(sp.GetRequiredService<ISettingsStore>(), sp.GetServices<ISettingKey>()));

@@ -1,5 +1,5 @@
 using Reyfen.Timbratune.Core.Analysis;
-using Reyfen.Timbratune.Core.Audio;
+using Reyfen.Timbratune.Core.Audio.Decoding;
 using Reyfen.Timbratune.Core.Models;
 using Reyfen.Timbratune.Core.Storage;
 
@@ -18,11 +18,26 @@ public sealed class ImportTests : IDisposable
         try { Directory.Delete(_root, true); } catch (IOException) { }
     }
 
-    /// <summary>Stands in for the SoundFlow decoder: "decodes" any file to the fixture WAV.</summary>
-    private sealed class FakeDecoder : IAudioDecoder
+    private static string Format(string name) => Path.Combine(AppContext.BaseDirectory, "Fixtures", "formats", name);
+
+    /// <summary>Stands in for miniaudio: "decodes" MP3 to the fixture's samples.</summary>
+    private sealed class FakeMp3Provider : IAudioDecoderProvider
     {
-        public void DecodeToWav(string sourcePath, string wavPath) => File.Copy(Wav, wavPath);
+        public string Id => "fake";
+        public int Priority => 2;
+        public ValueTask<FormatSet> ProbeAsync(CancellationToken cancellationToken = default) => new(new FormatSet([AudioFormatCatalog.Mp3]));
+        public IAudioDecoder Create() => new ManagedDecoderProvider().Create() is var wav ? new Redirect(wav) : null!;
+
+        private sealed class Redirect(IAudioDecoder wav) : IAudioDecoder
+        {
+            public Task DecodeAsync(AudioSource source, IPcmSink sink, IProgress<double>? progress, CancellationToken cancellationToken) =>
+                wav.DecodeAsync(AudioSource.FromFile(Wav), sink, progress, cancellationToken);
+            public void Dispose() => wav.Dispose();
+        }
     }
+
+    private static DecoderRegistry Decoders(bool mp3 = false) =>
+        new(mp3 ? [new ManagedDecoderProvider(), new FakeMp3Provider()] : [new ManagedDecoderProvider()]);
 
     private RecordingStore Store(string name = "data") => new(new DataPaths(Path.Combine(_root, name)));
 
@@ -32,14 +47,33 @@ public sealed class ImportTests : IDisposable
         var store = Store();
         var source = Path.Combine(_root, "my voice.wav");
         File.Copy(Wav, source);
-        var take = await new TakeImporter(store, new AcousticsAnalysisEngine(), null).ImportAsync(source);
+        var take = await new TakeImportService(store, new AcousticsAnalysisEngine(), Decoders()).ImportAsync(source);
 
         Assert.Equal("my voice", take.Label);
         Assert.Equal("my voice.wav", take.SourceFile);
         Assert.NotNull(take.Pitch.MeanHz);
         Assert.True(store.HasSeries(take));
         Assert.True(File.Exists(source)); // the Import button leaves the original where it was
-        Assert.Equal(File.ReadAllBytes(Wav), File.ReadAllBytes(store.Paths.Resolve(take.Audio)!));
+        Assert.Equal(File.ReadAllBytes(Wav), File.ReadAllBytes(store.Paths.Resolve(take.Audio)!)); // a readable WAV is kept as it is
+        Assert.Equal(["detail.json", "series.json", "take.json", "take.wav"], Directory.GetFiles(store.FolderOf(take)).Select(Path.GetFileName).Order());
+    }
+
+    [Fact]
+    public async Task OtherFormatsBecomeAnAnalysisWavAndKeepTheirOriginal()
+    {
+        var store = Store();
+        var source = Path.Combine(_root, "from my phone.mp3"); // an AIFF in disguise: the content decides
+        File.Copy(Format("voice-22k-stereo.aiff"), source);
+        var take = await new TakeImportService(store, new AcousticsAnalysisEngine(), Decoders()).ImportAsync(source);
+
+        Assert.Equal("from my phone", take.Label);
+        Assert.True(File.Exists(source));
+        var folder = store.FolderOf(take);
+        Assert.Equal(File.ReadAllBytes(source), File.ReadAllBytes(Path.Combine(folder, "source.aiff")));
+        using var wav = File.OpenRead(Path.Combine(folder, "take.wav"));
+        var sound = Acoustics.WavDecoder.Decode(wav);
+        Assert.Equal((44100.0, 1), (sound.SamplingFrequency, sound.ChannelCount));
+        Assert.InRange(sound.Duration, 0.499, 0.501);
     }
 
     [Fact]
@@ -59,7 +93,7 @@ public sealed class ImportTests : IDisposable
         var to = Store("to");
         to.Add(new Recording { Label = "already here" }, new RecordingDetail(), Wav);
         // No decoder and an engine that must not run: .tmbr files aren't analyzed.
-        var take = await new TakeImporter(to, new ThrowingEngine(), null).ImportAsync(tmbr);
+        var take = await new TakeImportService(to, new ThrowingEngine(), Decoders()).ImportAsync(tmbr);
 
         Assert.Equal(2, take.Id);
         Assert.Equal(("shared take", "from a friend", "2026-09-30"), (take.Label, take.Note, take.Date));
@@ -77,33 +111,42 @@ public sealed class ImportTests : IDisposable
         var store = Store();
         Directory.CreateDirectory(store.Paths.TakesDir);
         File.Copy(Wav, Path.Combine(store.Paths.TakesDir, "dropped.wav"));
-        File.WriteAllText(Path.Combine(store.Paths.TakesDir, "song.mp3"), "not really an mp3");
+        File.Copy(Format("voice-id3.mp3"), Path.Combine(store.Paths.TakesDir, "song.mp3"));
         File.WriteAllText(Path.Combine(store.Paths.TakesDir, "readme.txt"), "ignored");
+        File.Copy(Format("voice.ogg"), Path.Combine(store.Paths.TakesDir, "no decoder here.ogg"));
 
-        var importer = new TakeImporter(store, new AcousticsAnalysisEngine(), new FakeDecoder());
-        var dropped = importer.FindDropped();
+        var importer = new TakeImportService(store, new AcousticsAnalysisEngine(), Decoders(mp3: true));
+        var dropped = await importer.FindDroppedAsync();
         Assert.Equal(["dropped.wav", "song.mp3"], dropped.Select(Path.GetFileName));
         foreach (var path in dropped) await importer.ImportDroppedAsync(path);
 
-        Assert.Empty(importer.FindDropped());
+        Assert.Empty(await importer.FindDroppedAsync());
         var takes = store.Load();
         Assert.Equal(["dropped", "song"], takes.Select(r => r.Label));
         Assert.False(File.Exists(Path.Combine(store.Paths.TakesDir, "dropped.wav"))); // now the take's take.wav
         Assert.True(File.Exists(Path.Combine(store.FolderOf(takes[1]), "source.mp3"))); // the original kept with its take
         Assert.True(File.Exists(Path.Combine(store.Paths.TakesDir, "readme.txt")));
+        Assert.True(File.Exists(Path.Combine(store.Paths.TakesDir, "no decoder here.ogg"))); // left alone
     }
 
     [Fact]
-    public async Task WithoutADecoderOnlyWavAndTmbrAreAccepted()
+    public async Task OnlyFormatsADecoderHereReadsAreAccepted()
     {
-        var importer = new TakeImporter(Store(), new AcousticsAnalysisEngine(), null);
-        Assert.Equal(["wav", "tmbr"], importer.Extensions);
-        Assert.False(importer.CanImport("a.mp3"));
-        Assert.True(importer.CanImport("a.TMBR"));
+        var importer = new TakeImportService(Store(), new AcousticsAnalysisEngine(), Decoders());
+        Assert.Equal(["wav", "wave", "aiff", "aif", "aifc", "tmbr"], await importer.GetExtensionsAsync());
+        Assert.False(await importer.CanImportAsync("a.mp3"));
+        Assert.True(await importer.CanImportAsync("a.AIF"));
+        Assert.True(await importer.CanImportAsync("a.TMBR"));
 
-        var notWav = Path.Combine(_root, "fake.wav");
-        File.WriteAllText(notWav, "not audio");
-        await Assert.ThrowsAsync<NotSupportedException>(() => importer.ImportAsync(notWav));
+        var notAudio = Path.Combine(_root, "fake.wav");
+        File.WriteAllText(notAudio, "not audio");
+        var unknown = await Assert.ThrowsAsync<UnsupportedAudioException>(() => importer.ImportAsync(notAudio));
+        Assert.Null(unknown.Format);
+
+        var mp3 = Path.Combine(_root, "song.mp3");
+        File.Copy(Format("voice.mp3"), mp3);
+        var noDecoder = await Assert.ThrowsAsync<UnsupportedAudioException>(() => importer.ImportAsync(mp3));
+        Assert.Equal(AudioFormatCatalog.Mp3, noDecoder.Format?.Id);
         Assert.Empty(Store().Load()); // nothing half-made is left
     }
 

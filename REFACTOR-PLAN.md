@@ -1,6 +1,6 @@
 # Timbratune refactoring plan
 
-*Status:* agreed 2026-10-15; P0 done except the phone baselines (HANDOFF §8i); P1, P2 and P3 done (HANDOFF §8j, §8k, §8l).
+*Status:* agreed 2026-10-15; P0 done except the phone baselines (HANDOFF §8i); P1, P2, P3 and P4 done (HANDOFF §8j, §8k, §8l, §8m).
 *Base:* `dev/v0.2.1` at `2b33f06`.
 *Work branch:* `dev/v0.3.0`.
 
@@ -615,13 +615,23 @@ Ask the owner before each commit.
     - **Record panel slots:** the Shell fills `IdleActions`, `WindowPicker` and `Footer` (the Import button, LiveMonitor's window choice, the import status).
     - **Routers:** only the features that open overlays have one (TakeActions, MetricCompare).
     - **Settings and layout:** the live-window setting moved with its feature (`liveMonitor.windowSeconds`, was `recording.liveWindowSeconds` in unreleased P2). The open-folder failure shows in the footer instead of the import line.
-- [ ] **P4. Import formats** (§4):
-  - [ ] Decoding ports + catalog + sniffer + `AnalysisWavSink`, with the managed and miniaudio providers, so behaviour is unchanged.
-  - [ ] Probed picker filters.
-  - [ ] Media Foundation.
-  - [ ] MediaCodec.
-  - [ ] FFmpeg provider.
-  - [ ] FFmpeg installer (Linux).
+- [x] **P4. Import formats** (§4):
+  - [x] Decoding ports + catalog + sniffer + `AnalysisWavSink`, with the managed and miniaudio providers, so behaviour is unchanged.
+  - [x] Probed picker filters.
+  - [x] Media Foundation.
+  - [x] MediaCodec.
+  - [x] FFmpeg provider.
+  - [x] FFmpeg installer (Linux).
+  - *As built (HANDOFF §8m):*
+    - **Unchanged imports:** MP3, FLAC and WAV imports give byte-identical `take.wav` files. A WAV the analysis reads is still stored as it is; anything decoded is kept beside its take as `source.<ext>` (picked and CLI imports too, not only dropped MP3/FLAC).
+    - **`AnalysisWavSink`:** audio already at 44.1 kHz streams through; other rates are collected as mono and resampled in one pass at the end with the Acoustics `Resampler` (there is no streaming resampler, and the analysis holds the whole take anyway).
+    - **Sniffing:** the format record has no `Signature` field; the signatures live in `FormatSniffer`. The extension only chooses within the MP4 family (`.m4a`/`.mp4`/`.3gp`), and names the kept original.
+    - **Registry:** a failure of every decoder that reads a format becomes one `InvalidDataException` ("its Matroska audio couldn't be decoded (…)"). Priorities aren't overridable in settings yet.
+    - **Media Foundation probe:** decodes an embedded 0.1 s clip per format (~0.5 s, in the background) instead of `MFTEnumEx`: Store codecs such as Web Media Extensions don't show in the registry. On the development machine they aren't usable from a desktop app, so Ogg/Opus/CAF come from FFmpeg there.
+    - **Picker:** the first group is "Audio and Timbratune takes" (so `.tmbr` files are selectable without switching), then one per format, then `.tmbr`. Picked files aren't filtered by extension any more; their content decides.
+    - **FFmpeg build (§12.2):** BtbN's LGPL static FFmpeg 9.0.2 builds, repacked by `scripts/mirror-ffmpeg.ps1` to just `ffmpeg` + licence + README as `.tar.gz` (36–57 MB instead of 117–171 MB; .NET unpacks them without the system `tar`/`xz`), hosted on Reyfen/github-releases-as-file-hosting. Pinned for linux-x64/arm64 and win-x64/arm64.
+    - **Offered where:** unasked only on Linux; on Windows (and later macOS) the installer is there but hidden, for the settings page to offer. "Remove FFmpeg" also waits for that page (`IDecoderInstaller.Remove` exists).
+    - **Ports:** `IProcessRunner` and `IHttpDownloader` live in Core (`Core/Platform`), where the decoder projects can reach them.
 - [ ] **P5. Analysis tracks** (§2.1): track providers and staging. `MeasureTracks` and `LiveAnalyzer.Update` are re-implemented on top, with the same signatures. Performance gates apply.
 - [ ] **P6. Metric modules** (§2.2), one per step:
   - [ ] Loudness
@@ -693,7 +703,7 @@ Later versions: accounts and avatar (§6) with cloud settings sync (§5a.3), and
 ## 12. Open decisions (ask the owner when the phase is reached)
 
 1. **P8 analytics:** the exact payload fields, zones vs raw values, and the EU or US Mixpanel endpoint.
-2. **P4:** the exact pinned FFmpeg build and its hosting source; whether the installer is also offered on Windows/macOS.
+2. ~~**P4:** the exact pinned FFmpeg build and its hosting source; whether the installer is also offered on Windows/macOS.~~ Decided 2026-10-15: BtbN's LGPL static builds, repacked and mirrored on the owner's hosting repo; offered on Linux, built in but hidden on other desktops until a setting offers it.
 3. **Later, accounts:** where the Patreon token-exchange backend is hosted.
 4. **Later, browser:** Web Worker vs multithreaded WASM, decided by the spike, and the hosting provider.
 5. ~~**P2 settings:** confirm the device/synced split in §5a.1.~~ Decided 2026-10-15: all device-only until accounts and sync exist.

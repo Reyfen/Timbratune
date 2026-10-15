@@ -14,7 +14,8 @@ case "${1:-}" in
   start)
     exe="$2"; data="${3:-$HOME/eu-data}"; mic="${4:-}"
     mkdir -p "$data"
-    (cd "$(dirname "$exe")" && TIMBRATUNE_DATA_DIR="$data" ${mic:+TIMBRATUNE_FAKE_MIC="$mic"} \
+    # env: an assignment that comes from an expansion is a command name to the shell, not an assignment
+    (cd "$(dirname "$exe")" && env TIMBRATUNE_DATA_DIR="$data" ${mic:+TIMBRATUNE_FAKE_MIC="$mic"} \
       nohup "$exe" > "$HOME/eu.log" 2>&1 &)
     for _ in $(seq 1 30); do [ -n "$(win)" ] && break; sleep 1; done
     w="$(win)"; [ -n "$w" ] || { echo "no window; log:"; tail -40 "$HOME/eu.log"; exit 1; }

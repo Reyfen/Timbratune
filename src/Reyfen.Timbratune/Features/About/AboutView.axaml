@@ -26,6 +26,8 @@
       <HyperlinkButton Classes="footlink" Content="Euphonia" NavigateUri="{Binding EuphoniaUri}" />
       <TextBlock Classes="footnote" Text=" · algorithms inspired by " />
       <HyperlinkButton Classes="footlink" Content="Praat" NavigateUri="{Binding PraatUri}" />
+      <TextBlock Classes="footnote" Text=" · some imports decoded by " IsVisible="{Binding UsesFfmpeg}" />
+      <HyperlinkButton Classes="footlink" Content="FFmpeg (LGPL)" NavigateUri="{Binding FfmpegUri}" IsVisible="{Binding UsesFfmpeg}" />
     </WrapPanel>
   </StackPanel>
 </UserControl>

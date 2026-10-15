@@ -6,8 +6,10 @@ using Avalonia.Media;
 using Avalonia.Media.Fonts;
 using Microsoft.Extensions.DependencyInjection;
 using Reyfen.Timbratune.App;
+using Reyfen.Timbratune.Audio.Android;
 using Reyfen.Timbratune.Audio.SoundFlow;
 using Reyfen.Timbratune.Core.Audio;
+using Reyfen.Timbratune.Core.Audio.Decoding;
 using Reyfen.Timbratune.Core.Storage;
 using Reyfen.Timbratune.Shared.Platform;
 
@@ -58,7 +60,8 @@ public sealed class AndroidApp : AvaloniaAndroidApplication<TimbratuneApp>
             CanRunProcesses = false,
         });
         services.AddSingleton(_ => new SoundFlowAudio());
-        services.AddSingleton<IAudioDecoder>(sp => sp.GetRequiredService<SoundFlowAudio>());
+        services.AddSingleton<IAudioDecoderProvider>(sp => new MiniaudioDecoderProvider(sp.GetRequiredService<SoundFlowAudio>));
+        services.AddSingleton<IAudioDecoderProvider, MediaCodecDecoderProvider>();
         services.AddSingleton<IAudioRecorder>(sp => fakeMic is not null ? new FileReplayRecorder(fakeMic) : sp.GetRequiredService<SoundFlowAudio>().CreateRecorder());
         services.AddSingleton<IAudioPlayer>(sp => sp.GetRequiredService<SoundFlowAudio>().CreatePlayer());
         services.AddSingleton<IPermissions, AndroidPermissions>();

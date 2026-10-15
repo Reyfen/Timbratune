@@ -2,6 +2,7 @@ using CommunityToolkit.Mvvm.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 using Reyfen.Timbratune.App;
 using Reyfen.Timbratune.Core.Audio;
+using Reyfen.Timbratune.Core.Audio.Decoding;
 using Reyfen.Timbratune.Core.Storage;
 using Reyfen.Timbratune.Core.Storage.Settings;
 using Reyfen.Timbratune.Shared;
@@ -39,6 +40,8 @@ public sealed class CompositionTests
         Assert.IsType<DefaultThreadPriority>(provider.GetRequiredService<IThreadPriority>());
         Assert.Null(provider.GetRequiredService<ReferenceVoiceFolder>().Path);
         Assert.Null(provider.GetService<IFileSharer>());
+        // The managed WAV/AIFF decoder is always there; heads add theirs.
+        Assert.Equal([ManagedDecoderProvider.ProviderId], provider.GetRequiredService<DecoderRegistry>().Providers.Select(p => p.Id));
     }
 
     [Fact]
@@ -60,7 +63,7 @@ public sealed class CompositionTests
         using var provider = WithHeadServices().BuildServiceProvider();
         Assert.Same(provider.GetRequiredService<IOverlayHost>(), provider.GetRequiredService<IOverlayHost>());
         Assert.Same(provider.GetRequiredService<IMessenger>(), provider.GetRequiredService<IMessenger>());
-        Assert.Same(provider.GetRequiredService<TakeImporter>(), provider.GetRequiredService<TakeImporter>());
+        Assert.Same(provider.GetRequiredService<TakeImportService>(), provider.GetRequiredService<TakeImportService>());
         Assert.Same(provider.GetRequiredService<StorageProviderDialogs>(), provider.GetRequiredService<IFileDialogs>());
     }
 
