@@ -4,6 +4,8 @@
 
 `HANDOFF.md` has the full history, measurements and reasoning behind decisions. Read the relevant section before changing live analysis or smoothing.
 
+`REFACTOR-PLAN.md` is the agreed target architecture and the step-by-step refactoring plan (feature modules, per-metric analysis, import formats, analytics, future accounts and browser build). Read it before structural changes and tick its checklist as phases land.
+
 ## Ground rules
 
 - **Commit only when asked.** The main branch is `main` (tracks `origin/main` on https://github.com/Reyfen/Timbratune; it was called `dev` until 2026-10-10). Version work happens on `dev/<version>` branches; current work is on `dev/v0.2.0` (tracks `origin/dev/v0.2.0`, not merged into `main` yet). Check `git status` and HANDOFF §8 before starting. Releases are tagged `v<version>` (`v0.1.0` exists); a branch can't be called `dev` again while `dev/…` branches exist. Write commit messages to a file without a BOM (PowerShell 5.1's `Out-File -Encoding utf8` adds one) and pass it with `git commit -F`.
