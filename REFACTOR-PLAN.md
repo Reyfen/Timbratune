@@ -1,6 +1,6 @@
 # Timbratune refactoring plan
 
-*Status:* agreed 2026-10-15; P0 done (HANDOFF §8i); P1–P8 done (HANDOFF §8j–§8q).
+*Status:* agreed 2026-10-15; P0 done (HANDOFF §8i); P1–P9 done (HANDOFF §8j–§8r).
 *Base:* `dev/v0.2.1` at `2b33f06`.
 *Work branch:* `dev/v0.3.0`.
 
@@ -703,7 +703,8 @@ Ask the owner before each commit.
     - **Gates:** results identical; bench A/B against P6 equal (full analysis +0.1 %, live updates −0.1 %, allocations equal or lower); emulator smoke test; Pixel 4a A/B against P0: analysis equal or faster, janky frames +1 point from the new first live timeline (Pitch variability), kept by the owner; Pixel 9 A/B against P0: P6 equal, P7 +0.2–0.3 points of janky frames with equal fps and Stop to saved, accepted by the owner and to be rechecked in P9 (HANDOFF §8p).
 - [x] **P8. Telemetry groundwork** (§5): ~~port, Mixpanel adapter, consent toggle, two call sites, tests. Verify against a Mixpanel test project, only with the owner's token and opt-in.~~ Rescoped by the owner (2026-10-16): analytics is a future concept, so P8 is documentation plus groundwork, with no packages or network code.
   - *As built (HANDOFF §8q):* the log port in Core (`IAppLog`, zero-allocation when off) with log points in decoding, settings, recording and import; `Shared/Telemetry` with the analytics and crash-report ports, their do-nothing defaults, `AnalyticsPayload` (zone names only), `CrashReportLimiter` and `CrashHooks`; `IEntitlements.HasEverDonated`; consent (two device-scoped opt-ins and an install id); the rollout rule (donors always, a stable 25 % of the others by default). The adapters, the consent UI and the remote rates file come later (§5).
-- [ ] **P9. Final performance check** (§3, all gates, Release builds on both phones) and a Linux build in WSL `Ubuntu-24.04` (`~/tt` copy).
+- [x] **P9. Final performance check** (§3, all gates, Release builds on both phones) and a Linux build in WSL `Ubuntu-24.04` (`~/tt` copy).
+  - *As measured (HANDOFF §8r):* results identical; bench A/B against P0 within budget and a little faster (full analysis −1.7 %, live updates −7.4 %, live allocation −4 %); Linux tests, packages and a record/Stop check pass; Pixel 9 A/B against P0: the P7 cost confirmed (+0.3 points of janky frames, fps, frames over 50 ms and Stop to saved unchanged), accepted by the owner as a known cost of P7; Pixel 4a A/B against P0: the P7 live-order cost (+1 point of janky frames, −0.9 fps) as kept by the owner, Stop to saved and analysis within noise.
 - [ ] **P10. Documentation:**
   - Update the CLAUDE.md "Layout" table and add a HANDOFF section.
   - Add "How to add a feature" and "How to add a metric" checklists at the end of this file.

@@ -2,7 +2,7 @@
 
 This file brings a new engineer or agent up to date on everything done so far: what the user asked for, what was decided and why, how the code is organised, what was measured, and what is still open.
 
-Last updated 2026-10-16. The newest work is §8i–§8q (refactoring P0: golden, architecture, bench and phone baselines; P1: dependency injection and shared ports; P2: storage, settings and scheduling seams; P3: UI feature modules; P4: import formats; P5: analysis tracks; P6: metric modules; P7: registry-driven UI; P8: telemetry groundwork); §8d–§8h cover v0.2.0 (Android performance, export, one folder per take, import, `build.ps1`); §8 is the current state.
+Last updated 2026-10-16. The newest work is §8i–§8r (refactoring P0: golden, architecture, bench and phone baselines; P1: dependency injection and shared ports; P2: storage, settings and scheduling seams; P3: UI feature modules; P4: import formats; P5: analysis tracks; P6: metric modules; P7: registry-driven UI; P8: telemetry groundwork; P9: final performance check); §8d–§8h cover v0.2.0 (Android performance, export, one folder per take, import, `build.ps1`); §8 is the current state.
 
 **Name:** the project is **Timbratune — Gender Voice Analysis Tool**, by **Reyfen**.
 - **Before 2026-10-02 it was called Euphonia**, and it is a fork of [Euphonia](https://github.com/Yuuzulight/Euphonia). Older parts of this file and of the transcript say "Euphonia" and "Euphonia-CSharp"; read those as Timbratune and the repo root (the code moved from `Timbratune/` to the root on 2026-10-06).
@@ -1173,7 +1173,7 @@ Phase P7 of `REFACTOR-PLAN.md` (§2.4): the UI is built from the metric registry
 
    - P6 matches P0 on the Pixel 9. P7 is about 0.2–0.3 points of janky frames above P0 in both of its A/Bs (about 3 more late frames in a 28 s take), with equal fps, Stop to saved well inside the 2.7 s limit, and faster live updates. Unlike on the 4a, the live order makes no difference here (the taller screen shows more charts at once), so this is P7's own cost, not yet located. Pooled (12 runs each): 3.27 % vs 3.54 % median, +8 % relative; a shuffle test puts the chance of a gap this size by luck at about 2 %.
    - **Owner's decision (2026-10-16): accepted** (too small to notice; the analysis itself got faster); recheck it in P9.
-   - The 4a was left on the P7 profiling build (the last run), its 0.2.0 takes untouched in private storage; the fake mic and the runs' test takes are still on it (it was unplugged before they could be removed).
+   - The 4a was left on the P7 profiling build (the last run), its 0.2.0 takes untouched in private storage; the fake mic and the runs' test takes stayed on it (it was unplugged before they could be removed) until P9 removed them (§8r).
 
 ## 8q. Refactoring P8: telemetry groundwork (2026-10-16)
 
@@ -1198,6 +1198,52 @@ Phase P8 of `REFACTOR-PLAN.md`, rescoped by the owner: analytics is a future con
 **Gates:** build and all tests green; desktop start with a throwaway data folder. No performance gate: nothing on the analysis path changed (the live loop only logs in its error path, and the log is off).
 
 **Next, when the adapters are added (REFACTOR-PLAN §5 "Later"):** the Mixpanel and Sentry adapters (EU), the consent switches in About, the remote rates file, the user properties, README and privacy text.
+
+## 8r. Refactoring P9: final performance check (2026-10-16)
+
+Phase P9 of `REFACTOR-PLAN.md`: every gate of §3 for the whole refactoring, P8 (`4d67e23`) against P0 (`a835972`), plus the Linux build.
+
+**1. Identical results:** golden and parity tests pass; the bench's saved and live hashes are the same for both builds (`428cdc1801047068` / `34e24c60fa4cab42`).
+
+**2. Bench, A/B against P0**, alternating, 6 runs of 10 each, medians. A first set was disturbed by other load on the PC (full analysis 338–963 ms in both builds), so it was run again on a quiet machine:
+
+| Measure | P0 | P8 | Change |
+|---|---|---|---|
+| Full analysis | 341.8 ms | 335.9 ms | −1.7 % (ranges 331–369 / 330–353) |
+| Full analysis allocation | 152.5 MB | 152.4 MB | 0 % |
+| Live update, quick / full (per tick) | 9.85 / 10.16 ms | 8.88 / 9.45 ms | −9.8 / −7.0 % |
+| Live updates, whole take | 2,793.8 ms | 2,587.7 ms | −7.4 % |
+| Live allocation | 8.839 MB/s | 8.485 MB/s | −4.0 % |
+| `live.compute`, whole take | 297.0 ms | 295.6 ms | −0.5 % |
+| `live.compute` allocation | 1.961 MB/s | 1.958 MB/s | −0.2 % |
+
+Within budget (≤ +3 % time, no more allocations): the refactored analysis is a little faster, as §3 expected (weight computed once).
+
+**3. Phones** (Release profiling builds, LLVM AOT, A/B against the P0 build, method of §8i):
+- **Pixel 9** (battery 55–58 %, USB, Battery Saver off; 6 runs per build, one P8 run dropped because the phone disconnected from USB during it):
+
+| Build | fps | janky % (range) | > 50 ms | Stop to saved (analysis) | live updates | update median / full |
+|---|---|---|---|---|---|---|
+| P0 `a835972` | 39.54 | 3.23 (2.80–3.44) | 18.5 | 2.01 s (1.62 s) | 257 | 42.8 / 52.4 ms |
+| P8 `4d67e23` | 39.47 | 3.55 (3.35–3.74) | 19 | 2.03 s (1.61 s) | 231 | 40.2 / 52.5 ms |
+
+  - The P7 cost found in §8p is confirmed: +0.3 points of janky frames (shuffle test p ≈ 0.005), about 3 more late frames in a 28 s take. Frames per second, frames over 50 ms and Stop to saved (well inside the 2.7 s limit) are unchanged, and live updates are faster. Code review didn't locate it (the live cards update in place as before; the live order makes no difference on this phone, §8p).
+  - **Owner's decision (2026-10-16): accepted as a known cost of P7.**
+  - Cleaned up afterwards: the fake mic and the profiling takes removed, the owner's 20 takes untouched; the phone is left on the P0 profiling build.
+- **Pixel 4a** (battery 84–99 %, USB, Battery Saver off; 6 runs per build). The first P0 run is dropped: Google Play Protect asked on the phone whether to send the newly installed build for a check, and the prompt covered the app while that run recorded (6 frames). The owner answered it; later installs didn't ask again.
+
+| Build | fps | janky % (range) | > 50 ms | Stop to saved (analysis) | live updates | update median / full |
+|---|---|---|---|---|---|---|
+| P0 `a835972` (5 runs) | 51.90 | 9.83 (8.59–10.48) | 18 | 4.76 s (3.97 s) | 219 | 44.1 / 70.8 ms |
+| P8 `4d67e23` | 50.99 | 10.89 (9.98–11.99) | 25.5 | 4.96 s (4.25 s) | 221.5 | 42.3 / 58.8 ms |
+
+  - Janky frames +1.0 point (shuffle test p ≈ 0.02) and fps −0.9 (p ≈ 0.01): the live-order cost of P7 (§8p: +1.1 points, traced to the first live timeline the phone shows), which the owner kept.
+  - Stop to saved, the analysis time and frames over 50 ms differ within noise (p 0.17–0.35; the bench shows the analysis itself 1.7 % faster). Live updates are quicker, full ones markedly (58.8 against 70.8 ms).
+  - Cleaned up afterwards: the fake mic and the profiling takes removed (also P7's leftovers); the owner's 0.2.0 takes are untouched in private storage; the phone is left on the P0 profiling build.
+
+**Verdict:** every gate passes or is a known cost the owner accepted (Pixel 9 +0.3 points and Pixel 4a +1 point of janky frames, both from P7). The refactoring keeps the results identical and the analysis as fast or faster.
+
+**4. Linux** (WSL `Ubuntu-24.04`, `~/tt` copy): all tests pass (Acoustics 57, Core 145, architecture 21, UI 33). `build.ps1 linux` builds the `.deb` and the AppImage; the AppImage (run with `APPIMAGE_EXTRACT_AND_RUN=1`, no FUSE in WSL) starts, records with the fake mic with the live timelines, and Stop saves the take with its cards.
 
 ## 8. Current state, at the time of writing
 
