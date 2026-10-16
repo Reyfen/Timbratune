@@ -1,17 +1,18 @@
 # Timbratune refactoring plan
 
-*Status:* agreed 2026-10-15; P0 done (HANDOFF §8i); P1–P9 done (HANDOFF §8j–§8r).
+*Status:* agreed 2026-10-15; **done 2026-10-16** (P0–P10, HANDOFF §8i–§8s). What remains are the later versions: accounts and the avatar (§6), cloud settings sync (§5a.3), the telemetry adapters (§5) and the browser head (§7). To extend the app, follow §13 (a feature) and §14 (a metric).
 *Base:* `dev/v0.2.1` at `2b33f06`.
 *Work branch:* `dev/v0.3.0`.
 
-This is the target architecture and the order of work for splitting Timbratune into independent feature modules and per-metric analysis modules. It also prepares for wider audio import, opt-in analytics, and later accounts and a browser build.
+This was the target architecture and the order of work for splitting Timbratune into independent feature modules and per-metric analysis modules. It also prepares for wider audio import, opt-in analytics, and later accounts and a browser build.
 
 ## How to use this document (for agents)
 
 - **Read first:**
   - `CLAUDE.md` for the ground rules: commit only when asked, no Praat code, cross-platform, never touch the user's takes or running app, measure before claiming.
   - The relevant `HANDOFF.md` section, before touching live analysis, smoothing or performance (§8, §8d).
-- **Order of work:** do the phases in §9 in order. Each phase is small enough to review on its own, and ends green: build, tests, a UI check and the performance gates where they apply.
+- **The refactoring is done.** To add a feature or a metric, follow §13 or §14. The phases below are the record of how it was done.
+- **Order of work (historical):** do the phases in §9 in order. Each phase is small enough to review on its own, and ends green: build, tests, a UI check and the performance gates where they apply.
 - **Progress:** tick the checklist in §9 as phases land. Record measured numbers in `HANDOFF.md`, not here.
 - **Decisions:** if reality contradicts this plan (an API doesn't exist, a gate can't be met), stop and ask the owner. Don't silently change direction. Open questions are listed in §12.
 - **Scope:**
@@ -705,47 +706,38 @@ Ask the owner before each commit.
   - *As built (HANDOFF §8q):* the log port in Core (`IAppLog`, zero-allocation when off) with log points in decoding, settings, recording and import; `Shared/Telemetry` with the analytics and crash-report ports, their do-nothing defaults, `AnalyticsPayload` (zone names only), `CrashReportLimiter` and `CrashHooks`; `IEntitlements.HasEverDonated`; consent (two device-scoped opt-ins and an install id); the rollout rule (donors always, a stable 25 % of the others by default). The adapters, the consent UI and the remote rates file come later (§5).
 - [x] **P9. Final performance check** (§3, all gates, Release builds on both phones) and a Linux build in WSL `Ubuntu-24.04` (`~/tt` copy).
   - *As measured (HANDOFF §8r):* results identical; bench A/B against P0 within budget and a little faster (full analysis −1.7 %, live updates −7.4 %, live allocation −4 %); Linux tests, packages and a record/Stop check pass; Pixel 9 A/B against P0: the P7 cost confirmed (+0.3 points of janky frames, fps, frames over 50 ms and Stop to saved unchanged), accepted by the owner as a known cost of P7; Pixel 4a A/B against P0: the P7 live-order cost (+1 point of janky frames, −0.9 fps) as kept by the owner, Stop to saved and analysis within noise.
-- [ ] **P10. Documentation:**
-  - Update the CLAUDE.md "Layout" table and add a HANDOFF section.
-  - Add "How to add a feature" and "How to add a metric" checklists at the end of this file.
+- [x] **P10. Documentation:**
+  - Update the CLAUDE.md "Layout" table and add a HANDOFF section (§8s).
+  - Add "How to add a feature" and "How to add a metric" checklists at the end of this file (§13, §14).
   - Mark this plan done.
+  - Also: §10 lists the key files as built.
 
 Later versions: accounts and avatar (§6) with cloud settings sync (§5a.3), and the browser head (§7).
 
 ---
 
-## 10. Key files today
+## 10. Key files (as built, v0.3.0)
 
-- **UI:**
-  - `src/Reyfen.Timbratune/App.axaml.cs`
-  - `src/Reyfen.Timbratune/Features.cs`
-  - `src/Reyfen.Timbratune/Services/IFileDialogs.cs` (`AppServices`)
-  - `src/Reyfen.Timbratune/ViewModels/{MainViewModel,RecordViewModel,TakeViewModel,LiveTimelinesViewModel,RecordingItemViewModel,MetricModalViewModel}.cs`
-  - `src/Reyfen.Timbratune/Views/MainView.axaml`
-  - `src/Reyfen.Timbratune/Analysis/{LiveWorker,RecentWindow}.cs`
-- **Analysis:**
-  - `src/Reyfen.Timbratune.Core/Analysis/{AcousticsAnalysisEngine,LiveAnalyzer,RawAnalysisAssembler,AnalysisPostProcessor,FrameSeriesBuilder,RawAnalysis}.cs`
-  - `src/Reyfen.Timbratune.Core/Domain/{Metrics,Zones}.cs`
-  - `src/Reyfen.Timbratune.Core/Models/{Recording,RecordingDetail,TakeSeries}.cs`
-  - `src/Reyfen.Timbratune.Acoustics/Streaming/LiveTrackers.cs`
-- **Storage and import:**
-  - `src/Reyfen.Timbratune.Core/Storage/{RecordingStore,DataPaths,TakeImporter,TakeArchive}.cs`
-  - `src/Reyfen.Timbratune.Core/Audio/IAudioDecoder.cs`
-  - `src/Reyfen.Timbratune.Audio.SoundFlow/SoundFlowAudio.cs`
-- **Heads:**
-  - `src/Reyfen.Timbratune.Desktop/Program.cs`
-  - `src/Reyfen.Timbratune.Android/MainActivity.cs`
-- **Tests:**
-  - `tests/Reyfen.Timbratune.Core.Tests/{ParityTests,LiveAnalysisTests,ExportTests,TrendTests,CoreTests,ImportTests}.cs`
-  - `.../PraatReference/PraatAnalysisEngine.cs`
-  - `tests/Reyfen.Timbratune.Acoustics.Tests/StreamingTests.cs`
-- **Kept as they are** (only moved or wrapped):
-  - the Acoustics kernels and live trackers
-  - `RecentWindow`
-  - `PlaybackService`
-  - `StorageProviderDialogs`
-  - `AndroidFileSharer`
-  - `TakeArchive`
+The files to read first when changing each part. Before the refactoring, these were `App.axaml.cs`, `Features.cs`, `ViewModels/*`, `Views/MainView.axaml` and `Domain/Metrics.cs`; all of them are gone.
+
+- **Composition and shell** (`src/Reyfen.Timbratune/`):
+  - `App/CompositionRoot.cs`: `AddTimbratune()`, every registration and the do-nothing defaults.
+  - `App/ViewLocator.cs`: the hand-written view-model → view map.
+  - `App/App.axaml.cs`: `TimbratuneApp`, built from the head's container.
+  - `Shell/ShellViewModel.cs`, `Shell/ShellView.axaml`: where the features are placed.
+- **Features** (`src/Reyfen.Timbratune/Features/<Name>/`): `Record/RecordingManager.cs` (the live session and Stop), `LiveMonitor/{LiveTimelinesViewModel,RecentWindow}.cs` (live charts and smoothing), `TakeDetails/{TakeViewModel,TakeDetailsViewModel}.cs`, `TakeLibrary/`, `TakeActions/`, `MetricCompare/`, `Import/ImportManager.cs`, `About/`, `CheatSheet/`.
+- **Shared** (`src/Reyfen.Timbratune/Shared/`): `State/` (catalog, active take, live session, entitlements), `Navigation/` (overlay stack, launchers), `Messaging/Messages.cs`, `Platform/` (ports), `Telemetry/` (analytics, crash reports, consent, rollout; off).
+- **Analysis** (`src/Reyfen.Timbratune.Core/Analysis/`):
+  - `AcousticsAnalysisEngine.cs` (full analysis), `LiveAnalyzer.cs` (live), `IAnalysisScheduler.cs` / `LiveWorker.cs` (where they run).
+  - `Tracks/{TrackSet,TrackView,SavedTrackProvider,LiveTrackProvider}.cs`: the shared measurements.
+  - `Metrics/{IMetricModule,MetricInfo,MetricRegistry}.cs` and one folder per module.
+  - `RawAnalysisAssembler.cs`, `AnalysisPostProcessor.cs` (phrases, trends), `FrameSeriesBuilder.cs`, `RawAnalysis.cs`.
+- **Domain, models and saved files** (`src/Reyfen.Timbratune.Core/`): `Domain/{Zones,SmoothingSpec,ChartPoints}.cs`, `Models/{Recording,RecordingDetail,TakeSeries}.cs`, `Json/MetricColumnsJson.cs` (the compatibility layer for the trend and phrase columns).
+- **Storage, settings, import:** `Storage/{RecordingStore,DataPaths,FileSystemTakeStorage,TakeImportService,TakeArchive}.cs`, `Storage/Settings/SettingsService.cs`, `Audio/Decoding/{DecoderRegistry,FormatSniffer,AnalysisWavSink}.cs`.
+- **Diagnostics:** `Core/Diagnostics/AppLog.cs`.
+- **Heads:** `src/Reyfen.Timbratune.Desktop/Program.cs`, `src/Reyfen.Timbratune.Android/{AndroidApp,MainActivity}.cs`.
+- **Tests:** `tests/Reyfen.Timbratune.Architecture.Tests/DependencyRuleTests.cs` (the rules of §1.1, §5, §5a, §4.1, §7), `tests/Reyfen.Timbratune.Core.Tests/{GoldenTests,ParityTests,LiveAnalysisTests}.cs`, `tests/Reyfen.Timbratune.Tests/{CompositionTests,MetricRegistryUiTests,TelemetryTests}.cs`.
+- **Kept as they were** (only moved or wrapped): the Acoustics kernels and live trackers, `RecentWindow`, `PlaybackService`, `StorageProviderDialogs`, `AndroidFileSharer`, `TakeArchive`.
 
 ## 11. Verification
 
@@ -767,3 +759,47 @@ Later versions: accounts and avatar (§6) with cloud settings sync (§5a.3), and
 4. **Later, browser:** Web Worker vs multithreaded WASM, decided by the spike, and the hosting provider.
 5. ~~**P2 settings:** confirm the device/synced split in §5a.1.~~ Decided 2026-10-15: all device-only until accounts and sync exist.
 6. **Later, sync:** whether the avatar choice syncs (it is currently local only, §6), and whether takes ever sync (not planned).
+
+
+---
+
+## 13. How to add a feature
+
+A feature is a folder under `src/Reyfen.Timbratune/Features/<Name>/`, namespace `Reyfen.Timbratune.Features.<Name>`. Look at `TakeActions/` (manager, router, dialog) or `Import/` (manager, buttons, overlay) for a complete example.
+
+1. **The parts (§1.1), each only if needed:**
+   - `<Name>Manager`: the work (storage, analysis, platform ports). No Avalonia types (`ManagersNeverReferenceAvalonia`).
+   - `<Name>ViewModel`(s): what the view shows. No file I/O, no `RecordingStore` and no `Controls.*` types (`FeatureViewModelsDoNoFileIoAndDontUseTheStore`, `FeatureViewModelsDontDependOnControls`).
+   - `<Name>View.axaml`: binds only to its own view model, never `$parent[…].DataContext` (`FeatureViewsDontBindToAParentsViewModel`).
+   - `<Name>Router` (derives `RouterBase`) when it opens overlays, plus a launcher interface in `Shared/Navigation/Launchers.cs` if other features open it.
+2. **Never reference another feature** (`FeaturesNeverReferenceOtherFeatures`). Share through `Shared/`:
+   - state services in `Shared/State/` (`ITakeCatalog`, `IActiveTakeService`, `ILiveSession`, …);
+   - messages in `Shared/Messaging/Messages.cs` (`IMessenger`, e.g. `TakeSaved`, `ImportFinished`);
+   - launchers in `Shared/Navigation/` to open another feature's overlay;
+   - platform ports in `Shared/Platform/` (implemented by the heads).
+3. **Registration:** an `Add<Name>Feature(this IServiceCollection)` extension in the feature (managers, routers, view models, launchers as singletons; constructor injection only, no scanning). Call it from `App/CompositionRoot.AddTimbratune()`.
+4. **Views:** add each view-model → view pair to `App/ViewLocator.cs` (hand-written, trim/AOT safe), and place the feature in `Shell/ShellViewModel` / `ShellView.axaml` (only the composition root and the shell see features: `OnlyTheCompositionRootAndTheShellSeeFeatures`).
+5. **Settings:** declare `SettingKey<T>`s in the feature (ids `"<feature>.<name>"`, never reused, never secrets; scope `Device` until sync exists, §5a), register them with `services.AddSetting(...)`, and read them through `ISettings` only (`FeaturesUseSettingsOnlyThroughISettings`).
+6. **Decoding** only through `DecoderRegistry` / `IDecoderInstaller` (`FeaturesDecodeOnlyThroughTheRegistry`). **Telemetry:** optional `IAnalytics` / `ICrashReporter` / `IAppLog` constructor arguments; never from live code (`LiveAnalysisNeverReferencesTelemetry`).
+7. **Tests:** `CompositionTests` must still resolve everything; add the feature's own tests to `tests/Reyfen.Timbratune.Tests` (no UI needed for managers and view models). Then the desktop UI check of §11 and, for anything on the recording screen, a phone A/B (§3).
+
+## 14. How to add a metric
+
+A displayed quantity is a `MetricInfo`; a metric family is a module (`IMetricModule`, §2.2). Everything else (cards, trend charts, live timelines, chips, comparison, saved columns, analytics zones) follows the registry. `MetricRegistryUiTests` shows the minimum with a test module; `Clarity/ClarityModule.cs` is the smallest real one.
+
+1. **Where:** another quantity of an existing family goes into that module's list. A new family is a folder `src/Reyfen.Timbratune.Core/Analysis/Metrics/<Name>/<Name>Module.cs` with a stable `Name` (series keys, settings, analytics). Modules never call each other; they share only tracks and `RawAnalysis`, and hold no per-take state.
+2. **Tracks:** declare `RequiredTracks` (`TrackSet`). A measurement nobody has yet means a new `TrackSet` flag, the kernel in Acoustics (plus its streaming tracker for live), `SavedTrackProvider`, `LiveTrackProvider` and a `TrackView` field. Keep the hot-path rules of §3: pooled buffers, no LINQ, closures or allocations per tick, nothing per sample behind an interface.
+3. **The take's value:** `Measure` puts raw scalars or frames into `RawAnalysisBuilder`; `Summarize` writes the value into the take (`Models/Recording.cs`, saved in `take.json`; a new field is nullable so older takes still load).
+4. **The description** (`MetricInfo`, a `static readonly` in the module):
+   - `Name` (stable, never reused), `Title`, `Unit`, `Zones` (`Domain/Zones.cs`; named zones also become the analytics payload, §5), `Lo`/`Hi`, `Take` (the accessor).
+   - `Columns` (`Trend` / `Phrase`) when it has trend or phrase columns. `ColumnKey` only for names saved before P7; a new metric is saved under its `Name`, after the older columns (`Json/MetricColumnsJson.cs`).
+   - Optional presentations: `Card` (the line under the value), `Compare` (reference accessor, gendered, blurb), `Trend` (caption; `ColorKey` = a `Chart<N>Color` in `Themes/Palette.axaml`, light and dark; `MeasuredSinceVersion`), `Live` (caption and a `SmoothingSpec`: `LiveSmoothing.Frame`, `Vowel` or `Movement`, or its own measured one; or `Points` built from the contour), `Chip`.
+   - List them with `MetricInfo.Numbered(...)` and return the list from `Metrics`.
+5. **Columns and series:** `DetailData` + `FillTrend` / `FillPhrase` write `columns[metric]`; `BuildSeries` clears and refills `lines[metric]` (live hot path, no allocation); `WriteSeries` adds its saved series (key in `Models/TakeSeries.cs`).
+6. **Register** the module in `MetricRegistry.Default`. Its position is the display order of every surface (cards, trends, live timelines, chips). On the phones the first live timeline costs the most to draw (HANDOFF §8p), so measure if it changes.
+7. **Older takes:** a new trend column is empty for takes saved before it. Bump `TakeTrends.CurrentVersion` (`Models/RecordingDetail.cs`) and set the chart's `MeasuredSinceVersion`, so older takes are re-analyzed once (the trend backfill) and show "measuring…" until then.
+8. **Tests and gates:**
+   - The golden snapshots change on purpose (new columns, series): regenerate with `TIMBRATUNE_UPDATE_GOLDEN=1`, then review the diff: only the new metric may appear.
+   - `LiveAnalysisTests` (live ≈ saved), `RegistryNumbersEveryMetricOnce`, the architecture tests, and `ParityTests` if `analyze.py` has the measure.
+   - `tools/analysis-bench` A/B against the previous commit (≤ +3 % time, no more allocations), `tools/live-steadiness` for a new live line, and a phone A/B if it runs live (§3).
+9. **Words:** the cheat sheet (`Features/CheatSheet/`) and the README if users need it explained. No Praat code: implement from the papers (`src/Reyfen.Timbratune.Acoustics/REFERENCES.md`).

@@ -2,7 +2,7 @@
 
 This file brings a new engineer or agent up to date on everything done so far: what the user asked for, what was decided and why, how the code is organised, what was measured, and what is still open.
 
-Last updated 2026-10-16. The newest work is §8i–§8r (refactoring P0: golden, architecture, bench and phone baselines; P1: dependency injection and shared ports; P2: storage, settings and scheduling seams; P3: UI feature modules; P4: import formats; P5: analysis tracks; P6: metric modules; P7: registry-driven UI; P8: telemetry groundwork; P9: final performance check); §8d–§8h cover v0.2.0 (Android performance, export, one folder per take, import, `build.ps1`); §8 is the current state.
+Last updated 2026-10-16. The newest work is §8i–§8s (refactoring P0: golden, architecture, bench and phone baselines; P1: dependency injection and shared ports; P2: storage, settings and scheduling seams; P3: UI feature modules; P4: import formats; P5: analysis tracks; P6: metric modules; P7: registry-driven UI; P8: telemetry groundwork; P9: final performance check; P10: documentation, the refactoring is done); §8d–§8h cover v0.2.0 (Android performance, export, one folder per take, import, `build.ps1`); §8 is the current state.
 
 **Name:** the project is **Timbratune — Gender Voice Analysis Tool**, by **Reyfen**.
 - **Before 2026-10-02 it was called Euphonia**, and it is a fork of [Euphonia](https://github.com/Yuuzulight/Euphonia). Older parts of this file and of the transcript say "Euphonia" and "Euphonia-CSharp"; read those as Timbratune and the repo root (the code moved from `Timbratune/` to the root on 2026-10-06).
@@ -1244,6 +1244,21 @@ Within budget (≤ +3 % time, no more allocations): the refactored analysis is a
 **Verdict:** every gate passes or is a known cost the owner accepted (Pixel 9 +0.3 points and Pixel 4a +1 point of janky frames, both from P7). The refactoring keeps the results identical and the analysis as fast or faster.
 
 **4. Linux** (WSL `Ubuntu-24.04`, `~/tt` copy): all tests pass (Acoustics 57, Core 145, architecture 21, UI 33). `build.ps1 linux` builds the `.deb` and the AppImage; the AppImage (run with `APPIMAGE_EXTRACT_AND_RUN=1`, no FUSE in WSL) starts, records with the fake mic with the live timelines, and Stop saves the take with its cards.
+
+## 8s. Refactoring P10: documentation; the refactoring is done (2026-10-16)
+
+Phase P10 of `REFACTOR-PLAN.md` closes the refactoring of v0.3.0 (P0–P10, §8i–§8s). Docs only:
+- `REFACTOR-PLAN.md`: marked done; §10 lists the key files as built; new §13 "How to add a feature" and §14 "How to add a metric", each step tied to the architecture test or gate that checks it.
+- `CLAUDE.md`: the layout table names Core's `Domain/`, `Models/` and `Json/` and the shared entitlements; the plan is described as the architecture and its record, with the checklists.
+
+**Where it ended up** (details in §8i–§8r):
+- Features are independent folders composed by DI (`AddTimbratune`), checked by architecture tests; the heads only add platform adapters.
+- The analysis is computed once per update as shared tracks, then one module per metric family; the metric registry drives every surface (cards, trend charts, live timelines, chips, comparison) and the saved columns.
+- Import reads almost any audio format through a decoder registry (managed, miniaudio, Media Foundation, Android MediaCodec, FFmpeg on demand).
+- Settings persist per device; telemetry is designed and off (§5).
+- Results are identical to v0.2.x; the analysis is a little faster (bench: full −1.7 %, live updates −7.4 %). Known costs accepted by the owner: janky frames while recording +0.3 points on the Pixel 9 and +1 point on the Pixel 4a, both from P7 (§8p, §8r).
+
+**Next (later versions):** the telemetry adapters (Mixpanel, Sentry; §5), accounts and the avatar (§6) with settings sync (§5a.3), the browser head (§7).
 
 ## 8. Current state, at the time of writing
 
