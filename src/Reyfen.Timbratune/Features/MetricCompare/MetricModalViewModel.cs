@@ -1,7 +1,7 @@
 using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Reyfen.Timbratune.Controls;
+using Reyfen.Timbratune.Core.Analysis.Metrics;
 using Reyfen.Timbratune.Core.Domain;
 using Reyfen.Timbratune.Core.Models;
 using Reyfen.Timbratune.Services;
@@ -19,11 +19,15 @@ public sealed partial class MetricModalViewModel : ObservableObject, IDisposable
     private readonly Action _close;
     private readonly bool _referenceVoices;
 
-    public MetricModalViewModel(MetricDef metric, IReadOnlyList<Recording> recordings,
+    /// <param name="metric">A metric with a <see cref="MetricInfo.Take"/> value and a <see cref="MetricInfo.Compare"/>.</param>
+    public MetricModalViewModel(MetricInfo metric, IReadOnlyList<Recording> recordings,
         IReadOnlyList<ReferenceVoice> references, int? activeId, Func<Recording, string?> takeAudio,
         Func<ReferenceVoice, string?> refAudio, PlaybackService playback, bool referenceVoices, Action close)
     {
         Metric = metric;
+        var take = metric.Take ?? throw new ArgumentException($"{metric.Name} has no take value to compare.", nameof(metric));
+        var compare = metric.Compare ?? throw new ArgumentException($"{metric.Name} has no comparison.", nameof(metric));
+        _compare = compare;
         _referenceVoices = referenceVoices;
         _playback = playback;
         _close = close;
@@ -31,8 +35,8 @@ public sealed partial class MetricModalViewModel : ObservableObject, IDisposable
 
         // Stretch lo/hi so every real value fits, then pad 6% (or 1 if the span is 0).
         double lo = metric.Lo, hi = metric.Hi;
-        var values = recordings.Select(metric.Take)
-            .Concat(metric.ShowRefs ? references.Select(metric.Ref) : [])
+        var values = recordings.Select(take)
+            .Concat(compare.Gendered ? references.Select(compare.Reference) : [])
             .Where(v => v is { } x && double.IsFinite(x)).Select(v => v!.Value);
         foreach (var v in values)
         {
@@ -49,7 +53,7 @@ public sealed partial class MetricModalViewModel : ObservableObject, IDisposable
         var takes = new List<ScaleTick>();
         foreach (var r in recordings)
         {
-            if (metric.Take(r) is not { } v || !double.IsFinite(v)) continue;
+            if (take(r) is not { } v || !double.IsFinite(v)) continue;
             var audio = takeAudio(r);
             takes.Add(new ScaleTick($"take-{r.Id}", v, Pct(v), $"#{r.Id}", TickKind.Take, r.Id == activeId, 0, audio,
                 $"take #{r.Id} — {r.Label}",
@@ -57,13 +61,13 @@ public sealed partial class MetricModalViewModel : ObservableObject, IDisposable
         }
         Takes = AssignLanes(takes, 16);
 
-        Refs = !metric.ShowRefs
+        Refs = !compare.Gendered
             ? []
             : references.Select((rv, i) => (rv, i))
-                .Where(x => metric.Ref(x.rv) is { } v && double.IsFinite(v))
+                .Where(x => compare.Reference(x.rv) is { } v && double.IsFinite(v))
                 .Select(x =>
                 {
-                    var v = metric.Ref(x.rv)!.Value;
+                    var v = compare.Reference(x.rv)!.Value;
                     var audio = refAudio(x.rv);
                     return new ScaleTick($"ref-{x.i}", v, Pct(v), x.rv.Label, x.rv.IsFemale ? TickKind.Fem : TickKind.Masc,
                         false, 0, audio, x.rv.Label,
@@ -72,14 +76,17 @@ public sealed partial class MetricModalViewModel : ObservableObject, IDisposable
                 .ToList();
     }
 
-    public MetricDef Metric { get; }
+    private readonly Comparison _compare;
+
+    public MetricInfo Metric { get; }
     public string Heading => $"{Metric.Title} reference scale";
+    public string Blurb => _compare.Blurb;
     public double Lo { get; }
     public double Hi { get; }
     public IReadOnlyList<ScaleTick> Takes { get; }
     public IReadOnlyList<ScaleTick> Refs { get; }
-    public bool ShowRefs => _referenceVoices && Metric.ShowRefs;
-    public bool HideRefs => _referenceVoices && !Metric.ShowRefs;
+    public bool ShowRefs => _referenceVoices && _compare.Gendered;
+    public bool HideRefs => _referenceVoices && !_compare.Gendered;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasSelection))]

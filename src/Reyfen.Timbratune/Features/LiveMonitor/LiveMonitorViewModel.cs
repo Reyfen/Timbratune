@@ -3,6 +3,7 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Microsoft.Extensions.DependencyInjection;
 using Reyfen.Timbratune.Core.Analysis;
+using Reyfen.Timbratune.Core.Analysis.Metrics;
 using Reyfen.Timbratune.Core.Storage.Settings;
 using Reyfen.Timbratune.Diagnostics;
 using Reyfen.Timbratune.Shared.State;
@@ -19,19 +20,21 @@ public sealed partial class LiveMonitorViewModel : ObservableObject
 {
     private readonly ILiveSession _session;
     private readonly ISettings _settings;
+    private readonly IReadOnlyList<LiveLine> _lines;
     // Read on the analysis thread: a boxed double? is replaced, never changed, so reads are whole.
     private volatile object? _windowSeconds;
     private long _chartsApplied;
 
-    public LiveMonitorViewModel(ILiveSession session, ISettings settings)
+    public LiveMonitorViewModel(ILiveSession session, ISettings settings, MetricRegistry registry)
     {
         _session = session;
         _settings = settings;
+        _lines = LiveLine.From(registry);
         LiveWindow = LiveMonitorSettings.OptionFor(settings.Get(LiveMonitorSettings.WindowSeconds));
         session.Started += (_, _) =>
         {
-            Timelines = new LiveTimelinesViewModel();
-            Timelines.Apply(LiveTimelinesViewModel.Compute(LiveSnapshot.Empty, Window));
+            Timelines = new LiveTimelinesViewModel(_lines);
+            Timelines.Apply(LiveTimelinesViewModel.Compute(LiveSnapshot.Empty, _lines, Window));
         };
         session.SnapshotReady += OnSnapshot;
         session.Ended += (_, _) => Timelines = null;
@@ -56,14 +59,14 @@ public sealed partial class LiveMonitorViewModel : ObservableObject
         // refilled by the live analysis and are only read on its thread.
         if (_session.IsRecording) return;
         if (_session.Latest is { } snapshot && Timelines is { } timelines)
-            timelines.Apply(LiveTimelinesViewModel.Compute(snapshot, value?.Seconds));
+            timelines.Apply(LiveTimelinesViewModel.Compute(snapshot, _lines, value?.Seconds));
     }
 
     // Analysis thread.
     private void OnSnapshot(LiveSnapshot snapshot)
     {
         LiveTimelinesViewModel.Frame frame;
-        using (Perf.Measure("live.compute")) frame = LiveTimelinesViewModel.Compute(snapshot, Window);
+        using (Perf.Measure("live.compute")) frame = LiveTimelinesViewModel.Compute(snapshot, _lines, Window);
         Dispatcher.UIThread.Post(() => Apply(snapshot, frame));
     }
 

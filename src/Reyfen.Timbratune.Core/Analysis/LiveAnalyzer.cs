@@ -1,4 +1,5 @@
 using Reyfen.Timbratune.Acoustics.Streaming;
+using Reyfen.Timbratune.Core.Analysis.Metrics;
 using Reyfen.Timbratune.Core.Analysis.Tracks;
 using Reyfen.Timbratune.Core.Diagnostics;
 using Reyfen.Timbratune.Core.Models;
@@ -8,22 +9,22 @@ namespace Reyfen.Timbratune.Core.Analysis;
 /// <summary>A (time, value) point of a live timeline.</summary>
 public readonly record struct TimedValue(double T, double Value);
 
-/// <summary>Per-frame series for the live timelines (values as the cards show them).</summary>
-public sealed record LiveSeries
+/// <summary>
+/// Per-frame series for the live timelines (values as the cards show them), one per metric of the
+/// registry that measured them (empty for metrics without a live series). The lists are the live
+/// analysis' pooled buffers: read them on the analysis thread, before the next update.
+/// </summary>
+public sealed class LiveSeries(MetricRegistry registry, IReadOnlyList<TimedValue>[] lines)
 {
-    public static readonly LiveSeries Empty = new();
+    public static readonly LiveSeries Empty = new(MetricRegistry.Default, []);
 
-    /// <summary>Intensity per frame (dB).</summary>
-    public IReadOnlyList<TimedValue> Loudness { get; init; } = [];
-    /// <summary>HNR per voiced frame (dB).</summary>
-    public IReadOnlyList<TimedValue> Hnr { get; init; } = [];
-    /// <summary>F2 / F3 on loud voiced frames with a plausible F1 (Hz).</summary>
-    public IReadOnlyList<TimedValue> F2 { get; init; } = [];
-    public IReadOnlyList<TimedValue> F3 { get; init; } = [];
-    /// <summary>Corrected H1*–A3* per measurable voiced frame (dB).</summary>
-    public IReadOnlyList<TimedValue> Weight { get; init; } = [];
-    /// <summary>Local jitter (%) per finished voiced stretch, at the stretch end.</summary>
-    public IReadOnlyList<TimedValue> Jitter { get; init; } = [];
+    public MetricRegistry Registry { get; } = registry;
+
+    /// <summary>The series of metric <paramref name="id"/> of <see cref="Registry"/>.</summary>
+    public IReadOnlyList<TimedValue> this[MetricId id] => id.Index < lines.Length ? lines[id.Index] : [];
+
+    /// <summary>The series of a registered metric (empty when it isn't registered).</summary>
+    public IReadOnlyList<TimedValue> this[MetricInfo metric] => Registry.TryGetId(metric, out var id) ? this[id] : [];
 }
 
 /// <summary>What the live analysis knows at one moment.</summary>
@@ -52,6 +53,7 @@ public sealed class LiveAnalyzer
     private readonly LiveSignal _signal;
     private readonly LiveTrackProvider _tracks;
     private readonly double _registerFloorHz;
+    private readonly MetricRegistry _registry;
     private readonly object _updateGate = new();
 
     /// <summary>
@@ -62,10 +64,13 @@ public sealed class LiveAnalyzer
     public const double DefaultFormantBlockSeconds = 0.5;
 
     public LiveAnalyzer(double samplingFrequency = 44100, double registerFloorHz = AnalysisPostProcessor.DefaultRegisterFloorHz,
-        double formantBlockSeconds = DefaultFormantBlockSeconds)
+        double formantBlockSeconds = DefaultFormantBlockSeconds, MetricRegistry? registry = null)
     {
         SamplingFrequency = samplingFrequency;
         _registerFloorHz = registerFloorHz;
+        _registry = registry ?? MetricRegistry.Default;
+        _series = [new(_registry.Count), new(_registry.Count)];
+        _liveSeries = [new(_registry, _series[0].Lines), new(_registry, _series[1].Lines)];
         _signal = new LiveSignal(samplingFrequency);
         _tracks = new LiveTrackProvider(samplingFrequency, formantBlockSeconds);
     }
@@ -124,8 +129,8 @@ public sealed class LiveAnalyzer
             if (full || final)
             {
                 RawAnalysis raw;
-                using (Timing.Measure("live.assemble")) raw = RawAnalysisAssembler.Assemble(tracks);
-                using (Timing.Measure("live.postprocess")) result = AnalysisPostProcessor.Process(raw, _registerFloorHz);
+                using (Timing.Measure("live.assemble")) raw = RawAnalysisAssembler.Assemble(tracks, _registry);
+                using (Timing.Measure("live.postprocess")) result = AnalysisPostProcessor.Process(raw, _registerFloorHz, _registry);
                 contour = result.Detail;
             }
             else
@@ -145,13 +150,14 @@ public sealed class LiveAnalyzer
     /// snapshot's lists stay intact while the next is built, and no whole-take lists are
     /// allocated per update (they were a large share of the live analysis' garbage).
     /// </summary>
-    private readonly FrameSeriesBuffers[] _series = [new(), new()];
+    private readonly FrameSeriesBuffers[] _series;
+    private readonly LiveSeries[] _liveSeries;
     private int _seriesTurn;
 
     private LiveSeries BuildSeries(in TrackView t)
     {
-        var b = _series[_seriesTurn ^= 1];
-        FrameSeriesBuilder.Build(t, b);
-        return new LiveSeries { Loudness = b.Loudness, Hnr = b.Hnr, F2 = b.F2, F3 = b.F3, Weight = b.Weight, Jitter = b.Jitter };
+        var turn = _seriesTurn ^= 1;
+        FrameSeriesBuilder.Build(t, _series[turn], _registry);
+        return _liveSeries[turn];
     }
 }

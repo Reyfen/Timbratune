@@ -8,21 +8,6 @@ using Reyfen.Timbratune.Core.Domain;
 
 namespace Reyfen.Timbratune.Controls;
 
-public enum TickKind { Take, Fem, Masc }
-
-/// <summary>One marker on the reference scale — a take (above the band) or a reference voice (below).</summary>
-public sealed record ScaleTick(
-    string Key,
-    double Value,
-    double Pct,
-    string Label,
-    TickKind Kind,
-    bool Active,
-    int Lane,
-    string? AudioPath,
-    string PlayTitle,
-    string Tooltip);
-
 /// <summary>
 /// The scale inside MetricModal.tsx: take dots stacked in lanes above a
 /// zone band, reference-voice ticks below it, and the lo/hi axis. Clicking a

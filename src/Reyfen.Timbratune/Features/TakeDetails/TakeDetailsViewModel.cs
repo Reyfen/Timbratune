@@ -4,7 +4,7 @@ using CommunityToolkit.Mvvm.Input;
 using CommunityToolkit.Mvvm.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 using Reyfen.Timbratune.Core.Analysis;
-using Reyfen.Timbratune.Core.Domain;
+using Reyfen.Timbratune.Core.Analysis.Metrics;
 using Reyfen.Timbratune.Core.Models;
 using Reyfen.Timbratune.Core.Storage;
 using Reyfen.Timbratune.Diagnostics;
@@ -31,22 +31,24 @@ public sealed class TakeDetailsManager(RecordingStore store)
 /// </summary>
 public sealed partial class TakeDetailsViewModel : ObservableObject
 {
-    private static readonly IRelayCommand<MetricKey> NoModal = new RelayCommand<MetricKey>(_ => { });
+    private static readonly IRelayCommand<MetricId> NoModal = new RelayCommand<MetricId>(_ => { });
 
     private readonly IActiveTakeService _activeTake;
     private readonly TakeDetailsManager _manager;
     private readonly IFeatureFlags _flags;
     private readonly IMessenger _messenger;
+    private readonly MetricRegistry _registry;
     private bool _isLive;
 
     public TakeDetailsViewModel(IActiveTakeService active, ILiveSession session, TakeDetailsManager manager,
-        IMetricCompareLauncher metricCompare, IFeatureFlags flags, IMessenger messenger)
+        IMetricCompareLauncher metricCompare, IFeatureFlags flags, IMessenger messenger, MetricRegistry registry)
     {
         _activeTake = active;
         _manager = manager;
         _flags = flags;
         _messenger = messenger;
-        OpenMetricCommand = new RelayCommand<MetricKey>(metricCompare.Open);
+        _registry = registry;
+        OpenMetricCommand = new RelayCommand<MetricId>(metricCompare.Open);
         active.Changed += (_, _) => ShowActive();
         messenger.Register<TakeDetailsViewModel, TakeAnalysisUpdated>(this, (vm, m) =>
         {
@@ -62,7 +64,7 @@ public sealed partial class TakeDetailsViewModel : ObservableObject
     }
 
     /// <summary>Opens a metric's comparison (the stat cards and gauges).</summary>
-    public IRelayCommand<MetricKey> OpenMetricCommand { get; }
+    public IRelayCommand<MetricId> OpenMetricCommand { get; }
 
     /// <summary>The take in focus, or null when there are none.</summary>
     [ObservableProperty, NotifyPropertyChangedFor(nameof(HasActive))] private TakeViewModel? _active;
@@ -82,7 +84,7 @@ public sealed partial class TakeDetailsViewModel : ObservableObject
         }
         RecordingDetail? detail;
         using (Perf.Measure("take.load")) detail = _manager.LoadDetail(take);
-        using (Perf.Measure("take.viewmodel")) Active = new TakeViewModel(take, detail, _activeTake.IsLatest, OpenMetricCommand, _flags);
+        using (Perf.Measure("take.viewmodel")) Active = new TakeViewModel(take, detail, _activeTake.IsLatest, OpenMetricCommand, _flags, _registry);
         if (detail is not null && TakeDetailsManager.HasOldTrends(detail)) _messenger.Send(new TakeTrendsOutdated(take.Id));
     }
 
@@ -102,7 +104,7 @@ public sealed partial class TakeDetailsViewModel : ObservableObject
         {
             // Updated in place: the view keeps its controls and only re-lays out what changed.
             if (LiveTake is { } take) take.Update(result.Metrics, result.Detail, snapshot.Elapsed);
-            else LiveTake = new TakeViewModel(result.Metrics, result.Detail, isLatest: true, NoModal, _flags, liveElapsed: snapshot.Elapsed);
+            else LiveTake = new TakeViewModel(result.Metrics, result.Detail, isLatest: true, NoModal, _flags, _registry, liveElapsed: snapshot.Elapsed);
         }
     }
 }

@@ -48,15 +48,15 @@ public sealed class TrendTests
         Assert.Equal(detail.DurationS, trends.Points[^1].End, 3);
 
         // Every measure is present somewhere (slices that fall in a pause have none).
-        Assert.True(trends.Points.Count(p => p.MeanHz is not null) > trends.Points.Count / 2);
-        Assert.Contains(trends.Points, p => p.F2Hz is not null);
-        Assert.Contains(trends.Points, p => p.F3Hz is not null);
-        Assert.Contains(trends.Points, p => p.WeightDb is not null);
-        Assert.Contains(trends.Points, p => p.HnrDb is not null);
-        Assert.Contains(trends.Points, p => p.JitterPct is not null);
-        Assert.Contains(trends.Points, p => p.PitchSdHz is not null);
+        Assert.True(trends.Points.Count(p => p[Col.Pitch] is not null) > trends.Points.Count / 2);
+        Assert.Contains(trends.Points, p => p[Col.F2] is not null);
+        Assert.Contains(trends.Points, p => p[Col.F3] is not null);
+        Assert.Contains(trends.Points, p => p[Col.Weight] is not null);
+        Assert.Contains(trends.Points, p => p[Col.Hnr] is not null);
+        Assert.Contains(trends.Points, p => p[Col.Jitter] is not null);
+        Assert.Contains(trends.Points, p => p[Col.PitchSd] is not null);
         // Loudness covers every frame, silence included, so every slice has it.
-        Assert.All(trends.Points, p => Assert.InRange(p.LoudnessDb!.Value, 20, 100));
+        Assert.All(trends.Points, p => Assert.InRange(p[Col.Loudness]!.Value, 20, 100));
     }
 
     [Fact]
@@ -64,9 +64,9 @@ public sealed class TrendTests
     {
         var detail = (await new AcousticsAnalysisEngine().AnalyzeAsync(Fixture("vctk_f294.wav"))).Detail;
         var rebuilt = AnalysisPostProcessor.TimeTrends(detail);
-        Assert.Equal(detail.Trends!.Points.Select(p => p.MeanHz), rebuilt.Points.Select(p => p.MeanHz));
-        Assert.Equal(detail.Trends.Points.Select(p => p.MelodySt), rebuilt.Points.Select(p => p.MelodySt));
-        Assert.All(rebuilt.Points, p => Assert.Null(p.F2Hz));
+        Assert.Equal(detail.Trends!.Points.Select(p => p[Col.Pitch]), rebuilt.Points.Select(p => p[Col.Pitch]));
+        Assert.Equal(detail.Trends.Points.Select(p => p[Col.Melody]), rebuilt.Points.Select(p => p[Col.Melody]));
+        Assert.All(rebuilt.Points, p => Assert.Null(p[Col.F2]));
     }
 
     [Fact]

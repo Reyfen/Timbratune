@@ -11,7 +11,8 @@ namespace Reyfen.Timbratune.Core.Json;
     PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower,
     NumberHandling = JsonNumberHandling.AllowReadingFromString | JsonNumberHandling.AllowNamedFloatingPointLiterals,
     ReadCommentHandling = JsonCommentHandling.Skip,
-    AllowTrailingCommas = true)]
+    AllowTrailingCommas = true,
+    Converters = [typeof(TrendSliceJsonConverter), typeof(PhraseMetricsJsonConverter)])]
 [JsonSerializable(typeof(List<Recording>))]
 [JsonSerializable(typeof(RecordingDetail))]
 [JsonSerializable(typeof(List<ReferenceVoice>))]

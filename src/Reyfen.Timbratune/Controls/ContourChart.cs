@@ -18,12 +18,12 @@ namespace Reyfen.Timbratune.Controls;
 public sealed class ContourChart : ThemedControl
 {
     /// <summary>Longest unvoiced gap inside a phrase that the pitch contours (live and saved) join with a straight line.</summary>
-    public const double ContourBridgeGap = 0.5;
+    public const double ContourBridgeGap = Core.Analysis.Metrics.Pitch.PitchModule.ContourBridgeGap;
 
     public static readonly StyledProperty<RecordingDetail?> DetailProperty =
         AvaloniaProperty.Register<ContourChart, RecordingDetail?>(nameof(Detail));
     public static readonly StyledProperty<double> FemThresholdProperty =
-        AvaloniaProperty.Register<ContourChart, double>(nameof(FemThreshold), Metrics.FemininePitchHz);
+        AvaloniaProperty.Register<ContourChart, double>(nameof(FemThreshold), Core.Analysis.Metrics.Pitch.PitchModule.FemininePitchHz);
 
     /// <summary>Time axis length (s); 0 = the take's duration. Live views pass 10-second steps.</summary>
     public static readonly StyledProperty<double> AxisDurationProperty =

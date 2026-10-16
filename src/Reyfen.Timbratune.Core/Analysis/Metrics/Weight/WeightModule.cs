@@ -17,6 +17,25 @@ public sealed class WeightModule : IMetricModule
 
     public TrackSet RequiredTracks => TrackSet.WeightFrames | TrackSet.Ltas;
 
+    public static readonly MetricInfo Weight = new()
+    {
+        Name = "weight", Title = "Weight", Unit = "dB", Zones = Domain.Zones.Weight, Lo = 0, Hi = 20,
+        Take = r => r.Weight?.H1a3cDb,
+        Columns = MetricColumns.Trend | MetricColumns.Phrase, ColumnKey = "weight_db",
+        Card = new(_ => "source spectral tilt (corrected H1*–A3*) — the _thickness_ of the voice itself (separate from " +
+                        "pitch & resonance) · lighter leans feminine. **Heads up:** weight is hard to pin to a gender " +
+                        "across people (lots of overlap), so it's most useful as **your own change over time**, not a " +
+                        "vs-others verdict."),
+        Compare = new(v => v.Weight.H1a3cDb, Gendered: true,
+            "source spectral tilt (corrected H1*–A3*) · lighter leans feminine — but weight doesn't gender-separate reliably, so watch your OWN change over time"),
+        Trend = new("spectral tilt · lower = lighter / more feminine", "Chart5") { MeasuredSinceVersion = 1 },
+        Live = new("median over about 2 s", LiveSmoothing.Vowel),
+    };
+
+    private static readonly IReadOnlyList<MetricInfo> All = MetricInfo.Numbered(Weight);
+
+    public IReadOnlyList<MetricInfo> Metrics => All;
+
     public void Measure(in TrackView tracks, RawAnalysisBuilder raw)
     {
         var derived = tracks.Derived;
@@ -39,23 +58,24 @@ public sealed class WeightModule : IMetricModule
         return raw.WeightFrames.Select(w => (w.T, CorrectedH1A3(w, fs))).Where(p => double.IsFinite(p.Item2)).ToList();
     }
 
-    public void FillPhrase(DetailInputs inputs, object? data, Phrase phrase, PhraseMetrics metrics)
+    public void FillPhrase(DetailInputs inputs, object? data, Phrase phrase, MetricValues columns)
     {
         if (data is not IReadOnlyList<(double T, double H1A3c)> frames) return;
         var weight = frames.Where(w => phrase.Start <= w.T && w.T <= phrase.End).Select(w => w.H1A3c).ToList();
-        metrics.WeightDb = weight.Count > 0 ? Clean(weight.Average()) : null;
+        columns[Weight] = weight.Count > 0 ? Clean(weight.Average()) : null;
     }
 
-    public void FillTrend(DetailInputs inputs, object? data, in TrendWindow window, TrendSlice slice)
+    public void FillTrend(DetailInputs inputs, object? data, in TrendWindow window, MetricValues columns)
     {
         if (data is not IReadOnlyList<(double T, double H1A3c)> frames) return;
         var w = window;
         var weight = frames.Where(x => w.Contains(x.T)).Select(x => x.H1A3c).ToList();
-        slice.WeightDb = weight.Count > 0 ? Clean(weight.Average()) : null;
+        columns[Weight] = weight.Count > 0 ? Clean(weight.Average()) : null;
     }
 
-    public void BuildSeries(in TrackView t, FrameSeriesBuffers b)
+    public void BuildSeries(in TrackView t, SeriesLines lines)
     {
+        var b = lines.Buffers;
         // The voiced frames from the track stages when they made them (live), else derived here.
         var derived = t.Derived;
         var voiced = derived.Tracks.Has(TrackSet.VoicedFrames) ? derived.Voiced : RawAnalysisAssembler.VoicedFrames(t.Pitch, b.Voiced);
@@ -64,7 +84,7 @@ public sealed class WeightModule : IMetricModule
         var rows = b.Rows;
         // Rows are memoised live, so only frames not yet measured cost anything.
         Parallel.For(0, voiced.Count, Parallelism.Options, k => rows[k] = weightRow(voiced[k].T, voiced[k].F0));
-        var weight = b.Weight;
+        var weight = lines[Weight];
         weight.Clear();
         for (var k = 0; k < voiced.Count; k++)
         {
@@ -74,8 +94,8 @@ public sealed class WeightModule : IMetricModule
         }
     }
 
-    public void WriteSeries(in TrackView tracks, FrameSeriesBuffers buffers, IDictionary<string, FrameSeries> series) =>
-        series[TakeSeries.Weight] = FrameSeriesBuilder.Series(buffers.Weight, "dB", tracks.Pitch.Grid.Step, 2,
+    public void WriteSeries(in TrackView tracks, SeriesLines lines, IDictionary<string, FrameSeries> series) =>
+        series[TakeSeries.Weight] = FrameSeriesBuilder.Series(lines[Weight], "dB", tracks.Pitch.Grid.Step, 2,
             "corrected H1*-A3* on measurable voiced pitch frames");
 
     // ------------------------------------------------------------------

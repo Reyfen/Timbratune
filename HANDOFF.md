@@ -2,7 +2,7 @@
 
 This file brings a new engineer or agent up to date on everything done so far: what the user asked for, what was decided and why, how the code is organised, what was measured, and what is still open.
 
-Last updated 2026-10-16. The newest work is §8i–§8o (refactoring P0: golden, architecture, bench and phone baselines; P1: dependency injection and shared ports; P2: storage, settings and scheduling seams; P3: UI feature modules; P4: import formats; P5: analysis tracks; P6: metric modules); §8d–§8h cover v0.2.0 (Android performance, export, one folder per take, import, `build.ps1`); §8 is the current state.
+Last updated 2026-10-16. The newest work is §8i–§8p (refactoring P0: golden, architecture, bench and phone baselines; P1: dependency injection and shared ports; P2: storage, settings and scheduling seams; P3: UI feature modules; P4: import formats; P5: analysis tracks; P6: metric modules; P7: registry-driven UI); §8d–§8h cover v0.2.0 (Android performance, export, one folder per take, import, `build.ps1`); §8 is the current state.
 
 **Name:** the project is **Timbratune — Gender Voice Analysis Tool**, by **Reyfen**.
 - **Before 2026-10-02 it was called Euphonia**, and it is a fork of [Euphonia](https://github.com/Yuuzulight/Euphonia). Older parts of this file and of the transcript say "Euphonia" and "Euphonia-CSharp"; read those as Timbratune and the repo root (the code moved from `Timbratune/` to the root on 2026-10-06).
@@ -1098,6 +1098,82 @@ Phase P6 of `REFACTOR-PLAN.md` (§2.2): each metric family is one module, from t
    - Pixel 4a (Release profiling builds, 6 alternating fake-mic runs each, battery 64 %, Battery Saver off): better than the baseline, with janky ranges that don't overlap; more live updates per take, each faster, and full updates a quarter quicker (the whole-take jitter, shimmer and HNR mean no longer run on quick ticks).
    - **Pixel 9: checked in P7,** as the phone schedule in REFACTOR-PLAN §3 sets (owner, 2026-10-16): its P7 A/B against the P0 build covers P6 and P7 together; on a miss, the P6 build is measured too.
    - The 4a was left on the P6 profiling build, fake mic and test takes removed (its 0.2.0 takes still untouched in private storage).
+
+## 8p. Refactoring P7: registry-driven UI (2026-10-16)
+
+Phase P7 of `REFACTOR-PLAN.md` (§2.4): the UI is built from the metric registry. Saved files and results are unchanged; the order of some cards, live timelines and chips changed.
+
+**Metric descriptions** (`Core/Analysis/Metrics/MetricInfo.cs`):
+- A module lists what it shows as `MetricInfo`s (`IMetricModule.Metrics`, numbered with `MetricInfo.Numbered`): `Name` (stable), `Title`, `Unit`, `Zones`, `Lo`/`Hi`, `Take` (the take's value), `Columns` (trend / phrase) and `ColumnKey` (today's JSON name), and the optional presentations `Card` (the line under the value), `Compare` (reference accessor, gendered, blurb), `Trend` (caption, colour, floor-dependent caption or bands, a highlight band, `MeasuredSinceVersion` for "measuring…"), `Live` (caption, `SmoothingSpec`, hold, or `Points` built from the contour) and `Chip`.
+- The quantities: Pitch → mean, range, variability; Phrasing → melody, endings; Loudness; Resonance → F1, F2, F3; Weight; Clarity (HNR); Steadiness (jitter).
+- `MetricRegistry` numbers every module's metrics: `MetricId(Index, Name)`, `Metrics` (id, info, module), `Id(info)`, `Find(name)`, `this[id]`. Order: Pitch, Phrasing, Loudness, Resonance, Weight, Clarity, Steadiness. It is registered in DI (`AddTimbratune`).
+- `SmoothingSpec`/`WindowStatistic` moved to `Core/Domain` (modules carry their live smoothing; the shared ones are `LiveSmoothing.Frame/Vowel/Movement`); `TrendPoint`, `ScaleTick`, `TickKind` moved to `Core/Domain/ChartPoints.cs`. `Domain/Metrics.cs` (`MetricKey`, `MetricDef`) is deleted.
+
+**Columns and series by metric:**
+- `TrendSlice` and `PhraseMetrics` hold `double?[] Values` by `MetricId.Index` (`slice[id]`). Modules write `columns[metric]` (`MetricValues`: the module's offset in the registry plus the metric's slot, no lookup).
+- `Json/MetricColumnsJson.cs` (the compatibility layer): the trend and phrase columns are saved under `MetricInfo.Key`, today's v2 names first in today's order, then newer metrics; unknown names are skipped on read. detail.json is byte-identical (golden tests); a take saved by the dummy build loads in the normal build.
+- `FrameSeriesBuffers.Lines` is one pooled list per metric; modules fill `lines[metric]` (`SeriesLines`). F1 is collected only for a saved take (`ForSavedTake`). `LiveSeries` is a view of those lists by `MetricId` or `MetricInfo` (two instances, one per buffer set: no allocation per update). `LiveAnalyzer` takes an optional registry.
+
+**UI:**
+- `TakeViewModel`: stat cards = metrics with a `Card`, trend charts = metrics with a `Trend`, both in registry order; the F2/F3 gauges read the resonance metrics. Cards open the comparison by `MetricId` (`IMetricCompareLauncher.Open(MetricId)`).
+- `LiveTimelinesViewModel`: `LiveLine.From(registry)` gives the timelines; `Compute(snapshot, lines, window)` smooths each metric's points with its own spec, so a chart and its line can't get out of step (the positional `Lines` array is gone).
+- Chips (`TakeCardViewModel.Chips`) and `MetricModalViewModel` (`MetricInfo` + `Comparison`) read the same descriptions.
+- Architecture rule `FeatureViewModelsDontDependOnControls` (positive control: a `Controls.ZoneBar` field in a view model fails it).
+
+**Order on screen** (registry order; the trend charts are as before):
+
+| Surface | Before | Now |
+|---|---|---|
+| Stat cards | pitch, range, loudness, variability, HNR, jitter, weight | pitch, range, variability, loudness, weight, HNR, jitter |
+| Live timelines | loudness, variability, HNR, F2, F3, weight, melody, jitter | variability, melody, loudness, F2, F3, weight, HNR, jitter |
+| Chips | pitch, range, F2, loudness, variability, HNR | pitch, range, variability, loudness, F2, HNR |
+
+**Proof:** a throwaway `Metrics/Dummy/DummyModule.cs` (the loudest intensity frame) plus one registration showed up in the live timelines, the live and saved stat cards, the trend charts, the take card's chips, detail.json (`dummy_peak` after the v2 columns) and series.json (`dummy` after the known keys); then it was removed. `MetricRegistryUiTests` keeps the proof with a test registry (cards, trends, live timelines, saved series).
+
+**Not done:** appending only new frames to the live series (§2.2's `UpdateLiveSeries(fromFrame)`); they are refilled in full each update, as before.
+
+**Tests:** Core 145, architecture 20, UI library 23. `tools/live-steadiness` checks its lines against `Compute` by metric (no mismatch).
+
+**Gates:**
+1. **Identical results:** golden, parity and bench hashes unchanged (`428cdc1801047068` / `34e24c60fa4cab42`).
+2. **Bench, A/B against P6 (`1fb534d`)**, alternating, 6 runs of 10 each, medians:
+
+| Measure | P6 | P7 | Change |
+|---|---|---|---|
+| Full analysis | 328.0 ms | 328.5 ms | +0.1 % (ranges 318–337 / 322–339) |
+| Full analysis allocation | 146.5 MB | 144.7 MB | −1.2 % |
+| Live update, quick / full (per tick) | 8.84 / 9.52 ms | 8.79 / 9.42 ms | −0.6 / −1.0 % |
+| Live updates, whole take | 2,584.7 ms | 2,581.9 ms | −0.1 % |
+| Live allocation | 8.480 MB/s | 8.482 MB/s | 0 % |
+| `live.compute`, whole take | 294.5 ms | 293.8 ms | −0.2 % |
+| `live.compute` allocation | 1.961 MB/s | 1.958 MB/s | −0.2 % (after sizing the live melody list exactly; 1.971 before) |
+
+3. **Emulator smoke test** (Debug APK, fake mic): start with 17 earlier takes, record with the live timelines and live cards, Stop and save, an older take's cards, chips and trends.
+4. **Phones, A/B against the P0 baseline build:**
+
+| Phone | Build | fps | janky % (range) | > 50 ms | Stop to saved (analysis) | live updates | update median / full |
+|---|---|---|---|---|---|---|---|
+| Pixel 4a | P0 `a835972` | 52.08 | 9.79 (9.18–10.23) | 21 | 4.59 s (3.91 s) | 219 | 44.3 / 61.3 ms |
+| Pixel 4a | P7 | 51.64 | 10.88 (9.35–11.89) | 20 | 4.53 s (3.83 s) | 227 | 41.4 / 57.7 ms |
+| Pixel 4a | P7, second A/B | 51.39 | 10.90 (9.97–11.85) | 26.5 | 4.62 s (3.92 s) | 230.5 | 41.7 / 54.8 ms |
+| Pixel 4a | P7 with the P0 live order (test only) | 51.81 | 9.89 (8.04–12.74) | 24.5 | 4.61 s (3.91 s) | 230.5 | 41.9 / 56.2 ms |
+
+   - Pixel 4a (Release profiling builds, 6 alternating fake-mic runs per build in each A/B, battery 97–100 %, Battery Saver off): the analysis is as fast or faster (more live updates, each quicker; Stop to saved equal), but janky frames rose by about 1 point. A second A/B against a P7 build whose live timelines keep the P0 order (Loudness first; not committed) traced it to the screen, not the code: during the run the phone shows the pitch chart and the first live timeline, which was Loudness in P0 and is Pitch variability in P7's registry order, and that chart costs more to draw. With the P0 order P7 measured 9.89 %, like P0.
+   - **Owner's decision (2026-10-16): keep the registry order everywhere** (one order for every surface), accepting about 1 point of janky frames on the 4a while recording. Making the Pitch variability chart cheaper to draw is a possible later optimisation.
+   - **Pixel 9** (same method; three A/Bs, battery 52–53 % and charging, Battery Saver off). Its A/B against P0 covers P6 and P7 (REFACTOR-PLAN §3); P7 measured a little higher, so P6 was measured too, as the plan asks, and the P0-order build once more:
+
+| A/B | Build | fps | janky % (range) | > 50 ms | Stop to saved (analysis) | live updates | update median / full |
+|---|---|---|---|---|---|---|---|
+| 1 | P0 `a835972` | 39.58 | 3.27 (3.00–3.64) | 18.5 | 2.04 s (1.67 s) | 251.5 | 42.9 / 50.9 ms |
+| 1 | P7 | 39.39 | 3.59 (3.18–3.74) | 19 | 2.00 s (1.65 s) | 257 | 39.8 / 56.0 ms |
+| 2 | P7 | 39.55 | 3.50 (3.27–3.83) | 20 | 2.02 s (1.64 s) | 259.5 | 39.4 / 53.4 ms |
+| 2 | P7 with the P0 live order (test only) | 39.53 | 3.45 (2.99–3.97) | 19.5 | 2.05 s (1.68 s) | 259 | 40.7 / 48.2 ms |
+| 3 | P0 `a835972` | 39.59 | 3.31 (3.09–3.62) | 20.5 | 2.02 s (1.62 s) | 258.5 | 43.0 / 49.3 ms |
+| 3 | P6 `1fb534d` | 39.58 | 3.23 (2.99–3.55) | 20 | 2.06 s (1.68 s) | 257 | 41.0 / 50.4 ms |
+
+   - P6 matches P0 on the Pixel 9. P7 is about 0.2–0.3 points of janky frames above P0 in both of its A/Bs (about 3 more late frames in a 28 s take), with equal fps, Stop to saved well inside the 2.7 s limit, and faster live updates. Unlike on the 4a, the live order makes no difference here (the taller screen shows more charts at once), so this is P7's own cost, not yet located. Pooled (12 runs each): 3.27 % vs 3.54 % median, +8 % relative; a shuffle test puts the chance of a gap this size by luck at about 2 %.
+   - **Owner's decision (2026-10-16): accepted** (too small to notice; the analysis itself got faster); recheck it in P9.
+   - The 4a was left on the P7 profiling build (the last run), its 0.2.0 takes untouched in private storage; the fake mic and the runs' test takes are still on it (it was unplugged before they could be removed).
 
 ## 8. Current state, at the time of writing
 

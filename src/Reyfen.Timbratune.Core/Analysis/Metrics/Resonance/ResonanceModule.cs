@@ -16,6 +16,39 @@ public sealed class ResonanceModule : IMetricModule
 
     public TrackSet RequiredTracks => TrackSet.Formants | TrackSet.LoudVowelGate | TrackSet.VowelFormantRows;
 
+    /// <summary>F1 mostly follows the vowel (mouth openness): saved and shown in the resonance section only.</summary>
+    public static readonly MetricInfo F1 = new()
+    {
+        Name = "f1", Title = "Resonance (F1)", Unit = "Hz",
+        Take = r => r.Formants.F1Hz,
+    };
+
+    public static readonly MetricInfo F2 = new()
+    {
+        Name = "f2", Title = "Resonance (F2)", Unit = "Hz", Zones = Domain.Zones.F2, Lo = 1100, Hi = 2000,
+        Take = r => r.Formants.F2Hz,
+        Columns = MetricColumns.Trend | MetricColumns.Phrase, ColumnKey = "f2_hz",
+        Compare = new(v => v.Formants?.F2Hz, Gendered: true,
+            "main brightness cue · median over vowel nuclei · higher = smaller, brighter tract (reads feminine)"),
+        Trend = new("brightness / vocal-tract size cue", "Chart4") { MeasuredSinceVersion = 1 },
+        Live = new("on loud vowels, median over about 2 s", LiveSmoothing.Vowel),
+        Chip = new("F2 Hz"),
+    };
+
+    public static readonly MetricInfo F3 = new()
+    {
+        Name = "f3", Title = "Resonance (F3)", Unit = "Hz", Zones = Domain.Zones.F3, Lo = 2100, Hi = 3400,
+        Take = r => r.Formants.F3Hz,
+        Columns = MetricColumns.Trend, ColumnKey = "f3_hz",
+        Compare = new(v => v.Formants?.F3Hz, Gendered: true, "supports brightness · higher = brighter / lighter resonance"),
+        Trend = new("supports brightness", "Chart6") { MeasuredSinceVersion = 1 },
+        Live = new("on loud vowels, median over about 2 s", LiveSmoothing.Vowel),
+    };
+
+    private static readonly IReadOnlyList<MetricInfo> All = MetricInfo.Numbered(F1, F2, F3);
+
+    public IReadOnlyList<MetricInfo> Metrics => All;
+
     public void Measure(in TrackView tracks, RawAnalysisBuilder raw)
     {
         var derived = tracks.Derived;
@@ -46,24 +79,25 @@ public sealed class ResonanceModule : IMetricModule
     /// <summary>The kept vowel-core rows as (time, F2, F3).</summary>
     public object? DetailData(RawAnalysis raw) => VowelFormants(raw.Formants).Kept.Select(r => (r.T, r.F2, r.F3)).ToList();
 
-    public void FillPhrase(DetailInputs inputs, object? data, Phrase phrase, PhraseMetrics metrics)
+    public void FillPhrase(DetailInputs inputs, object? data, Phrase phrase, MetricValues columns)
     {
         if (data is not IReadOnlyList<(double T, double F2, double F3)> rows) return;
         var f2 = rows.Where(f => phrase.Start <= f.T && f.T <= phrase.End).Select(f => f.F2).ToList();
-        metrics.F2Hz = f2.Count > 0 ? Clean(Median(f2)) : null;
+        columns[F2] = f2.Count > 0 ? Clean(Median(f2)) : null;
     }
 
-    public void FillTrend(DetailInputs inputs, object? data, in TrendWindow window, TrendSlice slice)
+    public void FillTrend(DetailInputs inputs, object? data, in TrendWindow window, MetricValues columns)
     {
         if (data is not IReadOnlyList<(double T, double F2, double F3)> rows) return;
         var w = window;
         var formants = rows.Where(f => w.Contains(f.T)).ToList();
-        slice.F2Hz = formants.Count > 0 ? Clean(Median(formants.Select(f => f.F2).ToList())) : null;
-        slice.F3Hz = formants.Count > 0 ? Clean(Median(formants.Select(f => f.F3).ToList())) : null;
+        columns[F2] = formants.Count > 0 ? Clean(Median(formants.Select(f => f.F2).ToList())) : null;
+        columns[F3] = formants.Count > 0 ? Clean(Median(formants.Select(f => f.F3).ToList())) : null;
     }
 
-    public void BuildSeries(in TrackView t, FrameSeriesBuffers b)
+    public void BuildSeries(in TrackView t, SeriesLines lines)
     {
+        var b = lines.Buffers;
         // The gate from the track stages when they made it (live), else derived here.
         var derived = t.Derived;
         IReadOnlyList<double> loudTimes;
@@ -73,9 +107,9 @@ public sealed class ResonanceModule : IMetricModule
             var voiced = derived.Tracks.Has(TrackSet.VoicedFrames) ? derived.Voiced : RawAnalysisAssembler.VoicedFrames(t.Pitch, b.Voiced);
             loudTimes = RawAnalysisAssembler.LoudVoicedTimes(voiced, t.Intensity, b.LoudTimes, derived.LoudOutlierFraction, b.LoudScratch);
         }
-        var f1 = b.F1;
-        var f2 = b.F2;
-        var f3 = b.F3;
+        var f1 = b.ForSavedTake ? lines[F1] : null;
+        var f2 = lines[F2];
+        var f3 = lines[F3];
         f1?.Clear();
         f2.Clear();
         f3.Clear();
@@ -91,12 +125,12 @@ public sealed class ResonanceModule : IMetricModule
         }
     }
 
-    public void WriteSeries(in TrackView tracks, FrameSeriesBuffers buffers, IDictionary<string, FrameSeries> series)
+    public void WriteSeries(in TrackView tracks, SeriesLines lines, IDictionary<string, FrameSeries> series)
     {
         var step = tracks.Pitch.Grid.Step;
-        series[TakeSeries.F1] = FrameSeriesBuilder.Series(buffers.F1!, "Hz", step, 1, FrameSeriesBuilder.FormantFrames);
-        series[TakeSeries.F2] = FrameSeriesBuilder.Series(buffers.F2, "Hz", step, 1, FrameSeriesBuilder.FormantFrames);
-        series[TakeSeries.F3] = FrameSeriesBuilder.Series(buffers.F3, "Hz", step, 1, FrameSeriesBuilder.FormantFrames);
+        series[TakeSeries.F1] = FrameSeriesBuilder.Series(lines[F1], "Hz", step, 1, FrameSeriesBuilder.FormantFrames);
+        series[TakeSeries.F2] = FrameSeriesBuilder.Series(lines[F2], "Hz", step, 1, FrameSeriesBuilder.FormantFrames);
+        series[TakeSeries.F3] = FrameSeriesBuilder.Series(lines[F3], "Hz", step, 1, FrameSeriesBuilder.FormantFrames);
     }
 
     /// <summary>Fewer sampled moments than this say too little about how reliable the formants are.</summary>

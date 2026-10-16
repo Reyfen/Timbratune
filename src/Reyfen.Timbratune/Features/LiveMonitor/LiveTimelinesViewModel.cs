@@ -1,27 +1,36 @@
 using Reyfen.Timbratune.Core.Analysis;
+using Reyfen.Timbratune.Core.Analysis.Metrics;
 using Reyfen.Timbratune.Core.Domain;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Reyfen.Timbratune.Core.Models;
 
 namespace Reyfen.Timbratune.Features.LiveMonitor;
 
+/// <summary>A metric with a live timeline, and its id in the registry that measures it.</summary>
+public sealed record LiveLine(MetricId Id, MetricInfo Info)
+{
+    public LiveTimeline Timeline => Info.Live!;
+
+    /// <summary>The registry's metrics with a live timeline, in registry order.</summary>
+    public static IReadOnlyList<LiveLine> From(MetricRegistry registry) =>
+        registry.Metrics.Where(m => m.Info.Live is not null).Select(m => new LiveLine(m.Id, m.Info)).ToList();
+}
+
 /// <summary>
 /// One live metric chart: fixed title, zones and scale, plus the smoothed line, its current
 /// value and the visible time range, which update in place so the chart (and its easing)
 /// survives each refresh.
 /// </summary>
-public sealed partial class TimelineViewModel(string title, string caption, string unit, IReadOnlyList<Zone> zones, double lo, double hi,
-    bool holdValue = false)
-    : ObservableObject
+public sealed partial class TimelineViewModel(LiveLine line) : ObservableObject
 {
-    public string Title { get; } = title;
-    public string Caption { get; } = caption;
-    public string Unit { get; } = unit;
+    public string Title { get; } = line.Info.Title;
+    public string Caption { get; } = line.Timeline.Caption;
+    public string Unit { get; } = line.Info.Unit;
     /// <summary>Keep showing the last value however old it is (loudness: always measured, silence included).</summary>
-    public bool HoldValue { get; } = holdValue;
-    public IReadOnlyList<Zone> Zones { get; } = zones;
-    public double Lo { get; } = lo;
-    public double Hi { get; } = hi;
+    public bool HoldValue { get; } = line.Timeline.HoldValue;
+    public IReadOnlyList<Zone> Zones { get; } = line.Info.Zones ?? [];
+    public double Lo { get; } = line.Info.Lo;
+    public double Hi { get; } = line.Info.Hi;
 
     [ObservableProperty] private IReadOnlyList<TimedValue> _line = [];
     /// <summary>The current point's value (the dot), e.g. "182 Hz"; empty before there is one, or once it is stale.</summary>
@@ -54,20 +63,14 @@ public sealed record LiveWindowOption(string Label, double? Seconds)
 /// Each line is smoothed over a window centred on its time: the newest part is a quick
 /// estimate from the past only, and it is corrected in place as the next audio arrives.
 /// The unsettled tail leans on a damped trend prediction, which also carries the line to
-/// "now" so the current point is always shown (see <see cref="SmoothingSpec"/>).
+/// "now" so the current point is always shown (see <see cref="SmoothingSpec"/>). The timelines
+/// are the registry's metrics with a <see cref="MetricInfo.Live"/> timeline, each with its own
+/// smoothing (<see cref="LiveLine"/>), so a chart and its line can't get out of step.
 /// One instance lives for the whole recording; <see cref="Compute"/> does the work off the
 /// UI thread and <see cref="Apply"/> updates the charts in place.
 /// </summary>
 public sealed partial class LiveTimelinesViewModel : ObservableObject
 {
-    // Loudness follows syllables (several rises and falls a second), which a trend can't
-    // anticipate: measured, predicting it made the dot both jumpier and less accurate, so
-    // its newest value is simply held until "now".
-    public static readonly SmoothingSpec LoudnessSmoothing = new(WindowStatistic.EnergyMean, 0.5, 5, 0.3)
-        { TrendDamping = 0, MinimumTrust = 1 };
-    public static readonly SmoothingSpec FrameSmoothing = new(WindowStatistic.Median, 0.5, 5, 0.4);
-    public static readonly SmoothingSpec VowelSmoothing = new(WindowStatistic.Median, 1.0, 6, 0.8) { PolishRadius = 4 };
-    public static readonly SmoothingSpec MovementSmoothing = new(WindowStatistic.StandardDeviation, 1.0, 10, 0.4);
     // Pitch keeps its intonation: a short median (about 0.2 s) removes single-frame octave
     // slips and softens path revisions; voiced bits from 30 ms are kept. The median never
     // reaches across an unvoiced gap over 60 ms (it would flip from one side's pitch to the
@@ -81,32 +84,16 @@ public sealed partial class LiveTimelinesViewModel : ObservableObject
         { PolishRadius = 1, TrendDamping = 0, MaxStepRatio = Math.Pow(2, 3.0 / 12), BridgeGap = ContourBridgeGap }; // > 3 st in 20 ms = a slip
 
     /// <summary>Longest unvoiced gap inside a phrase that the pitch contours (live and saved) join with a straight line.</summary>
-    public const double ContourBridgeGap = Controls.ContourChart.ContourBridgeGap;
-
-    public static readonly SmoothingSpec JitterSmoothing = new(WindowStatistic.Median, 1.5, 1, 3.0) { PolishRadius = 4 };
+    public const double ContourBridgeGap = Core.Analysis.Metrics.Pitch.PitchModule.ContourBridgeGap;
 
     /// <summary>What one refresh shows: the visible range, the pitch detail and every line (in <see cref="Timelines"/> order).</summary>
     public sealed record Frame(double Elapsed, double AxisStart, double AxisDuration, RecordingDetail? Detail,
         IReadOnlyList<TimedValue> PitchLine, IReadOnlyList<TimedValue>[] Lines);
 
-    public LiveTimelinesViewModel()
+    /// <param name="lines">The timelines (<see cref="LiveLine.From"/>), as given to <see cref="Compute"/>.</param>
+    public LiveTimelinesViewModel(IReadOnlyList<LiveLine> lines)
     {
-        TimelineViewModel Metric(MetricKey key, string caption, bool hold = false)
-        {
-            var m = Metrics.All[key];
-            return new TimelineViewModel(m.Title, caption, m.Unit, m.Zones, m.Lo, m.Hi, hold);
-        }
-        Timelines =
-        [
-            Metric(MetricKey.Loudness, "energy average over about 1 s", hold: true),
-            Metric(MetricKey.Sd, "pitch movement over about 2 s"),
-            Metric(MetricKey.Hnr, "median over about 1 s"),
-            Metric(MetricKey.F2, "on loud vowels, median over about 2 s"),
-            Metric(MetricKey.F3, "on loud vowels, median over about 2 s"),
-            Metric(MetricKey.Weight, "median over about 2 s"),
-            new TimelineViewModel("In-register melody", "in-register pitch movement over about 2 s", "st", Zones.Melody, 0, 7),
-            Metric(MetricKey.Jitter, "median of finished voiced stretches over about 3 s"),
-        ];
+        Timelines = lines.Select(l => new TimelineViewModel(l)).ToList();
     }
 
     [ObservableProperty] private double _elapsed;
@@ -118,14 +105,15 @@ public sealed partial class LiveTimelinesViewModel : ObservableObject
     [ObservableProperty] private string _pitchText = "";
     [ObservableProperty] private ZoneColorKey? _pitchZone;
 
-    public IReadOnlyList<Zone> PitchZones => Zones.Pitch;
+    public IReadOnlyList<Zone> PitchZones => Core.Analysis.Metrics.Pitch.PitchModule.Mean.Zones!;
     public IReadOnlyList<TimelineViewModel> Timelines { get; }
 
     /// <summary>10 s, then 20, 30, … — the next multiple of 10 s at or above the elapsed time.</summary>
     public static double AxisFor(double elapsed) => Math.Max(10, 10 * Math.Ceiling(elapsed / 10 - 1e-9));
 
     /// <summary>Everything a refresh needs, computed from a snapshot (safe on any thread).</summary>
-    public static Frame Compute(LiveSnapshot snapshot, double? window = null)
+    /// <param name="lines">The timelines, from the registry that made the snapshot's series.</param>
+    public static Frame Compute(LiveSnapshot snapshot, IReadOnlyList<LiveLine> lines, double? window = null)
     {
         double start, duration;
         if (window is { } w)
@@ -146,21 +134,17 @@ public sealed partial class LiveTimelinesViewModel : ObservableObject
         var s = snapshot.Series;
         var pitch = Voiced(detail);
         var floor = detail?.RegisterFloorHz ?? AnalysisPostProcessor.DefaultRegisterFloorHz;
-        var melody = pitch.Where(p => p.Value >= floor).Select(p => new TimedValue(p.T, Semitones(p.Value))).ToList();
         var phraseEnds = detail?.Phrases.Select(p => p.End).ToList();
         var pitchLine = RecentWindow.Smooth(RecentWindow.From(pitch, start - PitchSmoothing.HalfWidth - ContourBridgeGap),
             PitchSmoothing, start, now, phraseEnds);
-        return new Frame(now, start, duration, detail, pitchLine,
-        [
-            Smooth(s.Loudness, LoudnessSmoothing),
-            Smooth(pitch, MovementSmoothing),
-            Smooth(s.Hnr, FrameSmoothing),
-            Smooth(s.F2, VowelSmoothing),
-            Smooth(s.F3, VowelSmoothing),
-            Smooth(s.Weight, VowelSmoothing),
-            Smooth(melody, MovementSmoothing),
-            Smooth(s.Jitter, JitterSmoothing),
-        ]);
+        var inputs = new LiveLineInputs(detail, pitch, floor);
+        var smoothed = new IReadOnlyList<TimedValue>[lines.Count];
+        for (var i = 0; i < smoothed.Length; i++)
+        {
+            var timeline = lines[i].Timeline;
+            smoothed[i] = Smooth(timeline.Points?.Invoke(inputs) ?? s[lines[i].Id], timeline.Smoothing);
+        }
+        return new Frame(now, start, duration, detail, pitchLine, smoothed);
     }
 
     /// <summary>Shows a computed frame (UI thread).</summary>
@@ -171,7 +155,7 @@ public sealed partial class LiveTimelinesViewModel : ObservableObject
         AxisDuration = frame.AxisDuration;
         Detail = frame.Detail;
         PitchLine = frame.PitchLine;
-        (PitchText, PitchZone) = CurrentValue(frame.PitchLine, "Hz", Zones.Pitch, frame.Elapsed, hold: false);
+        (PitchText, PitchZone) = CurrentValue(frame.PitchLine, "Hz", PitchZones, frame.Elapsed, hold: false);
         for (var i = 0; i < Timelines.Count; i++)
         {
             var t = Timelines[i];
@@ -229,6 +213,4 @@ public sealed partial class LiveTimelinesViewModel : ObservableObject
             if (detail.Frames.Hz[i] is { } hz) result.Add(new TimedValue(detail.Frames.T[i], hz));
         return result;
     }
-
-    private static double Semitones(double hz) => 12 * Math.Log2(hz / AnalysisPostProcessor.SemitoneRefHz);
 }

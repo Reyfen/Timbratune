@@ -1,7 +1,8 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Reyfen.Timbratune.Controls;
 using Reyfen.Timbratune.Core.Analysis;
+using Reyfen.Timbratune.Core.Analysis.Metrics;
+using Reyfen.Timbratune.Core.Analysis.Metrics.Resonance;
 using Reyfen.Timbratune.Core.Domain;
 using Reyfen.Timbratune.Core.Models;
 using Reyfen.Timbratune.Shared;
@@ -16,36 +17,33 @@ namespace Reyfen.Timbratune.Features.TakeDetails;
 /// While recording, one instance follows the take: <see cref="Update"/> changes its
 /// values in place, so the view keeps its controls and only re-lays out the texts that
 /// changed (rebuilding the whole tree each refresh took ~120 ms on a Pixel 4a).
+/// The stat cards and trend charts are the registry's metrics that have one, in registry order.
 /// </summary>
 public sealed partial class TakeViewModel : ObservableObject
 {
     private readonly bool _isLatest;
-    private readonly IRelayCommand<MetricKey> _openMetric;
+    private readonly IReadOnlyList<RegisteredMetric> _trends;
 
     /// <param name="liveElapsed">Set while recording: the take so far, shown live (no modal, no saved-take details).</param>
-    public TakeViewModel(Recording r, RecordingDetail? detail, bool isLatest, IRelayCommand<MetricKey> openMetric, IFeatureFlags flags,
-        double? liveElapsed = null)
+    public TakeViewModel(Recording r, RecordingDetail? detail, bool isLatest, IRelayCommand<MetricId> openMetric, IFeatureFlags flags,
+        MetricRegistry registry, double? liveElapsed = null)
     {
         _isLatest = isLatest;
-        _openMetric = openMetric;
         IsLive = liveElapsed is not null;
         CompareHint = AppInfo.CompareHint(flags.ReferenceVoices);
         var hint = CompareHint;
-        MetricKey? Card(MetricKey key) => IsLive ? null : key; // live cards don't open the reference modal
-        StatCards =
-        [
-            new StatCardViewModel("Pitch (avg)", "Hz", Zones.Pitch, 100, 260, Card(MetricKey.Pitch), openMetric, hint),
-            new StatCardViewModel("Pitch range", "Hz", null, 0, 0, null, openMetric, hint),
-            new StatCardViewModel("Loudness", "dB", Zones.Loudness, 45, 78, Card(MetricKey.Loudness), openMetric, hint),
-            new StatCardViewModel("Pitch variability", "Hz", Zones.PitchSd, 0, 60, Card(MetricKey.Sd), openMetric, hint),
-            new StatCardViewModel("Clarity (HNR)", "dB", Zones.Hnr, 0, 30, Card(MetricKey.Hnr), openMetric, hint),
-            new StatCardViewModel("Steadiness (jitter)", "%", Zones.Jitter, 0, 3, Card(MetricKey.Jitter), openMetric, hint),
-            new StatCardViewModel("Weight", "dB", Zones.Weight, 0, 20, Card(MetricKey.Weight), openMetric, hint),
-        ];
-        F2 = new GaugeViewModel("F2", "main brightness cue", Zones.F2, 1100, 2000, MetricKey.F2, openMetric, hint, !IsLive);
-        F3 = new GaugeViewModel("F3", "supports brightness", Zones.F3, 2100, 3400, MetricKey.F3, openMetric, hint, !IsLive);
+        _trends = registry.Metrics.Where(m => m.Info.Trend is not null && m.Info.Columns.HasFlag(MetricColumns.Trend)).ToList();
+        // Live cards don't open the reference modal.
+        StatCards = registry.Metrics.Where(m => m.Info.Card is not null)
+            .Select(m => new StatCardViewModel(m.Info, !IsLive && m.Info.Compare is not null ? m.Id : null, openMetric, hint))
+            .ToList();
+        F2 = Gauge(ResonanceModule.F2, "F2", "main brightness cue");
+        F3 = Gauge(ResonanceModule.F3, "F3", "supports brightness");
         Positions = [new PositionBar("phrase starts"), new PositionBar("mid-phrase"), new PositionBar("phrase endings")];
         Update(r, detail, liveElapsed);
+
+        GaugeViewModel Gauge(MetricInfo metric, string name, string description) =>
+            new(name, description, metric, registry.Id(metric), openMetric, hint, !IsLive);
     }
 
     /// <summary>Shows another state of the take (while recording: the take so far).</summary>
@@ -56,24 +54,11 @@ public sealed partial class TakeViewModel : ObservableObject
             : _isLatest ? "Latest take" : $"Take #{r.Id}";
         When = liveElapsed is null ? WhenText(r) : "";
 
-        var pz = ZoneOf(Zones.Pitch, r.Pitch.MeanHz);
-        StatCards[0].Update(r.Pitch.MeanHz,
-            pz is null ? "" : $"you're in the **{pz.Name}** zone — 165 Hz+ reads feminine to most ears 💕");
-        StatCards[1].Update(r.Pitch.RangeHz, $"{Fmt(r.Pitch.MinHz)}–{Fmt(r.Pitch.MaxHz)} Hz · wider = more melodic & expressive");
-        StatCards[2].Update(r.Intensity.MeanDb, "louder = more present & confident 📣");
-        StatCards[3].Update(r.Pitch.SdHz, "how much your melody moves · ~20–40 Hz is lively, natural speech");
-        StatCards[4].Update(r.VoiceQuality.HnrDb, "higher = clearer, lower = breathier · runs lower on full passages than a held vowel");
-        StatCards[5].Update(r.VoiceQuality.JitterPct,
-            $"lower = steadier · shimmer {Fmt(r.VoiceQuality.ShimmerPct)}% (under ~3.8% is steady)");
-        StatCards[6].Update(r.Weight?.H1a3cDb,
-            "source spectral tilt (corrected H1*–A3*) — the _thickness_ of the voice itself (separate from " +
-            "pitch & resonance) · lighter leans feminine. **Heads up:** weight is hard to pin to a gender " +
-            "across people (lots of overlap), so it's most useful as **your own change over time**, not a " +
-            "vs-others verdict.");
+        foreach (var card in StatCards) card.Update(r);
 
         // ---- Resonance (ResonanceCard.tsx) ----
-        F2.Update(r.Formants.F2Hz);
-        F3.Update(r.Formants.F3Hz);
+        F2.Update(r);
+        F3.Update(r);
         var score = new[] { F2.Zone, F3.Zone }.Sum(z => z?.Name == "bright" ? 1 : z?.Name == "deeper" ? -1 : 0);
         ResonanceSummary = score >= 1
             ? "✨ Your resonance **leans bright & light** — this is the cue that makes a voice read feminine beyond pitch. Lovely!"
@@ -82,7 +67,7 @@ public sealed partial class TakeViewModel : ObservableObject
                 : "💫 Your resonance sits in a **neutral** zone — nudging brightness up will help it read lighter.";
         F1Line = $"ℹ️ **F1 = {Fmt(r.Formants.F1Hz)} Hz.** This one mostly reflects which _vowel_ you're on " +
                  "(mouth openness), so it's not a reliable gender cue by itself — shown for completeness." +
-                 (r.Formants.UsablePct is < Core.Analysis.Metrics.Resonance.ResonanceModule.UnreliableFormantsBelowPct
+                 (r.Formants.UsablePct is < ResonanceModule.UnreliableFormantsBelowPct
                      ? $"\n\n⚠️ **Formants are shaky in this take:** only {Fmt(r.Formants.UsablePct)}% of the loud, voiced moments " +
                        "gave a usable reading. Background noise, hiss or a very close mic can cause this — try a quieter room " +
                        "or a bit more distance, and treat these resonance numbers with care."
@@ -122,45 +107,30 @@ public sealed partial class TakeViewModel : ObservableObject
             var trends = detail.Trends ?? AnalysisPostProcessor.TimeTrends(detail);
             TrendStep = trends.StepS;
             TrendPointCount = trends.Points.Count;
-            UpdateTrends(trends.Points, detail.RegisterFloorHz, detail.Trends is null,
-                (detail.Trends?.Version ?? 0) < TakeTrends.CurrentVersion);
+            UpdateTrends(trends.Points, detail.RegisterFloorHz, detail.Trends?.Version ?? 0);
         }
     }
 
-    /// <param name="legacy">Only the contour is known yet (older take, being re-analyzed).</param>
-    /// <param name="older">Saved before loudness was in the trends (also being re-analyzed).</param>
-    private void UpdateTrends(List<TrendSlice> slices, double floor, bool legacy, bool older)
+    /// <param name="version">The saved trends' version; 0 = rebuilt from the contour (an older take, being re-analyzed).</param>
+    private void UpdateTrends(List<TrendSlice> slices, double floor, int version)
     {
-        IReadOnlyList<TrendPoint> Mk(Func<TrendSlice, double?> sel, string unit) => slices
-            .Select(s => new TrendPoint($"{s.T:0}", sel(s), $"{s.T:0} s ({s.Start:0.0}–{s.End:0.0} s): {Fmt(sel(s), unit)}"))
-            .ToList();
-        var reanalyze = legacy ? " · measuring…" : "";
-        var reanalyzeLoudness = older ? " · measuring…" : "";
-        var endingBands = new Zone[] { new(floor - 50, floor, ZoneColorKey.Masc, "below"), new(floor, 260, ZoneColorKey.Fem, "in register") };
-
-        (string Title, string Caption, IReadOnlyList<TrendPoint> Points, string Color, IReadOnlyList<Zone>? Bands)[] charts =
-        [
-            ("Pitch (avg)", "pink band = feminine zone (165 Hz+)", Mk(s => s.MeanHz, " Hz"), "Chart1", null),
-            ("Pitch variability", "how much your melody moves · ~20–40 Hz is lively, natural speech", Mk(s => s.PitchSdHz, " Hz"), "Chart9", Zones.PitchSd),
-            ("In-register melody", "true expressiveness, crashes removed (st)", Mk(s => s.MelodySt, " st"), "Chart2", Zones.Melody),
-            ("Phrase endings", $"pitch of the phrases ending here · blue = below the register floor ({Fmt(floor)} Hz)",
-                Mk(s => s.OffsetHz, " Hz"), "Chart3", endingBands),
-            ("Loudness", "louder = more present & confident" + reanalyzeLoudness, Mk(s => s.LoudnessDb, " dB"), "Chart10", Zones.Loudness),
-            ("Resonance (F2)", "brightness / vocal-tract size cue" + reanalyze, Mk(s => s.F2Hz, " Hz"), "Chart4", Zones.F2),
-            ("Resonance (F3)", "supports brightness" + reanalyze, Mk(s => s.F3Hz, " Hz"), "Chart6", Zones.F3),
-            ("Weight", "spectral tilt · lower = lighter / more feminine" + reanalyze, Mk(s => s.WeightDb, " dB"), "Chart5", Zones.Weight),
-            ("Clarity (HNR)", "higher = clearer, lower = breathier" + reanalyze, Mk(s => s.HnrDb, " dB"), "Chart7", Zones.Hnr),
-            ("Steadiness (jitter)", "lower = steadier" + reanalyze, Mk(s => s.JitterPct, "%"), "Chart8", Zones.Jitter),
-        ];
-        if (PhraseTrends.Count == 0)
+        var charts = PhraseTrends.Count == 0 ? new List<TrendViewModel>(_trends.Count) : null;
+        for (var i = 0; i < _trends.Count; i++)
         {
-            PhraseTrends = charts.Select(c => c.Title == "Pitch (avg)"
-                    ? new TrendViewModel(c.Title, c.Caption, c.Points, c.Color, bandFrom: Metrics.FemininePitchHz, bandTo: 260, bandColorKey: "ZoneFem")
-                    : new TrendViewModel(c.Title, c.Caption, c.Points, c.Color, bands: c.Bands))
+            var (id, info) = (_trends[i].Id, _trends[i].Info);
+            var trend = info.Trend!;
+            var unit = info.Unit == "%" ? "%" : " " + info.Unit;
+            IReadOnlyList<TrendPoint> points = slices
+                .Select(s => new TrendPoint($"{s.T:0}", s[id], $"{s.T:0} s ({s.Start:0.0}–{s.End:0.0} s): {Fmt(s[id], unit)}"))
                 .ToList();
-            return;
+            var caption = (trend.FloorCaption?.Invoke(floor) ?? trend.Caption) + (version < trend.MeasuredSinceVersion ? " · measuring…" : "");
+            var bands = trend.Band is not null ? null : trend.FloorBands?.Invoke(floor) ?? info.Zones;
+            if (charts is null) PhraseTrends[i].Update(caption, points, bands);
+            else if (trend.Band is { } band)
+                charts.Add(new TrendViewModel(info.Title, caption, points, trend.ColorKey, bandFrom: band.From, bandTo: band.To, bandColorKey: band.ColorKey));
+            else charts.Add(new TrendViewModel(info.Title, caption, points, trend.ColorKey, bands: bands));
         }
-        for (var i = 0; i < charts.Length; i++) PhraseTrends[i].Update(charts[i].Caption, charts[i].Points, charts[i].Bands);
+        if (charts is not null) PhraseTrends = charts;
     }
 
     [ObservableProperty] private Recording _recording = null!;
@@ -247,40 +217,41 @@ public sealed partial class TrendViewModel(
     }
 }
 
+/// <summary>One stat card: a metric's value, zone and line (<see cref="MetricInfo.Card"/>).</summary>
+/// <param name="compareId">The metric to compare when tapped; null = not tappable.</param>
 public sealed partial class StatCardViewModel(
-    string title, string unit, IReadOnlyList<Zone>? zones, double lo, double hi,
-    MetricKey? metricKey, IRelayCommand<MetricKey> openMetric, string compareHint) : ObservableObject
+    MetricInfo metric, MetricId? compareId, IRelayCommand<MetricId> openMetric, string compareHint) : ObservableObject
 {
-    public string Title { get; } = title;
+    public string Title { get; } = metric.Title;
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ValueText), nameof(Zone))]
     private double? _value;
     public string ValueText => Fmt(Value);
-    public string Unit { get; } = unit;
-    public IReadOnlyList<Zone>? Zones { get; } = zones;
+    public string Unit { get; } = metric.Unit;
+    public IReadOnlyList<Zone>? Zones { get; } = metric.Zones;
     public bool HasZones => Zones is not null;
     public Zone? Zone => Zones is null ? null : ZoneOf(Zones, Value);
-    public double Lo { get; } = lo;
-    public double Hi { get; } = hi;
+    public double Lo { get; } = metric.Lo;
+    public double Hi { get; } = metric.Hi;
     [ObservableProperty] private string _sub = "";
-    public bool IsClickable => metricKey is not null;
+    public bool IsClickable => compareId is not null;
     public string? ToolTip => IsClickable ? compareHint : null;
 
-    public void Update(double? value, string sub)
+    public void Update(Recording take)
     {
-        Value = value;
-        Sub = sub;
+        Value = metric.Take?.Invoke(take);
+        Sub = metric.Card?.Sub(take) ?? "";
     }
 
     public void Open()
     {
-        if (metricKey is { } key) openMetric.Execute(key);
+        if (compareId is { } id) openMetric.Execute(id);
     }
 }
 
 public sealed partial class GaugeViewModel(
-    string name, string description, IReadOnlyList<Zone> zones, double lo, double hi,
-    MetricKey key, IRelayCommand<MetricKey> openMetric, string compareHint, bool interactive = true) : ObservableObject
+    string name, string description, MetricInfo metric, MetricId id, IRelayCommand<MetricId> openMetric, string compareHint,
+    bool interactive = true) : ObservableObject
 {
     public bool Interactive { get; } = interactive;
     public string? ToolTip => Interactive ? compareHint : null;
@@ -290,16 +261,16 @@ public sealed partial class GaugeViewModel(
     [NotifyPropertyChangedFor(nameof(ValueText), nameof(Zone))]
     private double? _value;
     public string ValueText => Fmt(Value, " Hz");
-    public IReadOnlyList<Zone> Zones { get; } = zones;
-    public Zone? Zone => ZoneOf(Zones, Value);
-    public double Lo { get; } = lo;
-    public double Hi { get; } = hi;
+    public IReadOnlyList<Zone> Zones { get; } = metric.Zones ?? [];
+    public Zone? Zone => Zones.Count == 0 ? null : ZoneOf(Zones, Value);
+    public double Lo { get; } = metric.Lo;
+    public double Hi { get; } = metric.Hi;
 
-    public void Update(double? value) => Value = value;
+    public void Update(Recording take) => Value = metric.Take?.Invoke(take);
 
     public void Open()
     {
-        if (Interactive) openMetric.Execute(key);
+        if (Interactive) openMetric.Execute(id);
     }
 }
 

@@ -1,6 +1,6 @@
 using System.Text;
 using Microsoft.Extensions.DependencyInjection;
-using Reyfen.Timbratune.Core.Domain;
+using Reyfen.Timbratune.Core.Analysis.Metrics;
 using Reyfen.Timbratune.Core.Json;
 using Reyfen.Timbratune.Core.Models;
 using Reyfen.Timbratune.Core.Storage;
@@ -48,13 +48,13 @@ public sealed class MetricCompareManager(DataPaths paths, ReferenceVoiceFolder f
 
 /// <summary>Opens a metric's comparison over the page (one at a time).</summary>
 public sealed class MetricCompareRouter(IOverlayHost overlays, MetricCompareManager manager, ITakeCatalog catalog,
-    IActiveTakeService active, PlaybackService playback) : RouterBase(overlays), IMetricCompareLauncher
+    IActiveTakeService active, PlaybackService playback, MetricRegistry registry) : RouterBase(overlays), IMetricCompareLauncher
 {
-    public void Open(MetricKey metric)
+    public void Open(MetricId metric)
     {
         CloseAll<MetricModalViewModel>();
         MetricModalViewModel? modal = null;
-        modal = new MetricModalViewModel(Metrics.All[metric], catalog.Takes, manager.References, active.Active?.Id,
+        modal = new MetricModalViewModel(registry[metric], catalog.Takes, manager.References, active.Active?.Id,
             manager.TakeAudio, manager.ReferenceAudio, playback, manager.ShowsReferenceVoices, () => Close(modal!));
         Open(modal);
     }

@@ -14,9 +14,19 @@ namespace Reyfen.Timbratune.Core.Analysis;
 /// </summary>
 public sealed class FrameSeriesBuffers
 {
-    public readonly List<TimedValue> Loudness = [], Hnr = [], F2 = [], F3 = [], Weight = [], Jitter = [];
-    /// <summary>F1 at the same times as F2/F3; null = not collected (the live graphs don't show it).</summary>
-    public List<TimedValue>? F1;
+    /// <param name="metricCount">The registry's <see cref="MetricRegistry.Count"/>.</param>
+    /// <param name="forSavedTake">Also the series only a saved take keeps (F1; the live graphs don't show it).</param>
+    public FrameSeriesBuffers(int metricCount, bool forSavedTake = false)
+    {
+        Lines = new List<TimedValue>[metricCount];
+        for (var i = 0; i < Lines.Length; i++) Lines[i] = [];
+        ForSavedTake = forSavedTake;
+    }
+
+    /// <summary>One list per metric, by <see cref="MetricId.Index"/> (empty for metrics without a series).</summary>
+    public List<TimedValue>[] Lines { get; }
+
+    public bool ForSavedTake { get; }
     internal readonly List<(double T, double F0)> Voiced = [];
     internal readonly List<double> LoudTimes = [], LoudScratch = [];
     internal RawAnalysis.WeightRow?[] Rows = [];
@@ -37,7 +47,7 @@ public static class FrameSeriesBuilder
 
     public static void Build(in TrackView t, FrameSeriesBuffers b, MetricRegistry registry)
     {
-        foreach (var module in registry.Modules) module.BuildSeries(t, b);
+        for (var i = 0; i < registry.Modules.Count; i++) registry.Modules[i].BuildSeries(t, registry.LinesOf(i, b));
     }
 
     /// <summary>
@@ -67,10 +77,10 @@ public static class FrameSeriesBuilder
     public static TakeSeries ForTake(in TrackView t, MetricRegistry registry)
     {
         if (t.Harmonicity is null) throw new ArgumentException("The tracks have no harmonicity.", nameof(t));
-        var b = new FrameSeriesBuffers { F1 = [] };
+        var b = new FrameSeriesBuffers(registry.Count, forSavedTake: true);
         Build(t, b, registry);
         var written = new Dictionary<string, FrameSeries>(StringComparer.Ordinal);
-        foreach (var module in registry.Modules) module.WriteSeries(t, b, written);
+        for (var i = 0; i < registry.Modules.Count; i++) registry.Modules[i].WriteSeries(t, registry.LinesOf(i, b), written);
 
         // series.json keeps its key order whatever the module order: the known keys first, as always.
         var take = new TakeSeries();

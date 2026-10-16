@@ -127,8 +127,9 @@ public static class AnalysisPostProcessor
             var end = k == count ? duration : t + step / 2.0;
             var window = new TrendWindow(start, end, k == count);
             inputs.WindowHz = inputs.Voiced.Where(v => window.Contains(v.T)).Select(v => v.Hz).ToList();
-            var slice = new TrendSlice { T = t, Start = Round(start, 3), End = Round(end, 3) };
-            for (var i = 0; i < registry.Modules.Count; i++) registry.Modules[i].FillTrend(inputs, inputs.Data[i], window, slice);
+            var slice = new TrendSlice(registry.Count) { T = t, Start = Round(start, 3), End = Round(end, 3) };
+            for (var i = 0; i < registry.Modules.Count; i++)
+                registry.Modules[i].FillTrend(inputs, inputs.Data[i], window, registry.ValuesOf(i, slice.Values));
             trends.Points.Add(slice);
         }
         return trends;
@@ -157,8 +158,9 @@ public static class AnalysisPostProcessor
         foreach (var phrase in inputs.Detail.Phrases)
         {
             inputs.WindowHz = inputs.Voiced.Where(v => phrase.Start <= v.T && v.T <= phrase.End).Select(v => v.Hz).ToList();
-            var metrics = new PhraseMetrics { Start = phrase.Start, End = phrase.End };
-            for (var i = 0; i < registry.Modules.Count; i++) registry.Modules[i].FillPhrase(inputs, inputs.Data[i], phrase, metrics);
+            var metrics = new PhraseMetrics(registry.Count) { Start = phrase.Start, End = phrase.End };
+            for (var i = 0; i < registry.Modules.Count; i++)
+                registry.Modules[i].FillPhrase(inputs, inputs.Data[i], phrase, registry.ValuesOf(i, metrics.Values));
             result.Add(metrics);
         }
         return result;

@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Reyfen.Timbratune.Core.Analysis.Metrics;
 using Reyfen.Timbratune.Core.Models;
 using Reyfen.Timbratune.Services;
 using Reyfen.Timbratune.Shared.Messaging;
@@ -8,6 +9,9 @@ using Reyfen.Timbratune.Shared.Navigation;
 using static Reyfen.Timbratune.Core.Domain.Zones;
 
 namespace Reyfen.Timbratune.Features.TakeLibrary;
+
+/// <summary>A chip on a take's card: the value, and what it is ("pitch Hz").</summary>
+public sealed record TakeChip(string Value, string Label);
 
 /// <summary>One card under "All recordings" (RecordingCard.tsx + its WaveformPlayer).</summary>
 public sealed partial class TakeCardViewModel : ObservableObject, IDisposable
@@ -19,9 +23,12 @@ public sealed partial class TakeCardViewModel : ObservableObject, IDisposable
     /// <param name="audioPath">The take's audio file, when it is there.</param>
     /// <param name="canShare">The platform has a share sheet (Android): the card shows a share button instead of 💾.</param>
     /// <param name="loadPeaks">Reads the waveform's peaks from the audio file (off the UI thread).</param>
+    /// <param name="chips">The metrics with a <see cref="MetricInfo.Chip"/>, in registry order.</param>
     public TakeCardViewModel(Recording r, string? audioPath, bool isLatest, PlaybackService playback,
-        ITakeActionsLauncher actions, bool canShare, Action<TakeCardViewModel> select, Func<string, Task<float[]>> loadPeaks)
+        ITakeActionsLauncher actions, bool canShare, Action<TakeCardViewModel> select, Func<string, Task<float[]>> loadPeaks,
+        IReadOnlyList<MetricInfo> chips)
     {
+        Chips = chips.Select(m => new TakeChip(m.Chip!.Text?.Invoke(r) ?? Fmt(m.Take?.Invoke(r)), m.Chip.Label)).ToList();
         Recording = r;
         AudioPath = audioPath;
         IsLatest = isLatest;
@@ -42,12 +49,7 @@ public sealed partial class TakeCardViewModel : ObservableObject, IDisposable
     public string? Note => string.IsNullOrWhiteSpace(Recording.Note) ? null : "📝 " + Recording.Note;
     public bool HasNote => Note is not null;
 
-    public string PitchChip => Fmt(Recording.Pitch.MeanHz);
-    public string RangeChip => $"{Fmt(Recording.Pitch.MinHz)}–{Fmt(Recording.Pitch.MaxHz)}";
-    public string F2Chip => Fmt(Recording.Formants.F2Hz);
-    public string LoudChip => Fmt(Recording.Intensity.MeanDb);
-    public string VariabilityChip => Fmt(Recording.Pitch.SdHz);
-    public string HnrChip => Fmt(Recording.VoiceQuality.HnrDb);
+    public IReadOnlyList<TakeChip> Chips { get; }
 
     public string? AudioPath { get; }
     public bool HasAudio => AudioPath is not null;

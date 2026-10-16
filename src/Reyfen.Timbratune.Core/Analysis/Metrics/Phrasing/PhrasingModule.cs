@@ -17,6 +17,43 @@ public sealed class PhrasingModule : IMetricModule
 
     public TrackSet RequiredTracks => TrackSet.Sounding;
 
+    /// <summary>"True melody": the semitone SD of the in-register pitch.</summary>
+    public static readonly MetricInfo Melody = new()
+    {
+        Name = "melody", Title = "In-register melody", Unit = "st", Zones = Domain.Zones.Melody, Lo = 0, Hi = 7,
+        Columns = MetricColumns.Trend | MetricColumns.Phrase, ColumnKey = "melody_st",
+        Trend = new("true expressiveness, crashes removed (st)", "Chart2"),
+        Live = new("in-register pitch movement over about 2 s", LiveSmoothing.Movement) { Points = InRegisterSemitones },
+    };
+
+    /// <summary>The pitch phrases end on (mean of their last 0.12 s).</summary>
+    public static readonly MetricInfo Endings = new()
+    {
+        Name = "endings", Title = "Phrase endings", Unit = "Hz",
+        Columns = MetricColumns.Trend | MetricColumns.Phrase, ColumnKey = "offset_hz",
+        Trend = new("pitch of the phrases ending here", "Chart3")
+        {
+            FloorCaption = floor => $"pitch of the phrases ending here · blue = below the register floor ({Domain.Zones.Fmt(floor)} Hz)",
+            FloorBands = floor => [new(floor - 50, floor, Domain.ZoneColorKey.Masc, "below"), new(floor, 260, Domain.ZoneColorKey.Fem, "in register")],
+        },
+    };
+
+    private static readonly IReadOnlyList<MetricInfo> All = MetricInfo.Numbered(Melody, Endings);
+
+    public IReadOnlyList<MetricInfo> Metrics => All;
+
+    /// <summary>The voiced pitch at or above the register floor, in semitones (the live melody line).</summary>
+    private static IReadOnlyList<TimedValue> InRegisterSemitones(LiveLineInputs inputs)
+    {
+        var count = 0;
+        foreach (var p in inputs.VoicedPitch)
+            if (p.Value >= inputs.RegisterFloorHz) count++;
+        var result = new List<TimedValue>(count); // exact: this runs on every live refresh
+        foreach (var p in inputs.VoicedPitch)
+            if (p.Value >= inputs.RegisterFloorHz) result.Add(new TimedValue(p.T, HzToSt(p.Value)));
+        return result;
+    }
+
     public void Measure(in TrackView t, RawAnalysisBuilder raw) => raw.Sounding = t.Derived.Sounding;
 
     public void Summarize(MetricContext context)
@@ -27,20 +64,20 @@ public sealed class PhrasingModule : IMetricModule
         context.Detail = detail;
     }
 
-    public void FillPhrase(DetailInputs inputs, object? data, Phrase phrase, PhraseMetrics metrics)
+    public void FillPhrase(DetailInputs inputs, object? data, Phrase phrase, MetricValues columns)
     {
         var inReg = inputs.WindowHz.Where(h => h >= inputs.Detail.RegisterFloorHz).Select(HzToSt).ToList();
-        metrics.MelodySt = Clean(SampleSd(inReg));
-        metrics.OffsetHz = phrase.OffsetHz;
+        columns[Melody] = Clean(SampleSd(inReg));
+        columns[Endings] = phrase.OffsetHz;
     }
 
-    public void FillTrend(DetailInputs inputs, object? data, in TrendWindow window, TrendSlice slice)
+    public void FillTrend(DetailInputs inputs, object? data, in TrendWindow window, MetricValues columns)
     {
         var w = window;
         var inReg = inputs.WindowHz.Where(h => h >= inputs.Detail.RegisterFloorHz).Select(HzToSt).ToList();
         var endings = inputs.Detail.Phrases.Where(p => w.Contains(p.End)).Select(p => p.OffsetHz).ToList();
-        slice.MelodySt = Clean(SampleSd(inReg));
-        slice.OffsetHz = endings.Count > 0 ? Round(endings.Average(), 1) : null;
+        columns[Melody] = Clean(SampleSd(inReg));
+        columns[Endings] = endings.Count > 0 ? Round(endings.Average(), 1) : null;
     }
 
     // ------------------------------------------------------------------

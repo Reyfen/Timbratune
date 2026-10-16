@@ -103,9 +103,9 @@ public sealed class ParityTests(ITestOutputHelper output)
         // timestamped F2 / weight frames actually land inside phrases.
         var perPhrase = result.Detail.PhraseMetrics!;
         Assert.Equal(result.Detail.Phrases.Count, perPhrase.Count);
-        Assert.Contains(perPhrase, p => p.F2Hz is not null);
-        Assert.Contains(perPhrase, p => p.WeightDb is not null);
-        Assert.All(perPhrase, p => Assert.NotNull(p.MeanHz));
+        Assert.Contains(perPhrase, p => p[Col.F2] is not null);
+        Assert.Contains(perPhrase, p => p[Col.Weight] is not null);
+        Assert.All(perPhrase, p => Assert.NotNull(p[Col.Pitch]));
     }
 
     private static int CountVoicedMismatches(Frames expected, Frames actual) =>

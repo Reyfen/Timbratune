@@ -10,6 +10,12 @@
 // pool threads too, which a per-thread count would miss. Results are hashed (SHA-256 of the
 // JSON the store would write) so a run on other code also shows whether the numbers moved.
 // Without a WAV it builds the ~27.6 s take of scripts/make-long-wav.ps1 from the fixtures.
+using Reyfen.Timbratune.Core.Analysis.Metrics;
+using Reyfen.Timbratune.Core.Analysis.Metrics.Clarity;
+using Reyfen.Timbratune.Core.Analysis.Metrics.Loudness;
+using Reyfen.Timbratune.Core.Analysis.Metrics.Resonance;
+using Reyfen.Timbratune.Core.Analysis.Metrics.Steadiness;
+using Reyfen.Timbratune.Core.Analysis.Metrics.Weight;
 using System.Diagnostics;
 using System.Diagnostics.Tracing;
 using System.Globalization;
@@ -176,6 +182,7 @@ static LiveRun RunLive(double[] mono, double fs)
     {
         using var limit = Parallelism.Limit(2); // as LiveWorker in the app
         var window = LiveWindowOption.All[0].Seconds;
+        var lines = LiveLine.From(MetricRegistry.Default);
         var live = new LiveAnalyzer(fs);
         var chunk = (int)Math.Round(fs / 100);
         var tick = (int)Math.Round(fs / 10);
@@ -197,7 +204,7 @@ static LiveRun RunLive(double[] mono, double fs)
             (isFull ? fullTicks : light).Add(ms);
             updateMs += ms;
             updateBytes += bytes;
-            var (_, cms, cbytes) = Measure(() => LiveTimelinesViewModel.Compute(snapshot, window));
+            var (_, cms, cbytes) = Measure(() => LiveTimelinesViewModel.Compute(snapshot, lines, window));
             computeMs += cms;
             computeBytes += cbytes;
         }
@@ -238,7 +245,9 @@ static string SeriesJson(AnalysisResult result)
 static string LiveHash(LiveSnapshot s)
 {
     var b = new StringBuilder();
-    foreach (var list in new[] { s.Series.Loudness, s.Series.Hnr, s.Series.F2, s.Series.F3, s.Series.Weight, s.Series.Jitter })
+    // The same lists in the same order as before the registry (P7), so hashes compare across builds.
+    foreach (var list in new[] { s.Series[LoudnessModule.Loudness], s.Series[ClarityModule.Hnr], s.Series[ResonanceModule.F2],
+                 s.Series[ResonanceModule.F3], s.Series[WeightModule.Weight], s.Series[SteadinessModule.Jitter] })
     {
         foreach (var p in list) b.Append(p.T.ToString("R")).Append(',').Append(p.Value.ToString("R")).Append(';');
         b.Append('|');

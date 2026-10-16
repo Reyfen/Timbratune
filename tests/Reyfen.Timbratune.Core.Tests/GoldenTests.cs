@@ -1,3 +1,9 @@
+using Reyfen.Timbratune.Core.Analysis.Metrics;
+using Reyfen.Timbratune.Core.Analysis.Metrics.Clarity;
+using Reyfen.Timbratune.Core.Analysis.Metrics.Loudness;
+using Reyfen.Timbratune.Core.Analysis.Metrics.Resonance;
+using Reyfen.Timbratune.Core.Analysis.Metrics.Steadiness;
+using Reyfen.Timbratune.Core.Analysis.Metrics.Weight;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Encodings.Web;
@@ -104,8 +110,8 @@ public sealed class GoldenTests
             w.WriteStartObject("series");
             foreach (var (name, points) in new[]
                      {
-                         ("loudness", s.Series.Loudness), ("hnr", s.Series.Hnr), ("f2", s.Series.F2), ("f3", s.Series.F3),
-                         ("weight", s.Series.Weight), ("jitter", s.Series.Jitter),
+                         ("loudness", s.Series[LoudnessModule.Loudness]), ("hnr", s.Series[ClarityModule.Hnr]), ("f2", s.Series[ResonanceModule.F2]), ("f3", s.Series[ResonanceModule.F3]),
+                         ("weight", s.Series[WeightModule.Weight]), ("jitter", s.Series[SteadinessModule.Jitter]),
                      })
             {
                 w.WriteStartObject(name);

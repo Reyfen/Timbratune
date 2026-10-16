@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Messaging;
 using Microsoft.Extensions.DependencyInjection;
+using Reyfen.Timbratune.Core.Analysis.Metrics;
 using Reyfen.Timbratune.Core.Audio;
 using Reyfen.Timbratune.Core.Models;
 using Reyfen.Timbratune.Core.Storage;
@@ -35,10 +36,12 @@ public sealed partial class TakeLibraryViewModel : ObservableObject
     private readonly ITakeActionsLauncher _actions;
     private readonly IPlatformInfo _platform;
     private readonly TakeLibraryManager _manager;
+    private readonly IReadOnlyList<MetricInfo> _chips;
 
     public TakeLibraryViewModel(ITakeCatalog catalog, IActiveTakeService active, PlaybackService playback,
-        ITakeActionsLauncher actions, IPlatformInfo platform, TakeLibraryManager manager, IMessenger messenger)
+        ITakeActionsLauncher actions, IPlatformInfo platform, TakeLibraryManager manager, IMessenger messenger, MetricRegistry registry)
     {
+        _chips = registry.Metrics.Select(m => m.Info).Where(m => m.Chip is not null).ToList();
         _catalog = catalog;
         _active = active;
         _playback = playback;
@@ -78,7 +81,7 @@ public sealed partial class TakeLibraryViewModel : ObservableObject
         {
             var r = takes[i];
             Items.Add(new TakeCardViewModel(r, _manager.AudioPathOf(r), r.Id == latestId, _playback, _actions, _platform.CanShare,
-                card => _active.Select(card.Id), _manager.PeaksAsync));
+                card => _active.Select(card.Id), _manager.PeaksAsync, _chips));
         }
         OnPropertyChanged(nameof(ShowSwitcher));
         OnPropertyChanged(nameof(NoRecordings));

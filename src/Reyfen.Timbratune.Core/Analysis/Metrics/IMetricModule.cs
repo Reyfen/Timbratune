@@ -13,7 +13,8 @@ namespace Reyfen.Timbratune.Core.Analysis.Metrics;
 /// <item><see cref="Summarize"/>: raw values → its section of the take (also the Praat reference
 /// engine's path, which has raw values but no tracks).</item>
 /// <item><see cref="DetailData"/>, <see cref="FillPhrase"/>, <see cref="FillTrend"/>: its columns of the
-/// per-phrase breakdown and the time trends.</item>
+/// per-phrase breakdown and the time trends (by its own <see cref="Metrics"/>).</item>
+/// <item><see cref="Metrics"/>: what it shows, and how (the UI follows the registry).</item>
 /// <item><see cref="BuildSeries"/>: its per-frame series (live hot path: refills pooled lists, no allocation);
 /// <see cref="WriteSeries"/>: their saved form.</item>
 /// </list>
@@ -27,6 +28,9 @@ public interface IMetricModule
     /// <summary>The tracks it reads.</summary>
     TrackSet RequiredTracks { get; }
 
+    /// <summary>What it measures and shows, numbered with <see cref="MetricInfo.Numbered"/> (the registry gives them ids).</summary>
+    IReadOnlyList<MetricInfo> Metrics => [];
+
     /// <summary>Its raw values from the tracks.</summary>
     void Measure(in TrackView tracks, RawAnalysisBuilder raw) { }
 
@@ -37,16 +41,16 @@ public interface IMetricModule
     object? DetailData(RawAnalysis raw) => null;
 
     /// <summary>Its columns of one phrase (<see cref="DetailInputs.WindowHz"/> holds the phrase's voiced pitch).</summary>
-    void FillPhrase(DetailInputs inputs, object? data, Phrase phrase, PhraseMetrics metrics) { }
+    void FillPhrase(DetailInputs inputs, object? data, Phrase phrase, MetricValues columns) { }
 
     /// <summary>Its columns of one trend slice (<see cref="DetailInputs.WindowHz"/> holds the slice's voiced pitch).</summary>
-    void FillTrend(DetailInputs inputs, object? data, in TrendWindow window, TrendSlice slice) { }
+    void FillTrend(DetailInputs inputs, object? data, in TrendWindow window, MetricValues columns) { }
 
-    /// <summary>Its per-frame series into the pooled <paramref name="buffers"/> (cleared and refilled).</summary>
-    void BuildSeries(in TrackView tracks, FrameSeriesBuffers buffers) { }
+    /// <summary>Its per-frame series into its pooled <paramref name="lines"/> (cleared and refilled).</summary>
+    void BuildSeries(in TrackView tracks, SeriesLines lines) { }
 
-    /// <summary>Its saved series, from what <see cref="BuildSeries"/> put in <paramref name="buffers"/>.</summary>
-    void WriteSeries(in TrackView tracks, FrameSeriesBuffers buffers, IDictionary<string, FrameSeries> series) { }
+    /// <summary>Its saved series, from what <see cref="BuildSeries"/> put in <paramref name="lines"/>.</summary>
+    void WriteSeries(in TrackView tracks, SeriesLines lines, IDictionary<string, FrameSeries> series) { }
 }
 
 /// <summary>What <see cref="IMetricModule.Summarize"/> works on: the raw values and the take being filled.</summary>

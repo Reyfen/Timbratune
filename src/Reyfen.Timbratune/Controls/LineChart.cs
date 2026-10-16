@@ -7,9 +7,6 @@ using Reyfen.Timbratune.Core.Domain;
 
 namespace Reyfen.Timbratune.Controls;
 
-/// <summary>One point of a trend chart: its x-axis label (e.g. the phrase number) and value (null = not measured).</summary>
-public readonly record struct TrendPoint(string Label, double? Y, string? Tooltip = null);
-
 /// <summary>
 /// Port of LineChart.tsx: a small trend line (here: phrase by phrase), with either one
 /// highlighted band or multi-zone shaded backgrounds. Drawn in real pixels

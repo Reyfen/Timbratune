@@ -1,4 +1,4 @@
-using Reyfen.Timbratune.Core.Domain;
+using Reyfen.Timbratune.Core.Analysis.Metrics;
 
 namespace Reyfen.Timbratune.Shared.Navigation;
 
@@ -16,5 +16,5 @@ public interface ITakeActionsLauncher
 /// <summary>The comparison of one metric across takes and reference voices (the MetricCompare feature).</summary>
 public interface IMetricCompareLauncher
 {
-    void Open(MetricKey metric);
+    void Open(MetricId metric);
 }

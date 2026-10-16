@@ -1,6 +1,6 @@
 # Timbratune refactoring plan
 
-*Status:* agreed 2026-10-15; P0 done (HANDOFF §8i); P1–P6 done (HANDOFF §8j–§8o).
+*Status:* agreed 2026-10-15; P0 done (HANDOFF §8i); P1–P7 done (HANDOFF §8j–§8p).
 *Base:* `dev/v0.2.1` at `2b33f06`.
 *Work branch:* `dev/v0.3.0`.
 
@@ -661,7 +661,15 @@ Ask the owner before each commit.
     - **Interface, adapted:** `Measure(in TrackView, RawAnalysisBuilder)`, `Summarize(MetricContext)`, `DetailData(RawAnalysis)` + `FillPhrase` / `FillTrend`, `BuildSeries` / `WriteSeries`. `Summarize` and the detail columns read `RawAnalysis`, not `TrackView`: the Praat reference engine produces `RawAnalysis` from Praat's own numbers and has no tracks, so `RawAnalysis` is the compat layer the plan's `Compat/RawAnalysisAdapter` would have been.
     - **Left for P7:** `MetricId`, `Presentation`, `TrendSlice`/`PhraseMetrics` as `double?[]`, a registry-shaped `LiveSeries`; and appending only new frames in the live series (they are rebuilt in full, as before).
     - **Gates passed:** results identical; bench A/B against P5 (live updates −6.9 %, full analysis +1.1 %, allocations equal or lower); phone A/B against P0 on the Pixel 4a (better than the baseline); the Pixel 9 is checked in P7 as scheduled (§3; HANDOFF §8o).
-- [ ] **P7. Registry-driven UI** (§2.4). Delete `Metrics.cs` and the positional arrays. Proof: a throwaway dummy metric added in one folder plus one registration shows up in the cards, trends, live timeline and series, then is reverted. Gates: bench A/B; a functional smoke test on the emulator; phone A/B on both phones against P0 (covers P6 on the Pixel 9, §3).
+- [x] **P7. Registry-driven UI** (§2.4). Delete `Metrics.cs` and the positional arrays. Proof: a throwaway dummy metric added in one folder plus one registration shows up in the cards, trends, live timeline and series, then is reverted. Gates: bench A/B; a functional smoke test on the emulator; phone A/B on both phones against P0 (covers P6 on the Pixel 9, §3).
+  - *As built (HANDOFF §8p):*
+    - **`MetricInfo` per displayed quantity, not one `Presentation` per module:** modules show several quantities (Pitch: mean, range, variability; Resonance: F1–F3; Phrasing: melody, endings), so each module lists its `Metrics` (`MetricInfo`: name, title, unit, zones, scale, the take's value, saved columns, and optional `Card`, `Compare`, `Trend`, `Live` with its `SmoothingSpec`, `Chip`). `MetricRegistry` numbers them (`MetricId(Index, Name)`); its order is the display order of every surface.
+    - **Registry order** Pitch, Phrasing, Loudness, Resonance, Weight, Clarity, Steadiness: the trend charts keep their order; the cards, live timelines and chips change a little (pitch variability next to pitch; see HANDOFF §8p).
+    - **Columns:** `TrendSlice` / `PhraseMetrics` hold `double?[]` by `MetricId.Index`; modules write `columns[metric]` through `MetricValues` (offset + slot, no lookup). `Json/MetricColumnsJson` writes today's v2 names in today's order, then newer metrics by name; detail.json is unchanged (golden).
+    - **Live:** `LiveSeries` is one list per metric (the pooled buffers, `SeriesLines`); `LiveLine.From(registry)` builds the timelines and their smoothing from the same list.
+    - **Not done:** appending only new frames to the live series (§2.2's `UpdateLiveSeries(fromFrame)`): they are still refilled in full each update, and the bench shows no need yet.
+    - **Proof:** a throwaway `Dummy` module (one folder, one registration) appeared in the live timelines, stat cards, trend charts, chips, detail.json and series.json, then was removed; a test-registry version stays as `MetricRegistryUiTests`.
+    - **Gates:** results identical; bench A/B against P6 equal (full analysis +0.1 %, live updates −0.1 %, allocations equal or lower); emulator smoke test; Pixel 4a A/B against P0: analysis equal or faster, janky frames +1 point from the new first live timeline (Pitch variability), kept by the owner; Pixel 9 A/B against P0: P6 equal, P7 +0.2–0.3 points of janky frames with equal fps and Stop to saved, accepted by the owner and to be rechecked in P9 (HANDOFF §8p).
 - [ ] **P8. Analytics** (§5): port, Mixpanel adapter, consent toggle, two call sites, tests. Verify against a Mixpanel test project, only with the owner's token and opt-in.
 - [ ] **P9. Final performance check** (§3, all gates, Release builds on both phones) and a Linux build in WSL `Ubuntu-24.04` (`~/tt` copy).
 - [ ] **P10. Documentation:**

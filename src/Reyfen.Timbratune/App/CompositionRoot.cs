@@ -2,6 +2,7 @@ using CommunityToolkit.Mvvm.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Reyfen.Timbratune.Core.Analysis;
+using Reyfen.Timbratune.Core.Analysis.Metrics;
 using Reyfen.Timbratune.Core.Audio;
 using Reyfen.Timbratune.Core.Audio.Decoding;
 using Reyfen.Timbratune.Core.Storage;
@@ -48,6 +49,7 @@ public static class CompositionRoot
     public static IServiceCollection AddTimbratune(this IServiceCollection services)
     {
         // Core
+        services.TryAddSingleton(MetricRegistry.Default);
         services.TryAddSingleton<IAnalysisScheduler>(sp =>
             new NativeAnalysisScheduler(LiveCores(), sp.GetRequiredService<IThreadPriority>().LowerCurrentThread));
         services.TryAddSingleton<IAnalysisEngine>(sp => new AcousticsAnalysisEngine(sp.GetRequiredService<IAnalysisScheduler>()));

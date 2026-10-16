@@ -14,6 +14,12 @@
 // against LiveTimelinesViewModel.Compute on every tick, so the tool can't drift from it.
 using Reyfen.Timbratune.Features.LiveMonitor;
 using Reyfen.Timbratune.Core.Analysis;
+using Reyfen.Timbratune.Core.Analysis.Metrics;
+using Reyfen.Timbratune.Core.Analysis.Metrics.Clarity;
+using Reyfen.Timbratune.Core.Analysis.Metrics.Loudness;
+using Reyfen.Timbratune.Core.Analysis.Metrics.Resonance;
+using Reyfen.Timbratune.Core.Analysis.Metrics.Weight;
+using Reyfen.Timbratune.Core.Domain;
 using Reyfen.Timbratune.Core.Models;
 using System.Globalization;
 
@@ -41,14 +47,18 @@ static IReadOnlyList<TimedValue> Pitch(LiveSnapshot s)
 }
 
 // Line = index into Frame.Lines (−1 = the pitch line), to check the "app" lines against Compute.
+var lines = LiveLine.From(MetricRegistry.Default);
+int LineOf(MetricInfo metric) => lines.Select((l, i) => (l, i)).First(x => x.l.Info == metric).i;
+(string, Func<LiveSnapshot, IReadOnlyList<TimedValue>>, SmoothingSpec, double, int) App(MetricInfo metric, double range) =>
+    (metric.Name, s => s.Series[metric], metric.Live!.Smoothing, range, LineOf(metric));
 var metrics = new (string Name, Func<LiveSnapshot, IReadOnlyList<TimedValue>> Get, SmoothingSpec Spec, double Range, int Line)[]
 {
     ("pitch", Pitch, LiveTimelinesViewModel.PitchSmoothing, 260, -1),
-    ("loudness", s => s.Series.Loudness, LiveTimelinesViewModel.LoudnessSmoothing, 33, 0),
-    ("hnr", s => s.Series.Hnr, LiveTimelinesViewModel.FrameSmoothing, 30, 2),
-    ("f2", s => s.Series.F2, LiveTimelinesViewModel.VowelSmoothing, 900, 3),
-    ("f3", s => s.Series.F3, LiveTimelinesViewModel.VowelSmoothing, 1300, 4),
-    ("weight", s => s.Series.Weight, LiveTimelinesViewModel.VowelSmoothing, 20, 5),
+    App(LoudnessModule.Loudness, 33),
+    App(ClarityModule.Hnr, 30),
+    App(ResonanceModule.F2, 900),
+    App(ResonanceModule.F3, 1300),
+    App(WeightModule.Weight, 20),
 };
 var variants = new (string Name, Func<SmoothingSpec, SmoothingSpec> Make)[]
 {
@@ -73,7 +83,7 @@ for (var i = 0; i < mono.Length; i += step)
     live.Append(mono.AsSpan(i, Math.Min(step, mono.Length - i)));
     var tick = live.Update();
     final = tick;
-    var frame = LiveTimelinesViewModel.Compute(tick);
+    var frame = LiveTimelinesViewModel.Compute(tick, lines);
     for (var m = 0; m < metrics.Length; m++)
     {
         var points = metrics[m].Get(tick);

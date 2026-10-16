@@ -103,6 +103,17 @@ public sealed class DependencyRuleTests
     }
 
     [Fact]
+    public void FeatureViewModelsDontDependOnControls()
+    {
+        // §2.4: what the charts draw (TrendPoint, ScaleTick, …) is plain data in Core.Domain.
+        var violations = new List<string>();
+        foreach (var type in UiTypes().Where(t => FeatureOf(t.Namespace) is not null && Outermost(t).Name.EndsWith("ViewModel", StringComparison.Ordinal)))
+            violations.AddRange(TypeReferences.Of(type).Where(u => u.StartsWith("Reyfen.Timbratune.Controls.", StringComparison.Ordinal))
+                .Select(u => $"{type.FullName} → {u}"));
+        Assert.Empty(violations);
+    }
+
+    [Fact]
     public void FeaturesUseSettingsOnlyThroughISettings()
     {
         // §5a: features read and write settings through the service, never its files.
