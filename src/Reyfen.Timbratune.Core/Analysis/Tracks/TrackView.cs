@@ -2,7 +2,6 @@ using Reyfen.Timbratune.Acoustics;
 using Reyfen.Timbratune.Acoustics.Formants;
 using Reyfen.Timbratune.Acoustics.Intensity;
 using Reyfen.Timbratune.Acoustics.Pitch;
-using Reyfen.Timbratune.Acoustics.Voice;
 
 namespace Reyfen.Timbratune.Core.Analysis.Tracks;
 
@@ -34,32 +33,6 @@ public readonly struct TrackView
     public Func<double, double, RawAnalysis.WeightRow?> WeightRow { get; init; }
     /// <summary>Voiced frames, sounding stretches, the loud-vowel gate and the derived tracks.</summary>
     public DerivedTracks Derived { get; init; }
-
-    /// <summary>
-    /// The tracks in the shape the assembler, the post-processor and the series builder take
-    /// (until the metric modules read tracks directly, P6). Jitter and shimmer of the whole take
-    /// are measured here, from the pulses, as before.
-    /// </summary>
-    public FrameTracks ToFrameTracks() => new()
-    {
-        Duration = Duration,
-        SamplingFrequency = SamplingFrequency,
-        Pitch = Pitch,
-        Intensity = Intensity,
-        HnrMean = Harmonicity.Mean(),
-        Jitter = VoiceReport.JitterLocal(Pulses, 0.0001, 0.02, 1.3),
-        Shimmer = VoiceReport.ShimmerLocal(Pulses, Sound, 0.0001, 0.02, 1.3, 1.6),
-        Formants5500 = Formants5500,
-        Formants5000 = Formants5000,
-        WeightRow = WeightRow,
-        Ltas = Ltas ?? [],
-        Sounding = Derived.Sounding,
-        Harmonicity = Harmonicity,
-        Pulses = Pulses,
-        StretchJitter = StretchJitter,
-        LoudOutlierFraction = Derived.LoudOutlierFraction,
-        Derived = Derived,
-    };
 }
 
 /// <summary>
@@ -70,7 +43,7 @@ public readonly struct TrackView
 public sealed class DerivedTracks
 {
     /// <summary>The gate's outlier share (see <see cref="RawAnalysisAssembler.LoudOutlierFraction"/>).</summary>
-    public double LoudOutlierFraction { get; internal set; }
+    public double LoudOutlierFraction { get; internal set; } = RawAnalysisAssembler.LoudOutlierFraction;
 
     /// <summary>What has been computed into this object by the current update.</summary>
     public TrackSet Tracks { get; internal set; }

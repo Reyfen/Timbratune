@@ -2,7 +2,7 @@
 
 This file brings a new engineer or agent up to date on everything done so far: what the user asked for, what was decided and why, how the code is organised, what was measured, and what is still open.
 
-Last updated 2026-10-16. The newest work is §8i–§8n (refactoring P0: golden, architecture, bench and phone baselines; P1: dependency injection and shared ports; P2: storage, settings and scheduling seams; P3: UI feature modules; P4: import formats; P5: analysis tracks); §8d–§8h cover v0.2.0 (Android performance, export, one folder per take, import, `build.ps1`); §8 is the current state.
+Last updated 2026-10-16. The newest work is §8i–§8o (refactoring P0: golden, architecture, bench and phone baselines; P1: dependency injection and shared ports; P2: storage, settings and scheduling seams; P3: UI feature modules; P4: import formats; P5: analysis tracks; P6: metric modules); §8d–§8h cover v0.2.0 (Android performance, export, one folder per take, import, `build.ps1`); §8 is the current state.
 
 **Name:** the project is **Timbratune — Gender Voice Analysis Tool**, by **Reyfen**.
 - **Before 2026-10-02 it was called Euphonia**, and it is a fork of [Euphonia](https://github.com/Yuuzulight/Euphonia). Older parts of this file and of the transcript say "Euphonia" and "Euphonia-CSharp"; read those as Timbratune and the repo root (the code moved from `Timbratune/` to the root on 2026-10-06).
@@ -1044,6 +1044,60 @@ Phase P5 of `REFACTOR-PLAN.md` (§2.1): the shared measurements of a take become
    - Logged live-update counts vary between runs (194–271 on the Pixel 9) for both builds: logcat drops probe lines under load. The frame times come from SurfaceFlinger and aren't affected.
    - The driver now takes a lock, so a second one can't run against the same phone (§8i).
    - Both phones were left on the P5 profiling build, fake mic and test takes removed.
+
+## 8o. Refactoring P6: metric modules (2026-10-16)
+
+Phase P6 of `REFACTOR-PLAN.md` (§2.2): each metric family is one module, from the tracks to the saved take. No user-visible change; every result is identical.
+
+**Layout** (`src/Reyfen.Timbratune.Core/Analysis/Metrics/`):
+- `IMetricModule` (default methods, so a module implements only what it has), `MetricContext`, `DetailInputs`, `TrendWindow`, `RawAnalysisBuilder`; `MetricRegistry` (`Default`: Pitch, Resonance, Weight, Loudness, Clarity, Steadiness, Phrasing).
+- One folder per module:
+
+| Module | Raw values (`Measure`) | Take section (`Summarize`) | Phrase / trend columns | Series |
+|---|---|---|---|---|
+| `Pitch` | pitch mean, median, min, max, SD; the 10 ms contour | `Pitch` | mean Hz / mean Hz, pitch SD | pitch |
+| `Resonance` | vowel-core formant rows, frames tried | `Formants` (F2 gate, ceiling choice, medians, usable share) | F2 / F2, F3 | f1, f2, f3 |
+| `Weight` | weight frames, LTAS | `Weight` (Iseli–Alwan H1*–A3*, raw H1–A3, tilt) | corrected weight / weight | weight |
+| `Loudness` | intensity mean, min, max; intensity frames | `Intensity` | – / energy average | loudness |
+| `Clarity` | HNR mean; voiced harmonicity frames | `VoiceQuality.HnrDb` | – / mean HNR | hnr |
+| `Steadiness` | jitter, shimmer; pulses | `VoiceQuality.JitterPct/ShimmerPct` | – / jitter of the slice's pulses | jitter |
+| `Phrasing` | sounding stretches | `Register` and the detail (`AnalyzeRegister`: contour, phrases) | melody, ending / melody, endings | – |
+
+- The metric-specific helpers moved with their module (`VowelFormants`, `UsableFormantPct`, `UnreliableFormantsBelowPct` → Resonance; `SpectralWeight`, `CorrectedH1A3`, `IseliCorrection` → Weight; `AnalyzeRegister` → Phrasing). `AnalysisPostProcessor` keeps `Process` (glue), the trend and phrase loops, `TrendStep`, the app-wide constants (register floor, semitone reference) and the Python-semantics statistics helpers. `RawAnalysisAssembler` keeps `Assemble` (glue) and the track-stage helpers. `FrameSeriesBuilder` keeps `Build`/`ForTake` (glue; `series.json` keeps its key order whatever the module order) and the shared `Series` writer.
+
+**How it was done:** step 0 removed `FrameTracks` (the pipeline takes `TrackView`) and put everything into a temporary `LegacyMetrics` module, which made the three pipeline classes glue over the registry in one go. Each later step moved one metric out of `LegacyMetrics` into its folder, and the golden, parity and all other tests passed after every step. The Phrasing step deleted `LegacyMetrics`.
+
+**Interface, adapted from the plan:** `Summarize` and the phrase/trend columns read `RawAnalysis`, not `TrackView`. The Praat reference engine (tests) produces `RawAnalysis` from Praat's own numbers and has no tracks; `RawAnalysis` is thus the compatibility layer the plan's `Compat/RawAnalysisAdapter` would have been, and `AnalysisPostProcessor.Process(RawAnalysis)` still serves both engines. Modules hold no state (one instance serves the saved and live analysis at once). The public `TimeTrends(detail, …)` and `PhraseBreakdown(detail, …)` keep their signatures (older takes' trends are rebuilt through them): they hand each frame list to the module that owns it.
+
+**Side effect, measured:** the whole-take jitter, shimmer and HNR mean were computed on every live tick (in P5's `ToFrameTracks`) though only full updates use them; now `Measure` runs on full updates only.
+
+**Not done here, for P7:** `MetricId` ints and `Presentation`; `TrendSlice` and `PhraseMetrics` as `double?[]` by metric index (they stay typed; modules set their own properties); `LiveSeries` shaped by the registry (modules fill the same pooled lists); appending only new frames to the live series (rebuilt in full each update, as before).
+
+**Tests:** 243 with Praat. The architecture positive control looks for `VoiceReport` in the metric modules' namespace; two Core tests call `ResonanceModule.VowelFormants`/`UsableFormantPct`.
+
+**Gates:**
+1. **Identical results:** golden, parity and bench hashes unchanged after every step.
+2. **Bench, A/B against P5 (`d645b26`)**, alternating, 6 runs of 10 each (two rounds of 3, the second started with P6), medians:
+
+| Measure | P5 | P6 | Change |
+|---|---|---|---|
+| Full analysis | 348.2 ms | 352.0 ms | +1.1 % (ranges 334–357 / 341–364) |
+| Full analysis allocation | 168.0 MB | 168.0 MB | 0 % |
+| Live update, quick / full (per tick) | 9.58 / 9.55 ms | 8.88 / 9.60 ms | −7.4 / +0.5 % |
+| Live updates, whole take | 2,813.6 ms | 2,618.5 ms | −6.9 % |
+| Live allocation | 8.871 MB/s | 8.620 MB/s | −2.8 % |
+| `live.compute` (not touched) | 295.2 ms | 296.0 ms | +0.3 % |
+
+3. **Phones, A/B against the P0 baseline build:**
+
+| Phone | Build | fps | janky % (range) | > 50 ms | Stop to saved (analysis) | live updates | update median / full |
+|---|---|---|---|---|---|---|---|
+| Pixel 4a | P0 `a835972` | 51.95 | 10.23 (9.80–10.78) | 21.5 | 4.63 s (3.94 s) | 219.5 | 43.9 / 66.4 ms |
+| Pixel 4a | P6 | 52.47 | 9.12 (7.86–9.73) | 21 | 4.54 s (3.85 s) | 233.5 | 41.5 / 50.6 ms |
+
+   - Pixel 4a (Release profiling builds, 6 alternating fake-mic runs each, battery 64 %, Battery Saver off): better than the baseline, with janky ranges that don't overlap; more live updates per take, each faster, and full updates a quarter quicker (the whole-take jitter, shimmer and HNR mean no longer run on quick ticks).
+   - **Pixel 9: checked in P7,** as the phone schedule in REFACTOR-PLAN §3 sets (owner, 2026-10-16): its P7 A/B against the P0 build covers P6 and P7 together; on a miss, the P6 build is measured too.
+   - The 4a was left on the P6 profiling build, fake mic and test takes removed (its 0.2.0 takes still untouched in private storage).
 
 ## 8. Current state, at the time of writing
 

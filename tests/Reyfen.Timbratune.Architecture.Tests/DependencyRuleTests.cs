@@ -168,10 +168,12 @@ public sealed class DependencyRuleTests
     [Fact]
     public void ScannerSeesSignaturesAndMethodBodies()
     {
-        // The live track provider keeps its trackers in fields; the track view calls VoiceReport only inside a method.
+        // The live track provider keeps its trackers in fields; the metric modules call VoiceReport only inside methods.
         var provider = TypeReferences.Of(typeof(Reyfen.Timbratune.Core.Analysis.Tracks.LiveTrackProvider));
         Assert.Contains("Reyfen.Timbratune.Acoustics.Streaming.LivePitchTracker", provider);
-        Assert.Contains("Reyfen.Timbratune.Acoustics.Voice.VoiceReport", TypeReferences.Of(typeof(Reyfen.Timbratune.Core.Analysis.Tracks.TrackView)));
+        var modules = TypeReferences.TypesOf(Core).Where(t => InNamespace(t.Namespace ?? "", "Reyfen.Timbratune.Core.Analysis.Metrics"))
+            .SelectMany(TypeReferences.Of).ToHashSet();
+        Assert.Contains("Reyfen.Timbratune.Acoustics.Voice.VoiceReport", modules);
         Assert.Contains("Reyfen.Timbratune.Core.Analysis.Tracks.LiveTrackProvider", TypeReferences.Of(typeof(LiveAnalyzer)));
         // Lambdas and async methods live in nested compiler-generated types.
         // TakeActionsManager uses TakeArchive only in a lambda inside an async method (closure and state machine types).

@@ -45,18 +45,20 @@ public sealed class TrackTests
     {
         var sound = Fixture("vctk_m311");
         var tracks = AcousticsAnalysisEngine.MeasureTracks(sound);
-        Assert.NotNull(tracks.Derived);
+        Assert.True(tracks.Derived.Tracks.Has(TrackSet.VowelFormantRows | TrackSet.WeightFrames));
         var fromTracks = RawAnalysisAssembler.Assemble(tracks);
-        var derivedHere = RawAnalysisAssembler.Assemble(tracks with { Derived = null });
+        // Without the derived tracks (an empty set) the assembler derives them itself.
+        var derivedHere = RawAnalysisAssembler.Assemble(tracks with { Derived = new DerivedTracks() });
         Assert.Equal(derivedHere.Formants, fromTracks.Formants);
         Assert.Equal(derivedHere.FormantFramesTried, fromTracks.FormantFramesTried);
         Assert.Equal(derivedHere.WeightFrames, fromTracks.WeightFrames);
 
-        // A copy with another gate must not reuse the gate made for the first one.
-        var gate0 = RawAnalysisAssembler.Assemble(tracks with { LoudOutlierFraction = 0 });
+        // Deriving them with another gate gives what measuring with that gate gives.
+        var gate0 = RawAnalysisAssembler.Assemble(tracks with { Derived = new DerivedTracks { LoudOutlierFraction = 0 } });
         var measured0 = RawAnalysisAssembler.Assemble(AcousticsAnalysisEngine.MeasureTracks(sound, 0));
         Assert.Equal(measured0.Formants, gate0.Formants);
         Assert.Equal(measured0.FormantFramesTried, gate0.FormantFramesTried);
+        Assert.NotEqual(fromTracks.FormantFramesTried, measured0.FormantFramesTried);
     }
 
     [Fact]

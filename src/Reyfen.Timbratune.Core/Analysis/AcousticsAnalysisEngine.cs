@@ -61,7 +61,7 @@ public sealed class AcousticsAnalysisEngine : IAnalysisEngine
         cancellationToken.ThrowIfCancellationRequested();
         // Stage weights: share of the analysis time measured on a 27.6 s take (Release).
         var stages = new StageProgress(progress is null ? null : progress.Report, 93.5, 2, 1, 2.5);
-        FrameTracks tracks;
+        TrackView tracks;
         using (Timing.Measure("analysis.measure")) tracks = MeasureTracks(sound, LoudOutlierFraction, stages.Stage(0));
         RawAnalysis raw;
         using (Timing.Measure("analysis.assemble")) raw = RawAnalysisAssembler.Assemble(tracks);
@@ -88,10 +88,10 @@ public sealed class AcousticsAnalysisEngine : IAnalysisEngine
 
     /// <summary>The frame-level tracks of the whole sound (all tracks, the default loud-vowel gate).</summary>
     /// <param name="progress">Called with the fraction done (0–1), from any thread.</param>
-    public static FrameTracks MeasureTracks(Sound sound, Action<double>? progress = null) =>
+    public static TrackView MeasureTracks(Sound sound, Action<double>? progress = null) =>
         MeasureTracks(sound, RawAnalysisAssembler.LoudOutlierFraction, progress);
 
     /// <summary>The same with another loud-vowel gate (0 = analyze.py's).</summary>
-    public static FrameTracks MeasureTracks(Sound sound, double loudOutlierFraction, Action<double>? progress = null) =>
-        SavedTrackProvider.Measure(sound, TrackSet.All, loudOutlierFraction, progress).ToFrameTracks();
+    public static TrackView MeasureTracks(Sound sound, double loudOutlierFraction, Action<double>? progress = null) =>
+        SavedTrackProvider.Measure(sound, TrackSet.All, loudOutlierFraction, progress);
 }

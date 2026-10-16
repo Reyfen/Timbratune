@@ -1,6 +1,6 @@
 # Timbratune refactoring plan
 
-*Status:* agreed 2026-10-15; P0 done (HANDOFF §8i); P1–P5 done (HANDOFF §8j–§8n).
+*Status:* agreed 2026-10-15; P0 done (HANDOFF §8i); P1–P6 done (HANDOFF §8j–§8o).
 *Base:* `dev/v0.2.1` at `2b33f06`.
 *Work branch:* `dev/v0.3.0`.
 
@@ -269,6 +269,13 @@ public interface IMetricModule
 3. **Phones** (Release profiling build, HANDOFF §8d):
    - Pixel 9: no worse than its phase-0 baseline (HANDOFF §8i: 3.3 % janky, 39.5 fps over the window, Stop 2.0 s), as an A/B with the P0 build; stop-to-saved ≤ 2.7 s. (The earlier ≥ 57.5 fps / ≤ 3.1 % was fps while drawing under Avalonia 11.3.)
    - Pixel 4a: re-measure against its own phase-0 baseline (HANDOFF §8i: 52.4 fps, 9.0 % janky, Stop 4.6 s), as an A/B with the P0 build.
+   - **Schedule** (owner, 2026-10-16): each phone A/B is 6 alternating runs per build, about 13 minutes per phone, so phones are used only where they add information:
+     - **P5:** both phones (done).
+     - **P6:** the Pixel 4a only (the slower, more sensitive phone), backed by the bench A/B; the Pixel 9 check moves to P7.
+     - **P7:** both phones, against the P0 build, so the Pixel 9 run covers P6 and P7 together. On a Pixel 9 miss, measure the P6 build too to tell which phase caused it.
+     - **P9:** both phones, Release builds, every gate (no shortcut).
+     - Not 4 runs instead of 6: single runs vary by up to 4 points of janky % on the 4a.
+   - **The emulator never stands in for a phone gate:** it runs x86 at desktop speed with software rendering (SwiftShader) and Debug builds, so its frame times say nothing about the phones. It is for functional smoke tests (start, record, Stop, save, screens), which P7 needs anyway.
 4. **On a miss:** fix it or revert that step before continuing.
 
 ---
@@ -639,17 +646,22 @@ Ask the owner before each commit.
     - **Bridge to today's pipeline:** `TrackView.ToFrameTracks()`; `FrameTracks` carries the derived tracks, so `RawAnalysisAssembler` and `FrameSeriesBuilder` stop re-deriving voiced frames, the gate, the vowel formant rows and the weight frames. Called without them (or with a gate made for another outlier share) they derive as before. The metric modules (P6) will read `TrackView` directly.
     - **Live:** every update runs all stage-1 trackers (their state must keep up); the `TrackSet` decides stages 2–3 (quick: `TrackSet.Live`; full: the derived tracks; final: the LTAS).
     - **Gates passed:** results identical (golden, parity, bench hashes); bench A/B against P4 −0.7 % time and fewer allocations; phone A/B against P0 on both phones within the baseline.
-- [ ] **P6. Metric modules** (§2.2), one per step:
-  - [ ] Loudness
-  - [ ] Clarity
-  - [ ] Steadiness
-  - [ ] Pitch
-  - [ ] Resonance
-  - [ ] Weight
-  - [ ] Phrasing
+- [x] **P6. Metric modules** (§2.2), one per step:
+  - [x] Loudness
+  - [x] Clarity
+  - [x] Steadiness
+  - [x] Pitch
+  - [x] Resonance
+  - [x] Weight
+  - [x] Phrasing
 
-  Each step deletes its lines from `RawAnalysisAssembler`, `AnalysisPostProcessor` and `FrameSeriesBuilder`, which end as pipeline glue or disappear. Performance gates apply.
-- [ ] **P7. Registry-driven UI** (§2.4). Delete `Metrics.cs` and the positional arrays. Proof: a throwaway dummy metric added in one folder plus one registration shows up in the cards, trends, live timeline and series, then is reverted.
+  Each step deletes its lines from `RawAnalysisAssembler`, `AnalysisPostProcessor` and `FrameSeriesBuilder`, which end as pipeline glue or disappear. Performance gates apply (phones: the Pixel 4a only; the Pixel 9 is checked in P7, see §3).
+  - *As built (HANDOFF §8o):*
+    - **Step 0 first:** `FrameTracks` (P5's bridge) went; the pipeline takes `TrackView`. Everything not yet in a module sat in a temporary `LegacyMetrics` module, so the assembler, post-processor and series builder became glue over `MetricRegistry` at once, and each step was a pure move out of `LegacyMetrics` (golden-tested). Phrasing's step deleted it.
+    - **Interface, adapted:** `Measure(in TrackView, RawAnalysisBuilder)`, `Summarize(MetricContext)`, `DetailData(RawAnalysis)` + `FillPhrase` / `FillTrend`, `BuildSeries` / `WriteSeries`. `Summarize` and the detail columns read `RawAnalysis`, not `TrackView`: the Praat reference engine produces `RawAnalysis` from Praat's own numbers and has no tracks, so `RawAnalysis` is the compat layer the plan's `Compat/RawAnalysisAdapter` would have been.
+    - **Left for P7:** `MetricId`, `Presentation`, `TrendSlice`/`PhraseMetrics` as `double?[]`, a registry-shaped `LiveSeries`; and appending only new frames in the live series (they are rebuilt in full, as before).
+    - **Gates passed:** results identical; bench A/B against P5 (live updates −6.9 %, full analysis +1.1 %, allocations equal or lower); phone A/B against P0 on the Pixel 4a (better than the baseline); the Pixel 9 is checked in P7 as scheduled (§3; HANDOFF §8o).
+- [ ] **P7. Registry-driven UI** (§2.4). Delete `Metrics.cs` and the positional arrays. Proof: a throwaway dummy metric added in one folder plus one registration shows up in the cards, trends, live timeline and series, then is reverted. Gates: bench A/B; a functional smoke test on the emulator; phone A/B on both phones against P0 (covers P6 on the Pixel 9, §3).
 - [ ] **P8. Analytics** (§5): port, Mixpanel adapter, consent toggle, two call sites, tests. Verify against a Mixpanel test project, only with the owner's token and opt-in.
 - [ ] **P9. Final performance check** (§3, all gates, Release builds on both phones) and a Linux build in WSL `Ubuntu-24.04` (`~/tt` copy).
 - [ ] **P10. Documentation:**

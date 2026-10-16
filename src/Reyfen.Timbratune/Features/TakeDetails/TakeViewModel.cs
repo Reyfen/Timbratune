@@ -82,7 +82,7 @@ public sealed partial class TakeViewModel : ObservableObject
                 : "💫 Your resonance sits in a **neutral** zone — nudging brightness up will help it read lighter.";
         F1Line = $"ℹ️ **F1 = {Fmt(r.Formants.F1Hz)} Hz.** This one mostly reflects which _vowel_ you're on " +
                  "(mouth openness), so it's not a reliable gender cue by itself — shown for completeness." +
-                 (r.Formants.UsablePct is < Core.Analysis.AnalysisPostProcessor.UnreliableFormantsBelowPct
+                 (r.Formants.UsablePct is < Core.Analysis.Metrics.Resonance.ResonanceModule.UnreliableFormantsBelowPct
                      ? $"\n\n⚠️ **Formants are shaky in this take:** only {Fmt(r.Formants.UsablePct)}% of the loud, voiced moments " +
                        "gave a usable reading. Background noise, hiss or a very close mic can cause this — try a quieter room " +
                        "or a bit more distance, and treat these resonance numbers with care."

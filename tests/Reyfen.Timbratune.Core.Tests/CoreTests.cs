@@ -268,7 +268,7 @@ public sealed class PostProcessorTests
         // 1500 → 1800 (jump, dropped, prev = 1800) → 1850 (kept: |1850-1800| ≤ 150)
         var rows = new[] { 1500.0, 1800, 1850, 1860, 1870, 1880 }
             .Select((f2, i) => new RawAnalysis.FormantRow(5500, i * 0.01, 500, f2, 2800)).ToList();
-        var (_, f2Median, _, kept) = AnalysisPostProcessor.VowelFormants(rows);
+        var (_, f2Median, _, kept) = Reyfen.Timbratune.Core.Analysis.Metrics.Resonance.ResonanceModule.VowelFormants(rows);
         Assert.Equal(1860, f2Median); // median of 1500, 1850, 1860, 1870, 1880
         Assert.Equal(5, kept.Count);
     }
@@ -299,9 +299,9 @@ public sealed class PostProcessorTests
             Sounding = [],
             FormantFramesTried = tried,
         };
-        Assert.Equal(60, AnalysisPostProcessor.UsableFormantPct(Raw(300, 180)));
-        Assert.Null(AnalysisPostProcessor.UsableFormantPct(Raw(29, 29))); // too few to say
-        Assert.Null(AnalysisPostProcessor.UsableFormantPct(Raw(0, 0)));   // not counted
+        Assert.Equal(60, Reyfen.Timbratune.Core.Analysis.Metrics.Resonance.ResonanceModule.UsableFormantPct(Raw(300, 180)));
+        Assert.Null(Reyfen.Timbratune.Core.Analysis.Metrics.Resonance.ResonanceModule.UsableFormantPct(Raw(29, 29))); // too few to say
+        Assert.Null(Reyfen.Timbratune.Core.Analysis.Metrics.Resonance.ResonanceModule.UsableFormantPct(Raw(0, 0)));   // not counted
     }
 
     [Fact]

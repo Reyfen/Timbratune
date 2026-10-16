@@ -117,9 +117,8 @@ public sealed class LiveAnalyzer
             if (view.Duration < 0.1) return LiveSnapshot.Empty with { Elapsed = view.Duration, IsFinal = final };
 
             // A quick update needs the tracks of the graphs; a full one also the derived tracks, the last one the LTAS.
-            if (_tracks.Update(view, full || final ? TrackSet.All : TrackSet.Live, final) is not { } trackView)
+            if (_tracks.Update(view, full || final ? TrackSet.All : TrackSet.Live, final) is not { } tracks)
                 return LiveSnapshot.Empty with { Elapsed = view.Duration, IsFinal = final };
-            var tracks = trackView.ToFrameTracks();
             AnalysisResult? result = null;
             RecordingDetail contour;
             if (full || final)
@@ -132,7 +131,7 @@ public sealed class LiveAnalyzer
             else
             {
                 using (Timing.Measure("live.contour"))
-                    contour = AnalysisPostProcessor.AnalyzeRegister(RawAnalysisAssembler.Contour(tracks.Pitch), tracks.Sounding, view.Duration,
+                    contour = Metrics.Phrasing.PhrasingModule.AnalyzeRegister(RawAnalysisAssembler.Contour(tracks.Pitch), tracks.Derived.Sounding, view.Duration,
                         _registerFloorHz).Detail;
             }
             LiveSeries series;
@@ -149,10 +148,10 @@ public sealed class LiveAnalyzer
     private readonly FrameSeriesBuffers[] _series = [new(), new()];
     private int _seriesTurn;
 
-    private LiveSeries BuildSeries(FrameTracks t)
+    private LiveSeries BuildSeries(in TrackView t)
     {
         var b = _series[_seriesTurn ^= 1];
-        FrameSeriesBuilder.Build(t, t.Harmonicity!, t.WeightRow, t.StretchJitter!, b);
+        FrameSeriesBuilder.Build(t, b);
         return new LiveSeries { Loudness = b.Loudness, Hnr = b.Hnr, F2 = b.F2, F3 = b.F3, Weight = b.Weight, Jitter = b.Jitter };
     }
 }
