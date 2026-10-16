@@ -2,7 +2,7 @@
 
 This file brings a new engineer or agent up to date on everything done so far: what the user asked for, what was decided and why, how the code is organised, what was measured, and what is still open.
 
-Last updated 2026-10-16. The newest work is §8i–§8m (refactoring P0: golden, architecture and bench baselines; P1: dependency injection and shared ports; P2: storage, settings and scheduling seams; P3: UI feature modules; P4: import formats); §8d–§8h cover v0.2.0 (Android performance, export, one folder per take, import, `build.ps1`); §8 is the current state.
+Last updated 2026-10-16. The newest work is §8i–§8n (refactoring P0: golden, architecture, bench and phone baselines; P1: dependency injection and shared ports; P2: storage, settings and scheduling seams; P3: UI feature modules; P4: import formats; P5: analysis tracks); §8d–§8h cover v0.2.0 (Android performance, export, one folder per take, import, `build.ps1`); §8 is the current state.
 
 **Name:** the project is **Timbratune — Gender Voice Analysis Tool**, by **Reyfen**.
 - **Before 2026-10-02 it was called Euphonia**, and it is a fork of [Euphonia](https://github.com/Yuuzulight/Euphonia). Older parts of this file and of the transcript say "Euphonia" and "Euphonia-CSharp"; read those as Timbratune and the repo root (the code moved from `Timbratune/` to the root on 2026-10-06).
@@ -267,7 +267,7 @@ Two takes (voice-take-8/9, noisy: 6–12 kHz hiss about as loud as the voice) sh
 ```powershell
 cd C:\Projects\Reyfen\Timbratune
 dotnet build Timbratune.slnx
-dotnet test Timbratune.slnx                     # 239 tests; the Praat oracle tests skip without Praat
+dotnet test Timbratune.slnx                     # 243 tests; the Praat oracle tests skip without Praat
 dotnet run --project src/Reyfen.Timbratune.Desktop
 ./build.ps1 [win] [linux] [android]             # all published builds into publish/ (§8h)
 ```
@@ -998,6 +998,52 @@ Phase P4 of `REFACTOR-PLAN.md` (§4): import reads almost any audio format, on e
 - **Bench:** not run, since P4 doesn't touch the analysis. The golden snapshots pass unchanged on Windows.
 
 **Linux golden test:** `GoldenTests.FinalLiveSnapshotMatchesTheGoldenFile(vctk_m311)` failed on Linux by 1.9e-6 in one live weight value, also on the P3 commit (not from P4); a separate session measured the cause and gave that one series its own tolerance (§8i).
+
+## 8n. Refactoring P5: analysis tracks (2026-10-16)
+
+Phase P5 of `REFACTOR-PLAN.md` (§2.1): the shared measurements of a take become tracks, computed once per update in fixed stages, for the saved and the live analysis alike. No user-visible change; every result is identical.
+
+**Layout** (`src/Reyfen.Timbratune.Core/Analysis/Tracks/`):
+- `TrackSet`: flags for pitch, intensity, harmonicity, formants (both ceilings), LTAS, pulses, voiced frames, sounding, the loud-vowel gate, and the derived vowel formant rows and weight frames. `WithDependencies()` adds what a track is computed from. Presets: `Live` (what a quick live update needs), `LiveFull` (plus the derived tracks), `All` (plus the LTAS).
+- `TrackView`: a `readonly struct` with one typed field per track, plus the samples, the weight-row function and the `DerivedTracks`. `ToFrameTracks()` gives today's `FrameTracks` (it measures the whole-take jitter and shimmer from the pulses, as before).
+- `DerivedTracks`: stage 2 (voiced frames, sounding stretches, the gate) and stage 3 (≤ 300 gated times with a plausible F1 at both ceilings; weight rows of ≤ 250 voiced frames). Live, one instance is refilled; the voiced frames, the gate and its sort buffer are reused lists.
+- `SavedTrackProvider.Measure(sound, set, loudOutlierFraction, progress)`: stage 1 is the former `MeasureTracks` `Parallel.Invoke`, same kernels, settings, `Timing` names and progress weights; stage 2 runs the pulses beside voiced frames, sounding and gate; stage 3 the derived tracks.
+- `LiveTrackProvider`: owns the live trackers (pitch, harmonicity, intensity, both formant ceilings), the pulse tracker and the weight-row memo that `LiveAnalyzer` held. Every update runs all four stage-1 trackers under `Parallelism.Options` (their state must keep up with the signal); the `TrackSet` decides stages 2–3. Same `live.*` probe names.
+
+**On top of it, same signatures:**
+- `AcousticsAnalysisEngine.MeasureTracks(sound, progress)` = `SavedTrackProvider.Measure(…).ToFrameTracks()`; a new overload takes the gate's outlier share, which the engine now passes in instead of `with { LoudOutlierFraction = … }` afterwards.
+- `LiveAnalyzer.Update(final, length, full)` asks the provider for `TrackSet.Live` (quick) or `TrackSet.All` (full and final).
+- `FrameTracks` gained `Derived` and `StretchJitter`. `RawAnalysisAssembler.Assemble` and `FrameSeriesBuilder.Build` use the derived tracks when present, and derive them as before when not, or when the gate was made with another outlier share (a `with { LoudOutlierFraction = … }` copy). So a live full update no longer computes the voiced frames and the gate twice (assembler and series), and the full analysis no longer twice either.
+
+**Tests:** 243 with Praat (19 UI, 19 architecture, 57 acoustics, 145 core). New `TrackTests`: dependency closure, a partial set measures only what's asked, the derived tracks equal what the assembler derives (and a copy with another gate doesn't reuse it), quick live updates leave out the derived tracks and only the final one has the LTAS. The architecture test's positive control now looks in `LiveTrackProvider` and `TrackView`.
+
+**Gates** (REFACTOR-PLAN §3):
+1. **Identical results:** the golden snapshots (saved identical, live within 1e-7) and the analyze.py parity tests pass unchanged; the bench's saved and live result hashes are the same as P4's in every run.
+2. **Bench, A/B against P4 (`dee1e42`)**, alternating, 3 runs of 10 each, the 27.6 s `long.wav`, medians:
+
+| Measure | P4 | P5 | Change |
+|---|---|---|---|
+| Full analysis | 362.3 ms | 359.8 ms | −0.7 % |
+| Full analysis allocation | 166.8 MB | 159.9 MB | −4.1 % |
+| Live update, quick / full (per tick) | 9.62 / 9.72 ms | 9.62 / 9.67 ms | 0 / −0.5 % |
+| Live updates, whole take | 2,825.5 ms | 2,825.3 ms | 0 % |
+| Live allocation | 8.886 MB/s | 8.825 MB/s | −0.7 % |
+
+   (`live.compute` 292.8 → 296.2 ms: not touched by P5, within run-to-run noise.)
+3. **Phones, A/B against the P0 baseline build** (Release profiling builds, 6 alternating fake-mic runs each, method of §8i), medians:
+
+| Phone | Build | fps | janky % (range) | > 50 ms | Stop to saved (analysis) |
+|---|---|---|---|---|---|
+| Pixel 9 | P0 `a835972` | 39.5 | 3.31 (3.00–3.62) | 20 | 2.08 s (1.67 s) |
+| Pixel 9 | P5 | 39.4 | 3.31 (2.74–3.64) | 18.5 | 1.99 s (1.64 s) |
+| Pixel 4a | P0 `a835972` | 51.9 | 9.63 (8.80–10.36) | 20.5 | 4.59 s (3.90 s) |
+| Pixel 4a | P5 | 52.0 | 9.71 (8.58–10.34) | 22 | 4.54 s (3.83 s) |
+
+   - Pixel 9: identical janky share, slightly fewer slow frames and a slightly faster Stop. It came up "offline" over USB until the adb server was restarted; the battery stayed at 21–22 % with Battery Saver off (it switches on at 20 % there; the driver now checks it before every run and stops if it is on).
+   - Pixel 4a: within the baseline's spread (+0.08 points janky, a slightly faster Stop); a few more live updates per take (228.5 against 223.5, P3's loop) and fewer UI stalls (25.5 against 32). Battery 64 %, Battery Saver off.
+   - Logged live-update counts vary between runs (194–271 on the Pixel 9) for both builds: logcat drops probe lines under load. The frame times come from SurfaceFlinger and aren't affected.
+   - The driver now takes a lock, so a second one can't run against the same phone (§8i).
+   - Both phones were left on the P5 profiling build, fake mic and test takes removed.
 
 ## 8. Current state, at the time of writing
 

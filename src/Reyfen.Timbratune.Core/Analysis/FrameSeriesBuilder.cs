@@ -1,6 +1,7 @@
 using Reyfen.Timbratune.Acoustics.Numerics;
 using Reyfen.Timbratune.Acoustics.Pitch;
 using Reyfen.Timbratune.Acoustics.Voice;
+using Reyfen.Timbratune.Core.Analysis.Tracks;
 using Reyfen.Timbratune.Core.Models;
 
 namespace Reyfen.Timbratune.Core.Analysis;
@@ -43,14 +44,19 @@ public static class FrameSeriesBuilder
         for (var i = 0; i < harmonicity.Db.Count; i++)
             if (harmonicity.Db[i] != HarmonicityContour.Unvoiced) hnr.Add(new(harmonicity.Grid.IndexToX(i), harmonicity.Db[i]));
 
-        var voiced = RawAnalysisAssembler.VoicedFrames(t.Pitch, b.Voiced);
+        // The voiced frames and the gate from the track stages when they made them (live), else derived here.
+        var derived = t.Derived;
+        var voiced = derived is not null && derived.Tracks.Has(TrackSet.VoicedFrames) ? derived.Voiced : RawAnalysisAssembler.VoicedFrames(t.Pitch, b.Voiced);
+        var loudTimes = derived is not null && derived.GateFor(t.LoudOutlierFraction)
+            ? derived.LoudTimes
+            : RawAnalysisAssembler.LoudVoicedTimes(voiced, t.Intensity, b.LoudTimes, t.LoudOutlierFraction, b.LoudScratch);
         var f1 = b.F1;
         var f2 = b.F2;
         var f3 = b.F3;
         f1?.Clear();
         f2.Clear();
         f3.Clear();
-        foreach (var time in RawAnalysisAssembler.LoudVoicedTimes(voiced, t.Intensity, b.LoudTimes, t.LoudOutlierFraction, b.LoudScratch))
+        foreach (var time in loudTimes)
         {
             double v1 = t.Formants5500.ValueAtTime(1, time), v2 = t.Formants5500.ValueAtTime(2, time), v3 = t.Formants5500.ValueAtTime(3, time);
             if (!(v1 >= 250 && v1 <= 1000 && v2 > 0 && v3 > 0)) continue;
@@ -103,7 +109,7 @@ public static class FrameSeriesBuilder
     {
         var harmonicity = t.Harmonicity ?? throw new ArgumentException("The tracks have no harmonicity.", nameof(t));
         var b = new FrameSeriesBuffers { F1 = [] };
-        Build(t, harmonicity, t.WeightRow, StretchJitter(t.Pitch, t.Pulses), b);
+        Build(t, harmonicity, t.WeightRow, t.StretchJitter ?? StretchJitter(t.Pitch, t.Pulses), b);
 
         var pitchStep = t.Pitch.Grid.Step;
         var pitch = new FrameSeries { Unit = "Hz", StepS = pitchStep, Description = "every pitch frame; null = unvoiced" };

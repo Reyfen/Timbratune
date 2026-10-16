@@ -4,6 +4,7 @@ using Reyfen.Timbratune.Acoustics.Formants;
 using Reyfen.Timbratune.Acoustics.Intensity;
 using Reyfen.Timbratune.Acoustics.Pitch;
 using Reyfen.Timbratune.Acoustics.Spectral;
+using Reyfen.Timbratune.Core.Analysis.Tracks;
 
 namespace Reyfen.Timbratune.Core.Analysis;
 
@@ -36,6 +37,14 @@ public sealed record FrameTracks
     public IReadOnlyList<double> Pulses { get; init; } = [];
     /// <summary>See <see cref="RawAnalysisAssembler.LoudOutlierFraction"/>; 0 gives analyze.py's gate (the reference for the parity tests).</summary>
     public double LoudOutlierFraction { get; init; } = RawAnalysisAssembler.LoudOutlierFraction;
+    /// <summary>Per voiced stretch: its end and local jitter, when the pulse track measured them (live); null = derive from <see cref="Pulses"/>.</summary>
+    public IReadOnlyList<(double End, double Jitter)>? StretchJitter { get; init; }
+    /// <summary>
+    /// Voiced frames, the gate and the derived tracks, already computed by the track stages
+    /// (<see cref="Tracks.DerivedTracks"/>); null = the assembler and the series builder derive them.
+    /// The gate and what follows from it are only used when made with <see cref="LoudOutlierFraction"/>.
+    /// </summary>
+    public DerivedTracks? Derived { get; init; }
 }
 
 /// <summary>
@@ -51,7 +60,8 @@ public static class RawAnalysisAssembler
     {
         var pitch = t.Pitch;
         var intensity = t.Intensity;
-        var voiced = VoicedFrames(pitch);
+        var derived = t.Derived;
+        var voiced = derived is not null && derived.Tracks.Has(TrackSet.VoicedFrames) ? derived.Voiced : VoicedFrames(pitch);
 
         var summary = new Dictionary<string, double>(StringComparer.Ordinal)
         {
@@ -71,14 +81,22 @@ public static class RawAnalysisAssembler
         };
 
         var contour = Contour(pitch);
-        var selected = SelectVowelCoreTimes(voiced, intensity, t.LoudOutlierFraction);
+        IReadOnlyList<RawAnalysis.FormantRow> formants;
+        int tried;
+        if (derived is not null && derived.Tracks.Has(TrackSet.VowelFormantRows) && derived.GateFor(t.LoudOutlierFraction))
+            (formants, tried) = (derived.VowelFormantRows, derived.FormantFramesTried);
+        else
+        {
+            var selected = SelectVowelCoreTimes(voiced, intensity, t.LoudOutlierFraction);
+            (formants, tried) = (VowelCoreFormants(selected, [(FormantCeiling, t.Formants5500), (5000, t.Formants5000)]), selected.Count);
+        }
 
         return new RawAnalysis
         {
             Summary = summary,
-            Formants = VowelCoreFormants(selected, [(FormantCeiling, t.Formants5500), (5000, t.Formants5000)]),
-            FormantFramesTried = selected.Count,
-            WeightFrames = WeightFrames(voiced, t.WeightRow),
+            Formants = formants,
+            FormantFramesTried = tried,
+            WeightFrames = derived is not null && derived.Tracks.Has(TrackSet.WeightFrames) ? derived.WeightFrames : WeightFrames(voiced, t.WeightRow),
             Ltas = t.Ltas,
             Contour = contour,
             Sounding = t.Sounding,

@@ -1,6 +1,6 @@
 # Timbratune refactoring plan
 
-*Status:* agreed 2026-10-15; P0 done (HANDOFF §8i); P1, P2, P3 and P4 done (HANDOFF §8j, §8k, §8l, §8m).
+*Status:* agreed 2026-10-15; P0 done (HANDOFF §8i); P1–P5 done (HANDOFF §8j–§8n).
 *Base:* `dev/v0.2.1` at `2b33f06`.
 *Work branch:* `dev/v0.3.0`.
 
@@ -633,7 +633,12 @@ Ask the owner before each commit.
     - **FFmpeg build (§12.2):** BtbN's LGPL static FFmpeg 9.0.2 builds, repacked by `scripts/mirror-ffmpeg.ps1` to just `ffmpeg` + licence + README as `.tar.gz` (36–57 MB instead of 117–171 MB; .NET unpacks them without the system `tar`/`xz`), hosted on Reyfen/github-releases-as-file-hosting. Pinned for linux-x64/arm64 and win-x64/arm64.
     - **Offered where:** unasked only on Linux; on Windows (and later macOS) the installer is there but hidden, for the settings page to offer. "Remove FFmpeg" also waits for that page (`IDecoderInstaller.Remove` exists).
     - **Ports:** `IProcessRunner` and `IHttpDownloader` live in Core (`Core/Platform`), where the decoder projects can reach them.
-- [ ] **P5. Analysis tracks** (§2.1): track providers and staging. `MeasureTracks` and `LiveAnalyzer.Update` are re-implemented on top, with the same signatures. Performance gates apply.
+- [x] **P5. Analysis tracks** (§2.1): track providers and staging. `MeasureTracks` and `LiveAnalyzer.Update` are re-implemented on top, with the same signatures. Performance gates apply.
+  - *As built (HANDOFF §8n):*
+    - **Where:** `Core/Analysis/Tracks/`: `TrackSet` (flags with `WithDependencies`), `TrackView` (one typed field per track), `DerivedTracks` (stages 2 and 3), `SavedTrackProvider`, `LiveTrackProvider` (owns the live trackers, the pulse tracker and the weight-row memo).
+    - **Bridge to today's pipeline:** `TrackView.ToFrameTracks()`; `FrameTracks` carries the derived tracks, so `RawAnalysisAssembler` and `FrameSeriesBuilder` stop re-deriving voiced frames, the gate, the vowel formant rows and the weight frames. Called without them (or with a gate made for another outlier share) they derive as before. The metric modules (P6) will read `TrackView` directly.
+    - **Live:** every update runs all stage-1 trackers (their state must keep up); the `TrackSet` decides stages 2–3 (quick: `TrackSet.Live`; full: the derived tracks; final: the LTAS).
+    - **Gates passed:** results identical (golden, parity, bench hashes); bench A/B against P4 −0.7 % time and fewer allocations; phone A/B against P0 on both phones within the baseline.
 - [ ] **P6. Metric modules** (§2.2), one per step:
   - [ ] Loudness
   - [ ] Clarity
