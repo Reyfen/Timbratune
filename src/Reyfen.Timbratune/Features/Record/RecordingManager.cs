@@ -2,12 +2,14 @@ using System.Diagnostics;
 using CommunityToolkit.Mvvm.Messaging;
 using Reyfen.Timbratune.Core.Analysis;
 using Reyfen.Timbratune.Core.Audio;
+using Reyfen.Timbratune.Core.Diagnostics;
 using Reyfen.Timbratune.Core.Models;
 using Reyfen.Timbratune.Core.Storage;
 using Reyfen.Timbratune.Diagnostics;
 using Reyfen.Timbratune.Shared.Messaging;
 using Reyfen.Timbratune.Shared.Platform;
 using Reyfen.Timbratune.Shared.State;
+using Reyfen.Timbratune.Shared.Telemetry;
 
 namespace Reyfen.Timbratune.Features.Record;
 
@@ -32,14 +34,21 @@ public sealed class RecordingManager : ILiveSession
     private readonly ITakeCatalog _catalog;
     private readonly IActiveTakeService _active;
     private readonly IMessenger _messenger;
+    private readonly IAnalytics _analytics;
+    private readonly ICrashReporter _crashes;
+    private readonly IAppLog _log;
     private LiveAnalyzer? _live;
     private Task _loop = Task.CompletedTask;
     private CancellationTokenSource? _loopStop;
     private int? _savedId;
 
     public RecordingManager(IAudioRecorder recorder, IAnalysisEngine engine, RecordingStore store, IAnalysisScheduler scheduler,
-        IPermissions permissions, ITakeCatalog catalog, IActiveTakeService active, IMessenger messenger)
+        IPermissions permissions, ITakeCatalog catalog, IActiveTakeService active, IMessenger messenger,
+        IAnalytics? analytics = null, ICrashReporter? crashes = null, IAppLog? log = null)
     {
+        _analytics = analytics ?? NullAnalytics.Instance;
+        _crashes = crashes ?? NullCrashReporter.Instance;
+        _log = log ?? NullAppLog.Instance;
         _recorder = recorder;
         _engine = engine;
         _store = store;
@@ -71,6 +80,7 @@ public sealed class RecordingManager : ILiveSession
         _live = new LiveAnalyzer(_recorder.SampleRate);
         _recorder.SamplesCaptured += OnSamplesCaptured;
         _recorder.Start();
+        _log.Log(AppLogLevel.Info, "recording", $"started at {_recorder.SampleRate} Hz");
         Latest = null;
         IsLive = IsRecording = true;
         Started?.Invoke(this, EventArgs.Empty);
@@ -122,9 +132,11 @@ public sealed class RecordingManager : ILiveSession
                     }).ConfigureAwait(false);
                     hadResult |= hasResult;
                 }
-                catch (Exception)
+                catch (Exception e)
                 {
                     // A failed live update only skips one refresh; the saved analysis is unaffected.
+                    _log.Log(AppLogLevel.Warning, "recording", e, "a live update failed");
+                    if (_crashes.IsEnabled) _crashes.Report(e, "recording.live");
                 }
             }
         }
@@ -150,6 +162,7 @@ public sealed class RecordingManager : ILiveSession
     {
         // Shares of the time after Stop, measured on a 27.6 s take: the last live update, the analysis, saving.
         const double liveShare = 0.15, analysisShare = 0.80;
+        var stopStart = Stopwatch.GetTimestamp();
         IsRecording = false;
         _loopStop?.Cancel();
         string? wav = null;
@@ -180,7 +193,8 @@ public sealed class RecordingManager : ILiveSession
             var analyzeStart = Stopwatch.GetTimestamp();
             var result = await _engine.AnalyzeAsync(wav, progress: new Progress(f => progress.Report(liveShare + analysisShare * f)));
             progress.Report(liveShare + analysisShare);
-            Perf.Report("stop.analyze", Stopwatch.GetElapsedTime(analyzeStart).TotalMilliseconds);
+            var analysisMs = Stopwatch.GetElapsedTime(analyzeStart).TotalMilliseconds;
+            Perf.Report("stop.analyze", analysisMs);
             var entry = result.Metrics;
             entry.Label = string.IsNullOrWhiteSpace(label) ? "untitled take" : label.Trim();
             entry.Note = "";
@@ -192,7 +206,16 @@ public sealed class RecordingManager : ILiveSession
             using (Perf.Measure("stop.save")) saved = await Task.Run(() => _store.Add(entry, result.Detail, sourceWav, result.Series));
             progress.Report(1);
             _savedId = saved.Id;
+            var stopSeconds = Stopwatch.GetElapsedTime(stopStart).TotalSeconds;
+            _log.Log(AppLogLevel.Info, "recording", $"saved a {saved.DurationS ?? 0:0.0} s take: analysis {analysisMs:0} ms, Stop to saved {stopSeconds:0.00} s");
+            if (_analytics.IsEnabled) _analytics.TakeAnalyzed(new(TakeSource.Recorded, saved, stopSeconds));
             return saved;
+        }
+        catch (Exception e)
+        {
+            _log.Log(AppLogLevel.Error, "recording", e, "Stop failed");
+            if (_crashes.IsEnabled) _crashes.Report(e, "recording.stop");
+            throw;
         }
         finally
         {

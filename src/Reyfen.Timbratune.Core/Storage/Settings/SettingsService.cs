@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Reyfen.Timbratune.Core.Diagnostics;
 
 namespace Reyfen.Timbratune.Core.Storage.Settings;
 
@@ -37,6 +38,7 @@ public sealed class SettingsService : ISettings, IDisposable
     private static readonly string[] SecretWords = ["token", "secret", "password", "apikey"];
 
     private readonly ISettingsStore _store;
+    private readonly IAppLog _log;
     private readonly IReadOnlyList<Func<JsonObject, JsonObject>> _migrations;
     private readonly object _gate = new();
     private readonly Dictionary<SettingScope, Document> _documents = [];
@@ -50,9 +52,10 @@ public sealed class SettingsService : ISettings, IDisposable
     /// There are none yet; the app writes version <see cref="FirstSchemaVersion"/> + their number.
     /// </param>
     public SettingsService(ISettingsStore store, IEnumerable<ISettingKey> keys, TimeSpan? saveDelay = null,
-        IReadOnlyList<Func<JsonObject, JsonObject>>? migrations = null)
+        IReadOnlyList<Func<JsonObject, JsonObject>>? migrations = null, IAppLog? log = null)
     {
         _store = store;
+        _log = log ?? NullAppLog.Instance;
         _migrations = migrations ?? [];
         SaveDelay = saveDelay ?? TimeSpan.FromMilliseconds(500);
         foreach (var key in keys) Register(key);
@@ -123,14 +126,11 @@ public sealed class SettingsService : ISettings, IDisposable
             {
                 _store.Save(name, json);
             }
-            catch (IOException)
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
                 // Can't write now (disk full, locked): the values stay in memory and are retried on the next change.
                 lock (_gate) MarkDirty(name);
-            }
-            catch (UnauthorizedAccessException)
-            {
-                lock (_gate) MarkDirty(name);
+                _log.Log(AppLogLevel.Warning, "settings", e, $"saving {name} failed");
             }
         }
     }

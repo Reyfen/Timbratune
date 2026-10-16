@@ -8,8 +8,8 @@ using Reyfen.Timbratune.Core.Analysis;
 namespace Reyfen.Timbratune.Architecture.Tests;
 
 /// <summary>
-/// The dependency rules of REFACTOR-PLAN.md: §1.1 (feature modules), §5 (analytics stays out of
-/// live analysis) and §7 (nothing a browser head would need references native-only code).
+/// The dependency rules of REFACTOR-PLAN.md: §1.1 (feature modules), §5 (analytics and crash
+/// reports stay out of live analysis) and §7 (nothing a browser head would need references native-only code).
 /// Several rules have nothing to check until the phases that add feature folders land; they
 /// hold vacuously until then and start biting as soon as the first type appears.
 /// </summary>
@@ -159,10 +159,10 @@ public sealed class DependencyRuleTests
         Assert.Empty(violations);
     }
 
-    // ---- Analytics (§5) ----
+    // ---- Telemetry (§5) ----
 
     [Fact]
-    public void LiveAnalysisNeverReferencesAnalytics()
+    public void LiveAnalysisNeverReferencesTelemetry()
     {
         var live = TypeReferences.TypesOf(Acoustics).Concat(TypeReferences.TypesOf(Core))
             .Concat(UiTypes().Where(t => InNamespace(t.Namespace ?? "", FeaturesNs + ".LiveMonitor")
@@ -170,8 +170,21 @@ public sealed class DependencyRuleTests
                                          || Outermost(t).Name.StartsWith("Live", StringComparison.Ordinal)));
         var violations = new List<string>();
         foreach (var type in live)
-            violations.AddRange(TypeReferences.Of(type).Where(IsAnalytics).Select(u => $"{type.FullName} → {u}"));
+            violations.AddRange(TypeReferences.Of(type).Where(IsTelemetry).Select(u => $"{type.FullName} → {u}"));
         Assert.Empty(violations);
+    }
+
+    [Fact]
+    public void TheTelemetryRuleSeesTheCallSites()
+    {
+        // Positive control: the managers that send take events and crash reports are seen doing so.
+        var manager = UiTypes().Where(t => Outermost(t).FullName == "Reyfen.Timbratune.Features.Record.RecordingManager")
+            .SelectMany(TypeReferences.Of).ToHashSet();
+        Assert.Contains("Reyfen.Timbratune.Shared.Telemetry.IAnalytics", manager);
+        Assert.Contains("Reyfen.Timbratune.Shared.Telemetry.ICrashReporter", manager);
+        Assert.True(IsTelemetry("Reyfen.Timbratune.Shared.Telemetry.TakeAnalyzedEvent"));
+        Assert.True(IsTelemetry("Reyfen.Timbratune.Features.Analytics.MixpanelAnalytics+Sender"));
+        Assert.False(IsTelemetry("Reyfen.Timbratune.Core.Diagnostics.IAppLog"));
     }
 
     // ---- The scanner itself (positive controls, so the rules above can't pass by seeing nothing) ----
@@ -243,14 +256,17 @@ public sealed class DependencyRuleTests
         return t;
     }
 
-    private static bool IsAnalytics(string fullName)
+    /// <summary>Analytics and crash reports (the log is allowed: it only writes when a level is on).</summary>
+    private static bool IsTelemetry(string fullName)
     {
         var plus = fullName.IndexOf('+');
         var outer = plus < 0 ? fullName : fullName[..plus];
         var segments = outer.Split('.');
-        return segments[..^1].Contains("Analytics")
+        return segments[..^1].Contains("Analytics") || segments[..^1].Contains("Telemetry")
                || segments[^1].Contains("Analytics", StringComparison.Ordinal)
-               || segments[^1].Contains("Mixpanel", StringComparison.Ordinal);
+               || segments[^1].Contains("Mixpanel", StringComparison.Ordinal)
+               || segments[^1].Contains("Sentry", StringComparison.Ordinal)
+               || segments[^1].Contains("CrashReport", StringComparison.Ordinal);
     }
 
     private static readonly string RuntimeDir = Path.TrimEndingDirectorySeparator(RuntimeEnvironment.GetRuntimeDirectory());

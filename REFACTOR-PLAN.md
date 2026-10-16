@@ -1,6 +1,6 @@
 # Timbratune refactoring plan
 
-*Status:* agreed 2026-10-15; P0 done (HANDOFF §8i); P1–P7 done (HANDOFF §8j–§8p).
+*Status:* agreed 2026-10-15; P0 done (HANDOFF §8i); P1–P8 done (HANDOFF §8j–§8q).
 *Base:* `dev/v0.2.1` at `2b33f06`.
 *Work branch:* `dev/v0.3.0`.
 
@@ -82,10 +82,10 @@ src/
     Shared/                             ports and state that features share; no feature code
       Navigation/                       IOverlayHost, IRouter base
       Messaging/                        IMessenger + message records (TakeSaved, TakeRenamed, TakeDeleted, ImportFinished…)
-      State/                            IActiveTakeService, ITakeCatalog, ILiveSession, ISettings (§5a), IEntitlements (later)
+      State/                            IActiveTakeService, ITakeCatalog, ILiveSession, ISettings (§5a), IEntitlements (HasEverDonated; the rest later)
       Platform/                         IFileDialogs, IFileSharer, IPermissions, IPlatformInfo, ISecureStore,
                                         IExternalBrowser, IProcessRunner, IHttpDownloader
-      Analytics/                        IAnalytics, TakeAnalyzedEvent, NullAnalytics (the port only, §5)
+      Telemetry/                        IAnalytics, ICrashReporter, do-nothing defaults, limiter, crash hooks, consent, rollout (§5)
       Controls/  Themes/  Diagnostics/
     Features/                           each: View(s), ViewModel(s), Manager, Router, Add<Feature>() registration
       Recording/                        record panel; RecordingManager owns recorder + live session + save
@@ -95,7 +95,7 @@ src/
       MetricCompare/                    metric comparison modal (takes + reference voices)
       TakeActions/                      per-take dialog: save/export/share, rename, delete
       Import/                           picker, dropped-folder scan, trend backfill, FFmpeg offer (§4)
-      Analytics/                        MixpanelAnalytics + consent toggle (§5)
+      Analytics/                        (later) Mixpanel and Sentry adapters, consent switches (§5)
       CheatSheet/  About/               static content; footer (version, credits, data folder)
       Account/  Avatar/                 (later, §6)
   Reyfen.Timbratune.Audio.SoundFlow/    exists: recorder, player, miniaudio decoder provider
@@ -370,51 +370,82 @@ Linux is the one platform without a universal system decoder, hence §4.3.
 
 ---
 
-## 5. Usage analytics (Mixpanel)
+## 5. Telemetry: usage analytics, crash reports and logs
 
-**Requirements from the owner:**
-- Mixpanel.
-- Only **final results after an analysis**, never live data.
-- The bare minimum of information.
-- Lightweight, with **zero allocations when disabled**.
+**Status:** groundwork only (P8, HANDOFF §8q). The ports, consent, rollout rule and log points exist and are off; nothing is sent. There is no Mixpanel or Sentry package and no network code yet; the adapters come in a later version, once the owner has created the projects.
 
-**Structure:**
-- **The port** is in `Shared/Analytics`, so other features' managers can call it without depending on `Features/Analytics`:
-  - `IAnalytics { bool IsEnabled; void TakeAnalyzed(in TakeAnalyzedEvent e); }`
-  - `TakeAnalyzedEvent`, a `readonly record struct`
-  - `NullAnalytics.Instance`
-- **The implementation** is in `Features/Analytics`:
-  - `MixpanelAnalytics`: `HttpClient` POST to `/track`, or `api-eu.mixpanel.com`; no SDK.
-  - A source-generated `System.Text.Json` context.
-  - `AnalyticsSettings`: opt-in flag plus a random install id, both `Device`-scoped settings (§5a).
-  - The consent toggle view/view model, in About.
+**Requirements from the owner (2026-10-16):**
+- Usage analytics with **Mixpanel**; crash and error reports with **Sentry**.
+- Eventually: performance data, errors, and anonymous user data: age range, **voice target** (the perceived gender the user trains towards: feminine, masculine, androgynous), approximate location (country) and purchase info (supporter or not).
+- Final results only, never live data. Lightweight, with **zero allocations when off**.
+- **Rollout:** everyone who ever donated, plus a limited share of the others, so the free plans are enough.
 
-**When disabled, nothing is allocated:**
-- DI registers `NullAnalytics.Instance` when the user hasn't opted in, or when no token was compiled in (`-p:MixpanelToken=…`, so the repo holds no token).
-- No `HttpClient`, JSON context, queue or subscription is created.
-- **Call sites:** only `RecordingManager` (after the saved analysis on Stop) and `ImportManager` (after an import), as `if (_analytics.IsEnabled) _analytics.TakeAnalyzed(new(...));`.
-- Live analysis never references analytics; an architecture test checks this.
+**Services** (free plans as the vendors' pages showed them on 2026-10-16; check again before signing up):
 
-**When enabled:**
-- One event per finished take, sent fire-and-forget in the background.
-- Dropped on failure: no retry queue, no persistence, no batching.
-- Turning the toggle off swaps in `NullAnalytics` and disposes the client.
+| Service | Free plan | EU hosting |
+|---|---|---|
+| Mixpanel | about 1M events a month | yes; chosen when the project is created (an existing project can't move) |
+| Sentry | 5,000 errors, 5 GB logs, 5M spans a month; 30 days of history; one member; events over the quota are refused, not billed | yes (Frankfurt); chosen when the organization is created |
 
-**Payload** (proposed minimum; the owner confirms, §12):
-- **Event:** `take_analyzed`.
-- **Identity:** `distinct_id` = random per-install GUID, plus `ip=0`.
-- **App:** `app_version`, `platform`.
-- **Take:** `duration_s` (rounded), `source` (recorded/imported).
-- **Results:** a **zone name per metric** (from `Presentation`), not raw Hz/dB values.
+- **EU hosting for both** (recommended; the owner confirms when creating the projects).
+- **Fallback for Sentry:** GlitchTip accepts the same SDK; its hosted free plan is small (1,000 events), self-hosted has no limit. Only the address changes.
+- **Not chosen:** BugSnag (7,500 events, 7 days of history), Firebase Crashlytics (Android only, awkward from .NET), Embrace (built around whole sessions; no .NET SDK, so on Android it would see only the Java side), Raygun (no free plan).
+- **Sentry session replay stays off:** Avalonia draws the window as one surface, so a replay is one opaque picture, and a privacy risk.
+
+**Built in P8:**
+- **The log** (`Core/Diagnostics/AppLog.cs`, in Core so Core services can log):
+  - `IAppLog { bool IsEnabled(level); void Write(level, area, message, error?) }` and `NullAppLog.Instance` (the default).
+  - `log.Log(level, area, $"…")` uses an interpolated-string handler: with the level off the message isn't formatted and nothing is allocated. Messages use the invariant culture.
+  - Core services take it as an optional constructor argument (`DecoderRegistry`, `SettingsService`).
+  - Lines are short and hold no voice data, labels or file names. Later they become Sentry breadcrumbs (the recent lines attached to each report) and Sentry logs.
+- **Log points:**
+  - `DecoderRegistry`: which decoder read a format; a decoder that failed; a probe that failed.
+  - `SettingsService`: a settings file that couldn't be saved.
+  - `RecordingManager`: recording started; take saved (length, analysis time, Stop to saved); Stop failed; a live update failed.
+  - `ImportManager`: import done (time) or failed; FFmpeg installed; the trend backfill failed.
+  - `CrashHooks`: unhandled errors.
+- **Ports** (`Shared/Telemetry/`, so managers call them without depending on a feature):
+  - `IAnalytics { bool IsEnabled; void TakeAnalyzed(in TakeAnalyzedEvent e); }`, `NullAnalytics.Instance`; `TakeAnalyzedEvent(Source, Take, ProcessingSeconds)` (`readonly record struct`; processing = Stop to saved, or the whole import).
+  - `AnalyticsPayload`, the whitelist: the take's length rounded to 5 s, the processing time to 0.1 s, and each zoned metric reduced to its zone name (`pitch: fem`, `pitch_sd: flat`). No raw values, label, note or file names.
+  - `ICrashReporter { bool IsEnabled; void Report(Exception, string area); }`, `NullCrashReporter.Instance`.
+  - `CrashReportLimiter` wraps the future adapter: each kind of error (area, type, throwing method) once, and at most 5 reports per session, so a crash loop can't use up the month.
+  - `CrashHooks`: UI-thread, AppDomain and unobserved-task errors go to the reporter and the log; with both off (the default) nothing is subscribed.
+  - `Shared/State/IEntitlements { bool HasEverDonated }`, `NoEntitlements` (answers no) until accounts exist (§6).
+- **Consent** (`TelemetryConsent`, `TelemetrySettings`, device-scoped, §5a):
+  - Two separate opt-ins, `telemetry.analytics` and `telemetry.crashReports`, both off by default.
+  - `telemetry.installId`: a random GUID, created at the first opt-in and forgotten when both are turned off.
+  - `AnalyticsOn` / `CrashReportsOn` = opted in **and** in the rollout.
+- **Rollout** (`TelemetryRollout`, `RolloutRates`):
+  - An install is in when it **ever donated**, or when its **bucket < rate × 10,000**.
+  - Bucket = FNV-1a of the install id, mod 10,000: the same on every run and platform, so an install is always in or always out at a given rate, and raising the rate only adds installs.
+  - Separate rates for analytics and crash reports (their budgets differ about 200×); the built-in default is 25 % each.
+- **Call sites:** `RecordingManager` (after a saved take) and `ImportManager` (after an import), as `if (_analytics.IsEnabled) _analytics.TakeAnalyzed(new(...));`. Crash reports where errors used to be swallowed silently (a live update, Stop, the trend backfill).
+- **DI:** `AddTimbratune` registers the do-nothing defaults, `NoEntitlements`, `RolloutRates.Default` and `TelemetryConsent`.
+- **Rule:** live analysis never references analytics or crash reports (`LiveAnalysisNeverReferencesTelemetry`, with a positive control). The log is allowed; in the live loop it only writes in the error path.
+
+**Later, with the adapters:**
+- `Features/Analytics`:
+  - `MixpanelAnalytics`: `HttpClient` POST to `api-eu.mixpanel.com/track`, no SDK, source-generated JSON; one event per finished take, fire-and-forget, dropped on failure (no queue, no retries).
+  - A Sentry adapter (`Sentry` package, EU DSN), wrapped in `CrashReportLimiter`, fed by the log as breadcrumbs.
+  - Registered as `sp => consent.AnalyticsOn ? new MixpanelAnalytics(...) : NullAnalytics.Instance` (likewise Sentry). The token and DSN are compiled in (`-p:MixpanelToken=…`), never in the repo.
+  - Turning a switch off swaps in the do-nothing default and disposes the client.
+- **Consent UI:** two switches in About (perhaps a one-time question too); the owner reviews the wording.
+- **Remote rates:** a small JSON file the owner hosts (e.g. in the repo), `{ "analytics": 0.25, "crashReports": 0.25 }`, read at most once a day, cached as a device setting, the built-in defaults when it can't be reached. Capacity changes without a release.
+- **User properties** (analytics only, each named in the consent text):
+  - age range (buckets, asked in the app, optional);
+  - voice target (feminine / masculine / androgynous; asked, or from a future target setting);
+  - country: Mixpanel's own geolocation from the IP (Mixpanel says it keeps the derived place, not the IP), or the app sends the country with `ip=0`;
+  - supporter (yes/no, from `IEntitlements`).
+- **Performance data:** the take event's processing time; later perhaps a sampled performance event (live update time, janky frames), rounded.
+- **Errors:** details go to Sentry; analytics gets at most counts.
 
 **Privacy:**
-- Voice results for gender-voice training are sensitive personal data. Analytics is therefore **opt-in, default off**.
-- No labels, file names or audio, and not linked to accounts (§6).
-- Document it in the README.
+- Voice training towards a gender is sensitive: a voice target together with usage can hint that someone is trans. Everything is opt-in and off by default, and each user property has its own line in the consent text.
+- Never labels, notes, file names, audio or raw values. EU hosting.
+- The supporter flag is used for the rollout and as one yes/no property; the account id is never sent (§6).
+- Document it in the README and a privacy text before the first adapter ships.
 
-**Tests:**
-- The `NullAnalytics` path allocates 0 bytes (`GC.GetAllocatedBytesForCurrentThread`).
-- The serialised payload contains only whitelisted keys.
+**Tests (P8, `TelemetryTests`):** the app starts with everything off; the call sites allocate 0 bytes when off; a log formats only the levels it keeps, in the invariant culture; the bucket is stable; the rollout follows the rate, only adds installs as it rises and always includes donors; nothing without consent; the install id comes with the first opt-in and goes with the last; the limiter; a take's payload holds zone names only.
 
 ---
 
@@ -448,7 +479,7 @@ public static class RecordingSettings
 
 | Scope | Examples |
 |---|---|
-| **Device** | window size/position, Android renderer, data folder, FFmpeg path / "not now" / installed version, decoder priorities, analytics opt-in and install id (consent is per device), last-seen version, performance flags |
+| **Device** | window size/position, Android renderer, data folder, FFmpeg path / "not now" / installed version, decoder priorities, analytics and crash-report opt-ins and install id (consent is per device), last-seen version, performance flags |
 | **Synced** | theme, live window length, display preferences (units, which cards are shown), cheat-sheet/tips dismissed, reference-voice choice |
 | **Never a setting** | OAuth tokens and secrets (`ISecureStore`), takes and analysis (`ITakeStorage`), anything about the user's voice |
 
@@ -516,7 +547,7 @@ Features/Avatar/   AvatarManager (avatar.json in the data folder, never uploaded
 **Constraints:**
 - **Patreon needs a tiny serverless backend** for the OAuth token exchange, because the client secret can't ship in the app. It returns only the tier. Apple sign-in off Apple platforms would need the same.
 - **Entitlements work offline** after one check. Expiry is a grace period, and the core app is never locked.
-- **Privacy:** keep only the provider account id and the entitlement. Not linked to analytics or takes.
+- **Privacy:** keep only the provider account id and the entitlement. Not linked to takes; analytics gets only the supporter yes/no (the rollout and one property, §5), never the account id.
 - **Cost when unused:** providers are factories, so nothing is created until the sign-in sheet opens.
 - **Dependencies:** prefer plain OAuth. Vendor SDKs (Play Games) stay in the head that needs them.
 
@@ -670,7 +701,8 @@ Ask the owner before each commit.
     - **Not done:** appending only new frames to the live series (§2.2's `UpdateLiveSeries(fromFrame)`): they are still refilled in full each update, and the bench shows no need yet.
     - **Proof:** a throwaway `Dummy` module (one folder, one registration) appeared in the live timelines, stat cards, trend charts, chips, detail.json and series.json, then was removed; a test-registry version stays as `MetricRegistryUiTests`.
     - **Gates:** results identical; bench A/B against P6 equal (full analysis +0.1 %, live updates −0.1 %, allocations equal or lower); emulator smoke test; Pixel 4a A/B against P0: analysis equal or faster, janky frames +1 point from the new first live timeline (Pitch variability), kept by the owner; Pixel 9 A/B against P0: P6 equal, P7 +0.2–0.3 points of janky frames with equal fps and Stop to saved, accepted by the owner and to be rechecked in P9 (HANDOFF §8p).
-- [ ] **P8. Analytics** (§5): port, Mixpanel adapter, consent toggle, two call sites, tests. Verify against a Mixpanel test project, only with the owner's token and opt-in.
+- [x] **P8. Telemetry groundwork** (§5): ~~port, Mixpanel adapter, consent toggle, two call sites, tests. Verify against a Mixpanel test project, only with the owner's token and opt-in.~~ Rescoped by the owner (2026-10-16): analytics is a future concept, so P8 is documentation plus groundwork, with no packages or network code.
+  - *As built (HANDOFF §8q):* the log port in Core (`IAppLog`, zero-allocation when off) with log points in decoding, settings, recording and import; `Shared/Telemetry` with the analytics and crash-report ports, their do-nothing defaults, `AnalyticsPayload` (zone names only), `CrashReportLimiter` and `CrashHooks`; `IEntitlements.HasEverDonated`; consent (two device-scoped opt-ins and an install id); the rollout rule (donors always, a stable 25 % of the others by default). The adapters, the consent UI and the remote rates file come later (§5).
 - [ ] **P9. Final performance check** (§3, all gates, Release builds on both phones) and a Linux build in WSL `Ubuntu-24.04` (`~/tt` copy).
 - [ ] **P10. Documentation:**
   - Update the CLAUDE.md "Layout" table and add a HANDOFF section.
@@ -728,7 +760,7 @@ Later versions: accounts and avatar (§6) with cloud settings sync (§5a.3), and
 
 ## 12. Open decisions (ask the owner when the phase is reached)
 
-1. **P8 analytics:** the exact payload fields, zones vs raw values, and the EU or US Mixpanel endpoint.
+1. ~~**P8 analytics:** the exact payload fields, zones vs raw values, and the EU or US Mixpanel endpoint.~~ Decided 2026-10-16: Mixpanel for analytics and Sentry for crash reports, zones not raw values, EU hosting recommended (confirmed when the projects are created); the user properties and the rollout are in §5. Still open for later: the consent wording, the age buckets and the default rates.
 2. ~~**P4:** the exact pinned FFmpeg build and its hosting source; whether the installer is also offered on Windows/macOS.~~ Decided 2026-10-15: BtbN's LGPL static builds, repacked and mirrored on the owner's hosting repo; offered on Linux, built in but hidden on other desktops until a setting offers it.
 3. **Later, accounts:** where the Patreon token-exchange backend is hosted.
 4. **Later, browser:** Web Worker vs multithreaded WASM, decided by the spike, and the hosting provider.

@@ -1,3 +1,5 @@
+using Reyfen.Timbratune.Core.Diagnostics;
+
 namespace Reyfen.Timbratune.Core.Audio.Decoding;
 
 /// <summary>What a decode used: the file's format, the provider that read it, the frames written.</summary>
@@ -12,11 +14,15 @@ public sealed record DecodedAudio(AudioFormat Format, string ProviderId, long Fr
 public sealed class DecoderRegistry
 {
     private readonly IReadOnlyList<IAudioDecoderProvider> _providers;
+    private readonly IAppLog _log;
     private readonly object _gate = new();
     private Task<IReadOnlyDictionary<string, FormatSet>>? _probe;
 
-    public DecoderRegistry(IEnumerable<IAudioDecoderProvider> providers) =>
+    public DecoderRegistry(IEnumerable<IAudioDecoderProvider> providers, IAppLog? log = null)
+    {
         _providers = providers.OrderBy(p => p.Priority).ThenBy(p => p.Id, StringComparer.Ordinal).ToList();
+        _log = log ?? NullAppLog.Instance;
+    }
 
     /// <summary>By priority, first first.</summary>
     public IReadOnlyList<IAudioDecoderProvider> Providers => _providers;
@@ -71,11 +77,13 @@ public sealed class DecoderRegistry
                 using var sink = new AnalysisWavSink(target, leaveOpen: true);
                 await decoder.DecodeAsync(source, sink, progress, cancellationToken).ConfigureAwait(false);
                 sink.Complete();
+                _log.Log(AppLogLevel.Info, "decoding", $"{format.Id} decoded by {provider.Id}");
                 return new DecodedAudio(format, provider.Id, sink.Frames);
             }
             catch (Exception e) when (e is not OperationCanceledException)
             {
                 failure = e; // the next one may read it
+                _log.Log(AppLogLevel.Warning, "decoding", e, $"{provider.Id} failed on {format.Id}");
             }
         }
         // E.g. a Matroska file whose codec none of them has, or a damaged file.
@@ -96,9 +104,10 @@ public sealed class DecoderRegistry
             {
                 sets[provider.Id] = await provider.ProbeAsync().ConfigureAwait(false);
             }
-            catch (Exception)
+            catch (Exception e)
             {
                 sets[provider.Id] = FormatSet.Empty; // a provider that can't tell decodes nothing
+                _log.Log(AppLogLevel.Warning, "decoding", e, $"probing {provider.Id} failed");
             }
         }
         return sets;

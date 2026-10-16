@@ -1,12 +1,15 @@
+using System.Diagnostics;
 using CommunityToolkit.Mvvm.Messaging;
 using Reyfen.Timbratune.Core.Analysis;
 using Reyfen.Timbratune.Core.Audio.Decoding;
+using Reyfen.Timbratune.Core.Diagnostics;
 using Reyfen.Timbratune.Core.Models;
 using Reyfen.Timbratune.Core.Storage;
 using Reyfen.Timbratune.Core.Storage.Settings;
 using Reyfen.Timbratune.Shared.Messaging;
 using Reyfen.Timbratune.Shared.Platform;
 using Reyfen.Timbratune.Shared.State;
+using Reyfen.Timbratune.Shared.Telemetry;
 
 namespace Reyfen.Timbratune.Features.Import;
 
@@ -25,11 +28,18 @@ public sealed class ImportManager
     private readonly IMessenger _messenger;
     private readonly ISettings _settings;
     private readonly IDecoderInstaller? _ffmpeg;
+    private readonly IAnalytics _analytics;
+    private readonly ICrashReporter _crashes;
+    private readonly IAppLog _log;
     private readonly HashSet<int> _backfilling = [];
 
     public ImportManager(TakeImportService importer, RecordingStore store, IAnalysisEngine engine, ITakeCatalog catalog,
-        IActiveTakeService active, IMessenger messenger, ISettings settings, IEnumerable<IDecoderInstaller> installers)
+        IActiveTakeService active, IMessenger messenger, ISettings settings, IEnumerable<IDecoderInstaller> installers,
+        IAnalytics? analytics = null, ICrashReporter? crashes = null, IAppLog? log = null)
     {
+        _analytics = analytics ?? NullAnalytics.Instance;
+        _crashes = crashes ?? NullCrashReporter.Instance;
+        _log = log ?? NullAppLog.Instance;
         _settings = settings;
         _ffmpeg = installers.FirstOrDefault(i => i.ProviderId == "ffmpeg");
         _importer = importer;
@@ -70,10 +80,13 @@ public sealed class ImportManager
         Directory.CreateDirectory(Path.GetDirectoryName(temp)!);
         try
         {
-            await using (var source = await file.OpenRead())
-            await using (var target = File.Create(temp))
-                await source.CopyToAsync(target);
-            return await Added(await _importer.ImportAsync(temp, file.Name, progress, moveOriginal: true));
+            return await ImportAsync("picked", async () =>
+            {
+                await using (var source = await file.OpenRead())
+                await using (var target = File.Create(temp))
+                    await source.CopyToAsync(target);
+                return await _importer.ImportAsync(temp, file.Name, progress, moveOriginal: true);
+            });
         }
         finally
         {
@@ -82,8 +95,28 @@ public sealed class ImportManager
     }
 
     /// <summary>A file dropped into the takes folder; it is removed from there once imported.</summary>
-    public async Task<Recording> ImportDroppedAsync(string path, IProgress<double> progress) =>
-        await Added(await _importer.ImportDroppedAsync(path, progress));
+    public Task<Recording> ImportDroppedAsync(string path, IProgress<double> progress) =>
+        ImportAsync("dropped", () => _importer.ImportDroppedAsync(path, progress));
+
+    /// <summary>One import, timed and logged; a failure (most often a file nothing here reads) is logged, not reported.</summary>
+    private async Task<Recording> ImportAsync(string kind, Func<Task<Recording>> import)
+    {
+        var start = Stopwatch.GetTimestamp();
+        Recording take;
+        try
+        {
+            take = await import();
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            _log.Log(AppLogLevel.Warning, "import", e, $"a {kind} file failed");
+            throw;
+        }
+        var seconds = Stopwatch.GetElapsedTime(start).TotalSeconds;
+        _log.Log(AppLogLevel.Info, "import", $"a {kind} file imported in {seconds:0.0} s");
+        if (_analytics.IsEnabled) _analytics.TakeAnalyzed(new(TakeSource.Imported, take, seconds));
+        return await Added(take);
+    }
 
     /// <summary>
     /// Whether to offer FFmpeg unasked: where the installer offers itself (Linux), a pinned build
@@ -103,6 +136,7 @@ public sealed class ImportManager
     {
         if (_ffmpeg is null) throw new InvalidOperationException("No FFmpeg installer here.");
         await Task.Run(() => _ffmpeg.InstallAsync(progress, cancellationToken), cancellationToken);
+        _log.Log(AppLogLevel.Info, "import", "FFmpeg installed");
         await _importer.Decoders.RefreshAsync();
     }
 
@@ -144,9 +178,11 @@ public sealed class ImportManager
             });
             _messenger.Send(new TakeAnalysisUpdated(take.Id));
         }
-        catch (Exception)
+        catch (Exception e)
         {
             // Non-essential: the pitch-based trends are already shown.
+            _log.Log(AppLogLevel.Warning, "import", e, "the trend backfill failed");
+            if (_crashes.IsEnabled) _crashes.Report(e, "import.backfill");
         }
         finally
         {

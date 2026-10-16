@@ -6,8 +6,10 @@ using Avalonia.Styling;
 using Avalonia.Markup.Xaml;
 using Avalonia.VisualTree;
 using Microsoft.Extensions.DependencyInjection;
+using Reyfen.Timbratune.Core.Diagnostics;
 using Reyfen.Timbratune.Core.Storage.Settings;
 using Reyfen.Timbratune.Shared.Platform;
+using Reyfen.Timbratune.Shared.Telemetry;
 using Reyfen.Timbratune.Shell;
 
 namespace Reyfen.Timbratune.App;
@@ -48,6 +50,7 @@ public sealed class TimbratuneApp : Application
     public override void OnFrameworkInitializationCompleted()
     {
         var services = _services ?? throw new InvalidOperationException("The platform head must create TimbratuneApp with its services.");
+        CrashHooks.Install(services.GetRequiredService<ICrashReporter>(), services.GetRequiredService<IAppLog>());
         var locator = services.GetRequiredService<ViewLocator>();
         DataTemplates.Add(locator);
         RequestedThemeVariant = ShellSettings.VariantOf(services.GetRequiredService<ISettings>().Get(ShellSettings.Theme));

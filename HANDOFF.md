@@ -2,7 +2,7 @@
 
 This file brings a new engineer or agent up to date on everything done so far: what the user asked for, what was decided and why, how the code is organised, what was measured, and what is still open.
 
-Last updated 2026-10-16. The newest work is §8i–§8p (refactoring P0: golden, architecture, bench and phone baselines; P1: dependency injection and shared ports; P2: storage, settings and scheduling seams; P3: UI feature modules; P4: import formats; P5: analysis tracks; P6: metric modules; P7: registry-driven UI); §8d–§8h cover v0.2.0 (Android performance, export, one folder per take, import, `build.ps1`); §8 is the current state.
+Last updated 2026-10-16. The newest work is §8i–§8q (refactoring P0: golden, architecture, bench and phone baselines; P1: dependency injection and shared ports; P2: storage, settings and scheduling seams; P3: UI feature modules; P4: import formats; P5: analysis tracks; P6: metric modules; P7: registry-driven UI; P8: telemetry groundwork); §8d–§8h cover v0.2.0 (Android performance, export, one folder per take, import, `build.ps1`); §8 is the current state.
 
 **Name:** the project is **Timbratune — Gender Voice Analysis Tool**, by **Reyfen**.
 - **Before 2026-10-02 it was called Euphonia**, and it is a fork of [Euphonia](https://github.com/Yuuzulight/Euphonia). Older parts of this file and of the transcript say "Euphonia" and "Euphonia-CSharp"; read those as Timbratune and the repo root (the code moved from `Timbratune/` to the root on 2026-10-06).
@@ -1174,6 +1174,30 @@ Phase P7 of `REFACTOR-PLAN.md` (§2.4): the UI is built from the metric registry
    - P6 matches P0 on the Pixel 9. P7 is about 0.2–0.3 points of janky frames above P0 in both of its A/Bs (about 3 more late frames in a 28 s take), with equal fps, Stop to saved well inside the 2.7 s limit, and faster live updates. Unlike on the 4a, the live order makes no difference here (the taller screen shows more charts at once), so this is P7's own cost, not yet located. Pooled (12 runs each): 3.27 % vs 3.54 % median, +8 % relative; a shuffle test puts the chance of a gap this size by luck at about 2 %.
    - **Owner's decision (2026-10-16): accepted** (too small to notice; the analysis itself got faster); recheck it in P9.
    - The 4a was left on the P7 profiling build (the last run), its 0.2.0 takes untouched in private storage; the fake mic and the runs' test takes are still on it (it was unplugged before they could be removed).
+
+## 8q. Refactoring P8: telemetry groundwork (2026-10-16)
+
+Phase P8 of `REFACTOR-PLAN.md`, rescoped by the owner: analytics is a future concept, so this phase is the design (REFACTOR-PLAN §5, rewritten) plus groundwork. Nothing is sent: no Mixpanel or Sentry package, no network code, no UI. No user-visible change.
+
+**Decisions (owner, 2026-10-16):**
+- Mixpanel for usage analytics; Sentry for crash and error reports (suggested for its free plan: 5,000 errors, 5 GB logs a month, EU hosting; GlitchTip as a fallback with the same SDK).
+- Eventually: performance data, errors, and anonymous user data: age range, voice target (the perceived gender the user trains towards), country, supporter status.
+- Rollout: everyone who ever donated, plus a limited share of the others.
+- EU hosting recommended for both, to be confirmed when the projects are created.
+
+**Built:**
+- `Core/Diagnostics/AppLog.cs`: `IAppLog`, `NullAppLog`, and `Log(level, area, $"…")` through an interpolated-string handler (nothing formatted or allocated when the level is off; invariant culture).
+- Log points: `DecoderRegistry` (decoder chosen, failed, probe failed), `SettingsService` (save failed), `RecordingManager` (started, saved with analysis time and Stop to saved, Stop failed, live update failed), `ImportManager` (import done or failed, FFmpeg installed, backfill failed). Core services and the managers take the log, analytics and crash reporter as optional constructor arguments, so existing callers and tests are unchanged.
+- `Shared/Telemetry/`: `IAnalytics` + `TakeAnalyzedEvent` + `NullAnalytics`, `AnalyticsPayload` (rounded durations and zone names only), `ICrashReporter` + `NullCrashReporter`, `CrashReportLimiter` (each kind once, at most 5 per session), `CrashHooks` (installed at start; subscribes nothing while everything is off), `TelemetrySettings` (`telemetry.analytics`, `telemetry.crashReports`, `telemetry.installId`, all device-scoped), `TelemetryConsent`, `TelemetryRollout` (FNV-1a bucket of the install id, 0–9999) and `RolloutRates` (default 25 % for analytics and for crash reports).
+- `Shared/State/IEntitlements` (`HasEverDonated`) with `NoEntitlements`.
+- `AddTimbratune` registers the do-nothing defaults, `NoEntitlements`, `RolloutRates.Default`, `TelemetryConsent` and the three settings.
+- Architecture rule renamed and widened: `LiveAnalysisNeverReferencesTelemetry` (analytics, crash reports, Mixpanel, Sentry), with a positive control (`TheTelemetryRuleSeesTheCallSites`). Checked that it bites: a throwaway `ICrashReporter` reference in `LiveTimelinesViewModel` failed it, then was removed.
+
+**Tests:** Acoustics 57, Core 145, architecture 21, UI library 33 (`TelemetryTests`: defaults off; 0 bytes allocated by the call sites when off; log levels and invariant culture; stable bucket; the rollout's rate, monotonic and donors; no sending without consent; install id lifecycle; limiter; payload holds zone names only).
+
+**Gates:** build and all tests green; desktop start with a throwaway data folder. No performance gate: nothing on the analysis path changed (the live loop only logs in its error path, and the log is off).
+
+**Next, when the adapters are added (REFACTOR-PLAN §5 "Later"):** the Mixpanel and Sentry adapters (EU), the consent switches in About, the remote rates file, the user properties, README and privacy text.
 
 ## 8. Current state, at the time of writing
 
