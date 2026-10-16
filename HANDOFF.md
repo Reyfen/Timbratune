@@ -797,7 +797,27 @@ Top live allocations by type (sampled): `double[]` 186 MB, `TimedValue[]` 36 MB,
 
 **`tools/live-steadiness`** on `long.wav` (% of each graph's range: dot step / tail change / dot error, app settings): pitch 8.31 / 0.62 / 8.98, loudness 6.65 / 1.99 / 16.48, HNR 3.83 / 1.53 / 9.54, F2 4.54 / 2.12 / 46.44, F3 0.73 / 0.35 / 4.26, weight 1.51 / 0.72 / 10.70 (baseline variant in §5.6). The first P0 run gave loudness 24.44 and about 0 for HNR, F2, F3 and weight because the tool was broken, not the app: it kept every tick's snapshot and computed the lines after the last update, but since `b5d73f4` `LiveAnalyzer` refills two sets of series lists in turn, so all stored snapshots showed the last two updates' data. Pitch was unaffected (its frames are new on every update). The tool now computes each tick's lines right after its update, as the app does, and checks its "app" lines against `LiveTimelinesViewModel.Compute` on every tick (it prints a warning if they differ). It reproduces §5.6's numbers exactly when the formant gate is set back to the pre-§6a one. Checked tick by tick against the original tool on `82c5621` (the commit before the double buffering): with the old gate, the fixed tool on today's code and on `b5d73f4` gives the same 2,030 dots, bit-identical in time and value, in both variants.
 
-**Not done: phone baselines.** The Pixel 9 and 4a frame times (Release profiling build, §8d) need the owner's phones over USB. They must be taken before P5, the first phase that touches the analysis.
+**Phone baselines** (2026-10-16), for both of the owner's phones:
+- **Setup:** Release profiling builds (LLVM AOT) of `a835972` (P0: the app before the refactoring) and `7810f0c` (after P4), installed in turn over the phone's own build (same signing key, versionCode 3): the 4a (Android 13) had 0.2.0, the Pixel 9 (Android 17, 60 Hz) a 0.2.1 debug build. Each run: a cold start with an empty takes list, a 28 s fake-mic recording of `long.wav`, then Stop. Probes on, `SurfaceFlinger --latency` sampled every 1.5 s while recording. Six runs per build, alternating; scripts `phone-run.sh` / `phone-analyze.py` in the session scratchpad (the method of §8d).
+- **Results** (medians of 6; janky = frame intervals over 25 ms):
+
+| Phone, build | fps | janky % (range) | > 50 ms | Stop to saved (analysis) | live updates | update median / full |
+|---|---|---|---|---|---|---|
+| 4a, P0 `a835972` (**baseline**) | 52.4 | 9.0 (6.8–10.8) | 17 | 4.58 s (3.88 s) | 222 | 46.6 / 59.2 ms |
+| 4a, P4 `7810f0c` | 52.2 | 9.9 (9.2–11.1) | 18 | 4.52 s (3.80 s) | 234 | 44.3 / 59.0 ms |
+| Pixel 9, P0 `a835972` (**baseline**) | 39.5 | 3.3 (2.7–4.0) | 20.5 | 2.02 s (1.62 s) | 261 | 42.0 / 49.6 ms |
+| Pixel 9, P4 `7810f0c` | 39.4 | 3.8 (3.3–4.2) | 21.5 | 2.01 s (1.67 s) | 262.5 | 42.7 / 49.3 ms |
+
+- **Reading:**
+  - The difference after P1–P4 is inside the baselines' run-to-run spread on both phones. Janky % is a little higher on both (+0.9 on the 4a, +0.6 on the Pixel 9), not significant with 6 runs each (Mann–Whitney p ≈ 0.2 on the Pixel 9); worth watching in P5–P7.
+  - **Pixel 9 fps is "over the window"** (about 39): the app only redraws on change, so idle gaps count, and every run has 16–17 gaps over 100 ms. The janky share includes them. The plan's earlier gate (≥ 57.5 fps, ≤ 3.1 %) was fps while drawing, measured under Avalonia 11.3 (§8d); the gate is now this baseline, as an A/B.
+  - On the Pixel 9 both builds run about the same number of live updates (261 vs 262); the 4a's P0 build skipped more early ticks.
+  - P3's loop keeps closer to one update per 100 ms (234 against 222 per take: P0's `DispatcherTimer` skipped early ticks, §8d), so a little more work per take, and has fewer UI-thread stalls (25 against 30.5 `ui.stall` > 32 ms), as the smoothing moved off the UI thread.
+  - The slow frames are mostly single missed vsyncs (2-frame gaps), spread over the whole take.
+  - For P5–P7, compare against the P0 rows with an A/B like this one, not against the numbers alone: single runs range by up to 4 points of janky % (4a) and 1.3 points (Pixel 9).
+  - **Android 17's layer list** reads `RequestedLayerState{<id> SurfaceView[…](BLAST)#n parentId=…}`; `--latency` needs the name with the leading id (`<id> SurfaceView[…](BLAST)#n`), and the newest such layer is the current launch's.
+  - **Run one driver at a time.** A first Pixel 9 attempt left earlier background drivers alive when the session ended; two of them drove the phone at once and their files mixed (two runs with the same logcat). Those runs were discarded and all twelve redone.
+- **The user's 0.2.0 takes** are in the app's private storage on this phone. A 0.3.0 build moves them to shared storage on its first normal start (`AndroidApp.DataFolder`). The profiling build used to do that before redirecting a fake-mic session to `profiling-data`; it now skips the lookup when the fake mic is there (`AndroidApp.OnCreate`, profiling builds only), and the same patch was applied to the P0 build measured. The 4a was left on the `7810f0c` profiling build with the fake mic and test takes removed, so its next normal start does the 0.3.0 move. The Pixel 9's takes were already in shared storage in the current layout (20 takes, untouched); it was also left on the `7810f0c` profiling build, cleaned up the same way.
 
 **Tests:** 148 pass with Praat (17 architecture, 57 acoustics, 74 core).
 

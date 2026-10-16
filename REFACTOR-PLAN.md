@@ -1,6 +1,6 @@
 # Timbratune refactoring plan
 
-*Status:* agreed 2026-10-15; P0 done except the phone baselines (HANDOFF §8i); P1, P2, P3 and P4 done (HANDOFF §8j, §8k, §8l, §8m).
+*Status:* agreed 2026-10-15; P0 done (HANDOFF §8i); P1, P2, P3 and P4 done (HANDOFF §8j, §8k, §8l, §8m).
 *Base:* `dev/v0.2.1` at `2b33f06`.
 *Work branch:* `dev/v0.3.0`.
 
@@ -267,8 +267,8 @@ public interface IMetricModule
 
    **Budget:** at most +3 % time, and **no more allocations than the baseline**.
 3. **Phones** (Release profiling build, HANDOFF §8d):
-   - Pixel 9: ≥ 57.5 fps and ≤ 3.1 % janky while recording; stop-to-saved ≤ 2.7 s.
-   - Pixel 4a: re-measure against its own phase-0 baseline.
+   - Pixel 9: no worse than its phase-0 baseline (HANDOFF §8i: 3.3 % janky, 39.5 fps over the window, Stop 2.0 s), as an A/B with the P0 build; stop-to-saved ≤ 2.7 s. (The earlier ≥ 57.5 fps / ≤ 3.1 % was fps while drawing under Avalonia 11.3.)
+   - Pixel 4a: re-measure against its own phase-0 baseline (HANDOFF §8i: 52.4 fps, 9.0 % janky, Stop 4.6 s), as an A/B with the P0 build.
 4. **On a miss:** fix it or revert that step before continuing.
 
 ---
@@ -581,7 +581,8 @@ Ask the owner before each commit.
   - [x] `tools/analysis-bench`.
   - Baselines, recorded in HANDOFF §8i:
     - [x] bench numbers (`tools/analysis-bench/baseline-p0.json`) and `tools/live-steadiness`;
-    - [ ] Pixel 9 and 4a frame times (needs the owner's phones; before P5 at the latest).
+    - [x] Pixel 4a frame times (2026-10-16: 52.4 fps, 9.0 % janky, Stop 4.6 s; P4 within its spread; HANDOFF §8i).
+    - [x] Pixel 9 frame times (2026-10-16: 39.5 fps over the window, 3.3 % janky, Stop 2.0 s; P4 within its spread; HANDOFF §8i).
 - [x] **P1. Infrastructure.**
   - MS.DI, `CompositionRoot`/`AddTimbratune()`, `ViewLocator`.
   - `Shared/Navigation`, `Messaging`, `State`, `Platform`.

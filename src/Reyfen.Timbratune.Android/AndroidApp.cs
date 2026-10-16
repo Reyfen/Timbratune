@@ -43,10 +43,12 @@ public sealed class AndroidApp : AvaloniaAndroidApplication<TimbratuneApp>
             Diagnostics.Perf.Flags = System.IO.File.ReadAllText(flagsFile).Split((char[])[' ', ',', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries).ToHashSet();
 #endif
         var fakeMic = FakeMic();
-        var paths = DataFolder();
 #if PROFILING
-        // Test takes recorded from the fake mic go to their own folder, not the user's takes.
-        if (fakeMic is not null) paths = new DataPaths(System.IO.Path.Combine(GetExternalFilesDir(null)!.AbsolutePath, "profiling-data"));
+        // Test takes recorded from the fake mic go to their own folder, and the user's takes aren't
+        // even looked at: DataFolder() would move a 0.2.0 install's takes out of private storage.
+        var paths = fakeMic is not null ? new DataPaths(System.IO.Path.Combine(GetExternalFilesDir(null)!.AbsolutePath, "profiling-data")) : DataFolder();
+#else
+        var paths = DataFolder();
 #endif
         var hint = FolderHint(paths);
         var services = new ServiceCollection().AddTimbratune();
