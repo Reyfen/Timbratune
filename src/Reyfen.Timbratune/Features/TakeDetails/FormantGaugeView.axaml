@@ -21,8 +21,8 @@
       </Grid>
       <c:ZoneBar Zones="{Binding Zones}" Value="{Binding Value}" Lo="{Binding Lo}" Hi="{Binding Hi}" />
       <Grid ColumnDefinitions="*,*">
-        <TextBlock Classes="cap" FontSize="11" Text="← deeper / larger tract" />
-        <TextBlock Grid.Column="1" Classes="cap" FontSize="11" HorizontalAlignment="Right" Text="brighter / smaller tract →" />
+        <TextBlock Classes="cap" FontSize="11" Text="{Binding LowCaption}" />
+        <TextBlock Grid.Column="1" Classes="cap" FontSize="11" HorizontalAlignment="Right" Text="{Binding HighCaption}" />
       </Grid>
     </StackPanel>
   </Button>

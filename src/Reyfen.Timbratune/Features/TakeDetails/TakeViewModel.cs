@@ -37,13 +37,15 @@ public sealed partial class TakeViewModel : ObservableObject
         StatCards = registry.Metrics.Where(m => m.Info.Card is not null)
             .Select(m => new StatCardViewModel(m.Info, !IsLive && m.Info.Compare is not null ? m.Id : null, openMetric, hint))
             .ToList();
-        F2 = Gauge(ResonanceModule.F2, "F2", "main brightness cue");
+        Size = Gauge(ResonanceModule.Size, "Perceived size", "main resonance cue", "← smaller / lighter", "larger / deeper →");
+        F2 = Gauge(ResonanceModule.F2, "F2", "brightness cue · depends on the words");
         F3 = Gauge(ResonanceModule.F3, "F3", "supports brightness");
         Positions = [new PositionBar("phrase starts"), new PositionBar("mid-phrase"), new PositionBar("phrase endings")];
         Update(r, detail, liveElapsed);
 
-        GaugeViewModel Gauge(MetricInfo metric, string name, string description) =>
-            new(name, description, metric, registry.Id(metric), openMetric, hint, !IsLive);
+        GaugeViewModel Gauge(MetricInfo metric, string name, string description,
+            string low = "← deeper / larger tract", string high = "brighter / smaller tract →") =>
+            new(name, description, metric, registry.Id(metric), openMetric, hint, !IsLive) { LowCaption = low, HighCaption = high };
     }
 
     /// <summary>Shows another state of the take (while recording: the take so far).</summary>
@@ -57,9 +59,10 @@ public sealed partial class TakeViewModel : ObservableObject
         foreach (var card in StatCards) card.Update(r);
 
         // ---- Resonance (ResonanceCard.tsx) ----
+        Size.Update(r);
         F2.Update(r);
         F3.Update(r);
-        var score = new[] { F2.Zone, F3.Zone }.Sum(z => z?.Name == "bright" ? 1 : z?.Name == "deeper" ? -1 : 0);
+        var score = new[] { Size.Zone, F2.Zone, F3.Zone }.Sum(z => z?.Name is "bright" or "smaller" ? 1 : z?.Name is "deeper" or "larger" ? -1 : 0);
         ResonanceSummary = score >= 1
             ? "✨ Your resonance **leans bright & light** — this is the cue that makes a voice read feminine beyond pitch. Lovely!"
             : score <= -1
@@ -67,6 +70,7 @@ public sealed partial class TakeViewModel : ObservableObject
                 : "💫 Your resonance sits in a **neutral** zone — nudging brightness up will help it read lighter.";
         F1Line = $"ℹ️ **F1 = {Fmt(r.Formants.F1Hz)} Hz.** This one mostly reflects which _vowel_ you're on " +
                  "(mouth openness), so it's not a reliable gender cue by itself — shown for completeness." +
+                 $"\n\n{Capitalized(ResonanceModule.CeilingNote(r))}." +
                  (r.Formants.UsablePct is < ResonanceModule.UnreliableFormantsBelowPct
                      ? $"\n\n⚠️ **Formants are shaky in this take:** only {Fmt(r.Formants.UsablePct)}% of the loud, voiced moments " +
                        "gave a usable reading. Background noise, hiss or a very close mic can cause this — try a quieter room " +
@@ -147,6 +151,8 @@ public sealed partial class TakeViewModel : ObservableObject
     public bool HasWhen => When.Length > 0;
 
     /// <summary>"08-Oct-26 · 14:03": the take's date and time in the device's formats, or just its date for takes without a time.</summary>
+    private static string Capitalized(string s) => s.Length == 0 ? s : char.ToUpperInvariant(s[0]) + s[1..];
+
     public static string WhenText(Recording r)
     {
         var culture = System.Globalization.CultureInfo.CurrentCulture;
@@ -160,6 +166,7 @@ public sealed partial class TakeViewModel : ObservableObject
     }
     public IReadOnlyList<StatCardViewModel> StatCards { get; }
 
+    public GaugeViewModel Size { get; }
     public GaugeViewModel F2 { get; }
     public GaugeViewModel F3 { get; }
     [ObservableProperty] private string _resonanceSummary = "";
@@ -260,7 +267,10 @@ public sealed partial class GaugeViewModel(
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ValueText), nameof(Zone))]
     private double? _value;
-    public string ValueText => Fmt(Value, " Hz");
+    public string ValueText => Fmt(Value, " " + metric.Unit);
+    /// <summary>The captions under the bar's low and high ends.</summary>
+    public string LowCaption { get; init; } = "← deeper / larger tract";
+    public string HighCaption { get; init; } = "brighter / smaller tract →";
     public IReadOnlyList<Zone> Zones { get; } = metric.Zones ?? [];
     public Zone? Zone => Zones.Count == 0 ? null : ZoneOf(Zones, Value);
     public double Lo { get; } = metric.Lo;

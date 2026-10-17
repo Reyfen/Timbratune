@@ -730,6 +730,7 @@ The files to read first when changing each part. Before the refactoring, these w
 - **Analysis** (`src/Reyfen.Timbratune.Core/Analysis/`):
   - `AcousticsAnalysisEngine.cs` (full analysis), `LiveAnalyzer.cs` (live), `IAnalysisScheduler.cs` / `LiveWorker.cs` (where they run).
   - `Tracks/{TrackSet,TrackView,SavedTrackProvider,LiveTrackProvider}.cs`: the shared measurements.
+  - `Ceilings/{FormantCeilings,CeilingPathFinder,CeilingPath}.cs` (v0.4.0, RESONANCE-PLAN): the formant ceiling that follows the voice, a stage-2 track (`TrackSet.FormantPath`).
   - `Metrics/{IMetricModule,MetricInfo,MetricRegistry}.cs` and one folder per module.
   - `RawAnalysisAssembler.cs`, `AnalysisPostProcessor.cs` (phrases, trends), `FrameSeriesBuilder.cs`, `RawAnalysis.cs`.
 - **Domain, models and saved files** (`src/Reyfen.Timbratune.Core/`): `Domain/{Zones,SmoothingSpec,ChartPoints}.cs`, `Models/{Recording,RecordingDetail,TakeSeries}.cs`, `Json/MetricColumnsJson.cs` (the compatibility layer for the trend and phrase columns).

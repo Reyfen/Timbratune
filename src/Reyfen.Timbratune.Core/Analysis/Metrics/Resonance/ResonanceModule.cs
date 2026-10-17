@@ -23,7 +23,6 @@ public sealed class ResonanceModule : IMetricModule
     {
         Name = "f1", Title = "Resonance (F1)", Unit = "Hz",
         Take = r => r.Formants.F1Hz,
-        Card = new(CeilingNote),
     };
 
     /// <summary>
@@ -69,8 +68,8 @@ public sealed class ResonanceModule : IMetricModule
 
     private static readonly IReadOnlyList<MetricInfo> All = MetricInfo.Numbered(F1, Size, F2, F3);
 
-    /// <summary>The line under F1: which formant ceiling(s) the take was measured with.</summary>
-    internal static string CeilingNote(Recording r)
+    /// <summary>Which formant ceiling(s) the take was measured with (the take page's resonance section).</summary>
+    public static string CeilingNote(Recording r)
     {
         var f = r.Formants;
         if (f.Method != Formants.PathMethod || f.CeilingHz is not { } main) return "measured at a fixed 5500/5000 Hz formant ceiling (before v0.4.0)";

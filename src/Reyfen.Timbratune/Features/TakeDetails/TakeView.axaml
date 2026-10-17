@@ -55,7 +55,8 @@
       </WrapPanel>
       <Border Classes="card">
         <StackPanel Spacing="12">
-          <TextBlock Classes="body" c:Markup.Text="Formants are your voice's **brightness / vocal-tract size**. Think of pitch as _which note_ you sing, and resonance as _the size of the room_ it echoes in. Higher = a smaller, brighter, lighter space (reads feminine). Measured as the **median over your vowel nuclei** (the loud, steady cores of syllables) — not every frame — so consonants and glides don't muddy it." />
+          <TextBlock Classes="body" c:Markup.Text="Formants are your voice's **brightness / vocal-tract size**. Think of pitch as _which note_ you sing, and resonance as _the size of the room_ it echoes in. Higher formants = a smaller, brighter, lighter space (reads feminine); **perceived size** turns the spacing of F3 and F4 into the size that space sounds. Measured as the **median over your vowel nuclei** (the loud, steady cores of syllables) — not every frame — so consonants and glides don't muddy it." />
+          <td:FormantGaugeView DataContext="{Binding Size}" />
           <td:FormantGaugeView DataContext="{Binding F2}" />
           <td:FormantGaugeView DataContext="{Binding F3}" />
           <Border Classes="tip">
