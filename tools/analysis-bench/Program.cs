@@ -10,6 +10,7 @@
 // pool threads too, which a per-thread count would miss. Results are hashed (SHA-256 of the
 // JSON the store would write) so a run on other code also shows whether the numbers moved.
 // Without a WAV it builds the ~27.6 s take of scripts/make-long-wav.ps1 from the fixtures.
+// -probes: also the time of each Timing probe (analysis.*, live.*) per run, summed over its calls.
 using Reyfen.Timbratune.Core.Analysis.Metrics;
 using Reyfen.Timbratune.Core.Analysis.Metrics.Clarity;
 using Reyfen.Timbratune.Core.Analysis.Metrics.Loudness;
@@ -27,6 +28,7 @@ using Reyfen.Timbratune.Acoustics;
 using Reyfen.Timbratune.Acoustics.Numerics;
 using Reyfen.Timbratune.Core.Analysis;
 using Reyfen.Timbratune.Core.Audio;
+using Reyfen.Timbratune.Core.Diagnostics;
 using Reyfen.Timbratune.Core.Json;
 using Reyfen.Timbratune.Features.LiveMonitor;
 
@@ -36,6 +38,7 @@ CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
 string? wavArg = null, outPath = null, baselinePath = null;
 var runs = 10;
 var types = false;
+var probes = false;
 for (var i = 0; i < args.Length; i++)
 {
     switch (args[i])
@@ -44,6 +47,7 @@ for (var i = 0; i < args.Length; i++)
         case "-out": outPath = args[++i]; break;
         case "-baseline": baselinePath = args[++i]; break;
         case "-types": types = true; break;
+        case "-probes": probes = true; break;
         default: wavArg = args[i]; break;
     }
 }
@@ -73,6 +77,8 @@ var liveAlloc = new List<double>();
 var computeTotal = new List<double>();
 var computeAlloc = new List<double>();
 string? savedHash = null, liveHash = null;
+var probeTotals = new System.Collections.Concurrent.ConcurrentDictionary<string, double>();
+if (probes) Timing.Sink = (name, value) => { if (!name.StartsWith("alloc.", StringComparison.Ordinal)) probeTotals.AddOrUpdate(name, value, (_, v) => v + value); };
 
 for (var run = 0; run <= runs; run++)
 {
@@ -90,7 +96,11 @@ for (var run = 0; run <= runs; run++)
 
     // Live, on its own thread like LiveWorker.
     var live = RunLive(mono, fs);
-    if (warmUp) continue;
+    if (warmUp)
+    {
+        probeTotals.Clear();
+        continue;
+    }
     full.Add(sw.Elapsed.TotalMilliseconds);
     fullAlloc.Add((a1 - a0) / 1e6);
     lightTicks.AddRange(live.Light);
@@ -125,12 +135,22 @@ Row("full analysis (ms)", full);
 Row("full analysis alloc (MB)", fullAlloc);
 Row("live update, quick (ms/tick)", lightTicks);
 Row("live update, full (ms/tick)", fullTicks);
+Console.WriteLine($"{"live update, p95 (ms/tick)",-30} {Percentile([.. lightTicks, .. fullTicks], 0.95),10:0.###}");
 Row("live updates, whole take (ms)", liveTotal);
 Row("live alloc (MB/s of audio)", liveAlloc);
 Row("live.compute, whole take (ms)", computeTotal);
 Row("live.compute alloc (MB/s)", computeAlloc);
 Console.WriteLine($"saved results hash {savedHash}");
 Console.WriteLine($"live results hash  {liveHash}");
+
+if (probes)
+{
+    Console.WriteLine();
+    Console.WriteLine("probe (ms per run, summed over its calls)");
+    foreach (var (name, total) in probeTotals.OrderBy(p => p.Key, StringComparer.Ordinal))
+        Console.WriteLine($"  {name,-34} {total / runs,10:0.0}");
+    Timing.Sink = null;
+}
 
 if (types) AllocationsByType(mono, fs);
 
@@ -264,6 +284,13 @@ static double Median(List<double> xs)
     var s = xs.Order().ToArray();
     var m = s.Length % 2 == 1 ? s[s.Length / 2] : 0.5 * (s[s.Length / 2 - 1] + s[s.Length / 2]);
     return Math.Round(m, 3);
+}
+
+static double Percentile(List<double> xs, double p)
+{
+    if (xs.Count == 0) return 0;
+    var sorted = xs.OrderBy(x => x).ToList();
+    return sorted[Math.Min(sorted.Count - 1, (int)Math.Ceiling(p * sorted.Count) - 1)];
 }
 
 static void Row(string name, List<double> xs) =>

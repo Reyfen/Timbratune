@@ -6,7 +6,10 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using Reyfen.Timbratune.Acoustics;
+using Reyfen.Timbratune.Acoustics.Streaming;
 using Reyfen.Timbratune.Core.Analysis;
+using Reyfen.Timbratune.Core.Analysis.Ceilings;
+using Reyfen.Timbratune.Core.Analysis.Tracks;
 using Reyfen.Timbratune.Core.Models;
 using Xunit.Abstractions;
 
@@ -61,8 +64,7 @@ public sealed class LiveAnalysisTests(ITestOutputHelper output)
         var samples = Samples(clip);
         var (snapshot, savedLength, updates, time) = Record(samples);
         Assert.InRange(samples.Length - savedLength, 0, 441); // at most 10 ms trimmed
-        var saved = AnalysisPostProcessor.Process(AcousticsAnalysisEngine.Measure(new Sound(samples[..savedLength], 44100),
-            formantMethod: Reyfen.Timbratune.Core.Analysis.Ceilings.FormantCeilingMethod.Legacy));
+        var saved = AnalysisPostProcessor.Process(AcousticsAnalysisEngine.Measure(new Sound(samples[..savedLength], 44100)));
         Assert.NotNull(snapshot.Result);
         var live = snapshot.Result!;
         var e = saved.Metrics;
@@ -95,14 +97,15 @@ public sealed class LiveAnalysisTests(ITestOutputHelper output)
             ("register.offset_sub_pct", e.Register?.OffsetSubPct, a.Register?.OffsetSubPct, 1),
             ("register.phrases_landed_pct", e.Register?.PhrasesLandedPct, a.Register?.PhrasesLandedPct, Exact),
             ("register.n_phrases", e.Register?.NPhrases, a.Register?.NPhrases, Exact),
-            // Formants come from stitched live segments rather than one pass over the file, and
-            // are read between frames at the voiced-frame times. Measured worst cases 11 Hz (F3,
-            // 0.4%) and 0.32 dB weight, and 23 Hz for F2 of vctk_f339, whose F2 median moves 65 Hz
-            // with the loudness gate alone (the percentile gate admits more frames) — still inside
-            // the zones (F2's neutral band is 80 Hz wide).
+            // Formants come from stitched live segments rather than one pass over the file: the
+            // frames fall at the same times (a shared grid), but each live block is resampled on
+            // its own, so their values differ a little. With the ceiling path the same on both
+            // sides, measured worst cases: F1 2.7 Hz, F2 6.8 Hz, F3 7.6 Hz, and 31.5 Hz for F3 of
+            // vctk_f339 (the research build gives the same 3007 vs 3038 Hz), weight 0.34 dB.
             ("formants.f1_hz", e.Formants.F1Hz, a.Formants.F1Hz, 15),
             ("formants.f2_hz", e.Formants.F2Hz, a.Formants.F2Hz, 25),
-            ("formants.f3_hz", e.Formants.F3Hz, a.Formants.F3Hz, 15),
+            ("formants.f3_hz", e.Formants.F3Hz, a.Formants.F3Hz, 35),
+            ("formants.ceiling_hz", e.Formants.CeilingHz, a.Formants.CeilingHz, Exact),
             ("weight.h1a3c_db", e.Weight?.H1a3cDb, a.Weight?.H1a3cDb, 0.4),
             ("weight.tilt_db_khz", e.Weight?.TiltDbKhz, a.Weight?.TiltDbKhz, Exact),
         };
@@ -146,6 +149,47 @@ public sealed class LiveAnalysisTests(ITestOutputHelper output)
         }
         Assert.NotNull(previous?.Result);
         Assert.True(previous!.Series[LoudnessModule.Loudness].Count > 0 && previous.Series[ResonanceModule.F2].Count > 0 && previous.Series[WeightModule.Weight].Count > 0);
+    }
+
+    [Fact]
+    public void LiveAndSavedChangeCeilingAtTheSameMoment()
+    {
+        // A man (VCTK m311, 4500 Hz throughout) then a woman (f294, mostly 5500 Hz), no gap.
+        double[] samples = [.. Samples("vctk_m311"), .. Samples("vctk_f294")];
+        var manEnds = Samples("vctk_m311").Length / 44100.0;
+        var provider = new LiveTrackProvider(44100);
+        var signal = new LiveSignal(44100);
+        var rng = new Random(7);
+        var next = 4410;
+        for (var i = 0; i < samples.Length;)
+        {
+            var n = Math.Min(rng.Next(200, 1500), samples.Length - i);
+            signal.Append(samples.AsSpan(i, n));
+            i += n;
+            if (i < next) continue;
+            provider.Update(signal.View(), TrackSet.Live, final: false);
+            next += 4410;
+        }
+        var length = provider.AlignedLength(signal.Count, 44100);
+        var live = provider.Update(signal.View(length), TrackSet.All, final: true)!.Value;
+        var saved = SavedTrackProvider.Measure(new Sound(samples[..length], 44100));
+
+        string Describe(CeilingPath p) => string.Join(", ", Enumerable.Range(0, p.SegmentCount)
+            .Select(k => $"{FormantCeilings.PathCandidates[p.SegmentCeiling(k)]} from {p.SegmentStart(k):0.00}"));
+        output.WriteLine($"saved: {Describe(saved.CeilingPath!)}");
+        output.WriteLine($"live:  {Describe(live.CeilingPath!)}");
+
+        // Either side of the change of voice, the same ceilings, and the change at the same moment.
+        foreach (var t in new[] { manEnds - 2, manEnds - 0.5, manEnds + 0.5, manEnds + 2 })
+            Assert.Equal(saved.CeilingPath!.At(t), live.CeilingPath!.At(t));
+        Assert.True(saved.CeilingPath!.At(manEnds + 2) > saved.CeilingPath.At(manEnds - 2), "no change of ceiling at the change of voice");
+        double ChangeNear(CeilingPath p)
+        {
+            for (var k = 1; k < p.SegmentCount; k++)
+                if (Math.Abs(p.SegmentStart(k) - manEnds) < 1.5) return p.SegmentStart(k);
+            return double.NaN;
+        }
+        Assert.Equal(ChangeNear(saved.CeilingPath), ChangeNear(live.CeilingPath), 0.1);
     }
 
     [Fact]
