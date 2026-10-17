@@ -34,7 +34,9 @@ jobs:
 
       - name: Select Xcode
         run: |
-          xcode="$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
+          # The newest release: the ios workload follows Xcode (workload 27.x needs Xcode 27).
+          ls -d /Applications/Xcode_*.app
+          xcode="$(ls -d /Applications/Xcode_*.app | grep -viE 'beta|rc' | sort -V | tail -1)"
           sudo xcode-select -s "$xcode/Contents/Developer"
           xcodebuild -version
 
@@ -56,7 +58,9 @@ jobs:
           fi
           keychain="$RUNNER_TEMP/signing.keychain-db"
           keychain_password="$(uuidgen)"
-          echo "$P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          # Base64 with or without line breaks or certutil's -----BEGIN/END----- lines.
+          unbase64() { printf '%s' "$1" | grep -v -- '-----' | tr -d ' \r\n' | base64 --decode; }
+          unbase64 "$P12" > "$RUNNER_TEMP/cert.p12"
           security create-keychain -p "$keychain_password" "$keychain"
           security set-keychain-settings -lut 21600 "$keychain"
           security unlock-keychain -p "$keychain_password" "$keychain"
@@ -65,7 +69,7 @@ jobs:
           security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
           rm "$RUNNER_TEMP/cert.p12"
 
-          echo "$PROFILE" | base64 --decode > "$RUNNER_TEMP/profile.mobileprovision"
+          unbase64 "$PROFILE" > "$RUNNER_TEMP/profile.mobileprovision"
           uuid="$(security cms -D -i "$RUNNER_TEMP/profile.mobileprovision" | plutil -extract UUID raw -)"
           for dir in "$HOME/Library/MobileDevice/Provisioning Profiles" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
             mkdir -p "$dir"
