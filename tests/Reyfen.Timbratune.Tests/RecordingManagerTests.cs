@@ -73,12 +73,12 @@ public sealed class RecordingManagerTests(ITestOutputHelper output) : IDisposabl
         Assert.Equal(1, ended);
         Assert.Equal(1, recordingStarted);
         Assert.False(manager.IsLive);
-        // Never more than one update per 100 ms tick of the whole recording (plus the final one).
+        // Never more than one update per 200 ms tick of the whole recording (plus the final one).
         // Fewer when the machine is busy (e.g. the other test assemblies running in parallel): a slow
-        // update makes the next one wait for the next tick, by design. Alone it is about 100–103 for
-        // the ~10.2 s recorded; a Debug build measuring five formant ceilings (v0.4.0) while the other
-        // assemblies ran got 17, so the floor is one per second: what matters is that they keep coming.
-        Assert.InRange(snapshots, (int)seconds, (int)(recorded * 10) + 2);
+        // update makes the next one wait for the next tick, by design. Alone a Debug build gets about 25 for the
+        // ~10.2 s recorded (the cap is about 50); while the other
+        // assemblies run it gets far fewer, so the floor is one per 2 s: what matters is that they keep coming.
+        Assert.InRange(snapshots, (int)(seconds / 2), (int)(recorded * 5) + 2);
         // Full updates (with the whole take's statistics) at most about once a second, and the final one.
         Assert.InRange(results, 3, (int)seconds + 3);
         Assert.Equal(0, offWorker); // raised on the analysis threads

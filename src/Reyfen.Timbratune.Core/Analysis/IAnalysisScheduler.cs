@@ -9,7 +9,7 @@ public interface IAnalysisScheduler
 {
     /// <summary>
     /// Cores the live analysis may use: &gt; 0 = on one dedicated, lower-priority thread with its
-    /// loops limited to that many cores (updates then start at most every 100 ms); 0 = all cores,
+    /// loops limited to that many cores (updates then start at most every 200 ms); 0 = all cores,
     /// on thread-pool threads at normal priority.
     /// </summary>
     int LiveCores { get; }

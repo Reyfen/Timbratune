@@ -20,8 +20,13 @@ namespace Reyfen.Timbratune.Features.Record;
 /// </summary>
 public sealed class RecordingManager : ILiveSession
 {
-    /// <summary>One update starts at most this often, on the analysis thread.</summary>
-    private static readonly TimeSpan Tick = TimeSpan.FromMilliseconds(100);
+    /// <summary>
+    /// One update starts at most this often, on the analysis thread. 200 ms (it was 100): the
+    /// lines glide between updates anyway, and each update costs the analysis' per-update work
+    /// (paths, series, the graphs' data) and a redraw of every visible chart (HANDOFF §8u).
+    /// Profiling builds' "tick100" switch restores 100 ms.
+    /// </summary>
+    private static TimeSpan Tick => TimeSpan.FromMilliseconds(Perf.Flags.Contains("tick100") ? 100 : 200);
 
     /// <summary>How often a full update (whole-take statistics, for the live take's cards) runs.</summary>
     private static readonly TimeSpan FullInterval = TimeSpan.FromSeconds(1);
@@ -98,7 +103,7 @@ public sealed class RecordingManager : ILiveSession
 
     /// <summary>
     /// The live updates. They run on the scheduler's live thread (one low-priority thread with its
-    /// loops limited to a few cores on the native heads), starting at most once per 100 ms tick, so
+    /// loops limited to a few cores on the native heads), starting at most once per tick (200 ms), so
     /// the UI and the renderer always have CPU left: running them back to back on every core made a
     /// Pixel 9 drop frames while recording (51 → 54.6 fps, frames over 50 ms 21 → 9 per 30 s).
     /// After a slow update the next one waits for the next tick, as with the UI timer this replaced.
@@ -122,7 +127,8 @@ public sealed class RecordingManager : ILiveSession
                 // Experiment (profiling builds): "liveslow" updates at most every 500 ms.
                 if (Perf.Flags.Contains("liveslow") && lastStart != 0 && Stopwatch.GetElapsedTime(lastStart).TotalMilliseconds < 500) continue;
                 lastStart = now;
-                var full = !hadResult || Stopwatch.GetElapsedTime(lastFull) >= FullInterval;
+                // Half a tick of slack: ticks come a little early or late, and a full update one tick late is 20 % late.
+                var full = !hadResult || Stopwatch.GetElapsedTime(lastFull) >= FullInterval - Tick / 2;
                 if (full) lastFull = now;
                 try
                 {

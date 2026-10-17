@@ -55,7 +55,7 @@ public sealed partial class LiveMonitorViewModel : ObservableObject
     {
         _windowSeconds = value?.Seconds;
         _settings.Set(LiveMonitorSettings.WindowSeconds, value?.Seconds ?? 0);
-        // While recording the next update (≤ 100 ms) applies it: the snapshot's series lists are
+        // While recording the next update (≤ 200 ms) applies it: the snapshot's series lists are
         // refilled by the live analysis and are only read on its thread.
         if (_session.IsRecording) return;
         if (_session.Latest is { } snapshot && Timelines is { } timelines)
