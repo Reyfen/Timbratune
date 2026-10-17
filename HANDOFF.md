@@ -1415,7 +1415,7 @@ Against v0.3.0 the cost fell from −4.3 to −1.6 fps, from +2.2 to +1.0 points
 
 ## 8u. v0.4.0: cutting the live cost, measured (2026-10-17)
 
-The owner asked for options 1–6 of §8t's list, then a check of the accuracy and how visible the change is, on the Pixel 4a first (the Pixel 9 later, before and after). What stays:
+The owner asked for options 1–6 of §8t's list, then a check of the accuracy and how visible the change is, on the Pixel 4a and then the Pixel 9. What stays:
 
 - **Live analysis on one core** (`04d7f16`): `NativeAnalysisScheduler.DefaultLiveCores` = 1 (was 2, chosen on the Pixel 9 in §8d). The results are bit-identical: `analysis-bench` gives the same live and saved hashes on 1 and 2 cores.
 - **Charts in layers, a cheaper pitch contour** (`ef4e59e`): `Controls/ChartLayer.cs` (`ChartLayer`, `LayeredChart`). `TimelineChart` is a background layer (zone bands, axis labels) and a line layer; `ContourChart` is a background (bands, floor line, pitch axis), the contour (phrase dividers, runs, phrase dots, the current point) and a top layer (the floor label's plate, time axis, legend). `LineEasing` takes a `redraw` action, so a glide only redraws the line's layer and the compositor keeps the others. The contour layer allocates nothing per frame but the line's geometry (cached pens and brushes), and the phrase dots' tooltips are written on hover only. A saved take's chart is pixel-identical to `00ae467`'s (desktop screenshots of the same take: 0 of 1,141,824 pixels differ).
@@ -1446,7 +1446,23 @@ Against §8t's switches: one core alone was 41.3 s, so the chart layers and the 
 
 **Tools:** `analysis-bench -cores N -tick MS` and the live replay's process CPU; `live-steadiness -tick MS` and the shown error; `phone-bench` `'>40ms%'` (the late frames of content drawn at 30 fps, where every frame is over the 25 ms "janky" line). In the earlier runs of this round `janky%` read 72–75 % for the paced build for that reason.
 
-**Next:** the same A/B on the Pixel 9 (Android 17, 60 Hz; coordinates in `tools/phone-bench/README.md`). §8d chose two cores there, so check that one core doesn't drop frames on it before keeping 1 for every head.
+**Pixel 9, the same A/B** (the same two APKs, coordinates 259,674 / 332,560, 6 alternating pairs, battery 22 %):
+
+| Median of 6 | before | after |
+|---|---|---|
+| App CPU while recording | 55.6 s | **41.7 s** (−25 %) |
+| UI thread / render threads | 11.6 / 11.9 s | 9.7 / 12.2 s |
+| Live analysis thread / thread pool | 8.4 / 20.8 s | 11.7 / 5.4 s |
+| Device busy (8 cores) | 38.6 % | 32.8 % |
+| Frames over 25 ms | 3.05 % | 2.71 % (p 0.08) |
+| Frames over 40 ms | 1.86 % | 1.87 % |
+| fps over the recording | 39.6 | 39.6 |
+| UI stalls | 2.5 | 3 |
+| Live updates / median update | 250 / 36 ms | 254 / 27 ms |
+| Full update (median) | 48 ms | 39 ms |
+| Stop to saved | 2.56 s | 2.65 s (p 0.18) |
+
+One core doesn't cost the Pixel 9 frames (§8d's reason for two): its frames are unchanged, and its updates are even faster on one core than on two (no hand-offs between threads), so it keeps every update. One core stays the default for every head.
 
 ## 8. Current state, at the time of writing
 
