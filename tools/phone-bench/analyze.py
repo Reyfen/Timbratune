@@ -119,4 +119,5 @@ def main():
             print(f'{k}: {pair[0]} {statistics.median(a):.2f} vs {pair[1]} {statistics.median(b):.2f}, shuffle p = {shuffle_p(a, b):.3f}')
 
 
-main()
+if __name__ == '__main__':
+    main()

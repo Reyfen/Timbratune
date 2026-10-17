@@ -1393,6 +1393,26 @@ Against v0.3.0 the cost fell from −4.3 to −1.6 fps, from +2.2 to +1.0 points
 - Analyse the candidates' frames only around voiced moments in the saved analysis (the others are never read): exact, about 10 % of the saved analysis, at the cost of moving Burg after pitch.
 - Larger live blocks (fewer transforms per second; resonance and size dots arrive later), or spreading a block's ceilings over two updates (lower peaks, same work).
 
+**Where the time goes in v0.4.0 (Pixel 4a, while recording)** — `7c5f4df` + the profiling switch `nocharts` (`f69b3fd`), Release profiling build, research app id, 28 s fake-mic recordings of `long.wav`, battery 17–18 %. Measured with `tools/phone-bench/flags.sh` (one build, experiment switches in rotating order, 4 rounds each), `threads.py` (CPU time of every app thread between the record and stop taps, plus the process total for thread-pool workers that ended meanwhile; `/proc`, clock ticks) and `probes.py` (the PERF probes summed per recording).
+
+| CPU seconds per 28 s recording (median of 4) | as shipped | charts still (`nocharts`) | charts without glide (`noease`) | live analysis on 1 core (`lowprio1`) |
+|---|---|---|---|---|
+| UI thread | 11.2 | 4.0 | 5.4 | 10.0 |
+| Render threads (Avalonia compositor, Android HWUI) | 9.4 | 0.5 | 2.0 | 8.2 |
+| Live analysis thread | 8.1 | 8.8 | 8.5 | 17.6 |
+| Thread pool (the analysis' parallel parts) | 19.6 | 19.8 | 19.6 | 3.8 |
+| Garbage collection, other | 1.7 | 0.5 | 0.9 | 1.7 |
+| **App total** | **50.0** (1.8 cores) | 33.8 | 36.4 | 41.3 |
+| Device busy (8 cores) | 28 % | 17 % | 20 % | 24 % |
+
+(The frame rates of `nocharts` and `noease` say nothing: a still screen presents few frames. `lowprio1` vs shipped, 4 pairs: janky 11.5 → 6.5 %, p 0.057; fps 49.9 → 47.9; UI stalls 23.5 → 11.5; live updates 213 → 197; full update median 63 → 80 ms.)
+
+**Shares of the app's 50 s:**
+- **The analysis: 27.7 s (55 %).** The live thread 8.1 s plus 19.6 s on the thread pool. On one core the same work takes 21.3 s, so about 6 s is the cost of splitting it over two cores (the joins wait busily, and the parts start and finish on other threads). By probe (wall time of the 2-core work): formants 4.8 s, HNR 4.2, pitch 1.8, pitch path 1.2, HNR path 0.9, pulses 0.7, series 0.5, contour 0.2, the full updates' assembly 0.3; the graphs' data (`live.compute`, also on the analysis thread) 1.5 s.
+- **Drawing the graphs: 17.3 s (35 %)** (shipped minus `nocharts`: UI 7.2, render 8.9, the rest 1.2). **14.0 s of it is the glide** (shipped minus `noease`): after every live update (≈ 7 a second) each visible chart eases to the new line for 0.25 s and is redrawn every frame meanwhile, so while recording the charts redraw at the full frame rate. Without the glide the charts cost 3.3 s. On the UI thread the pitch contour chart is 3.7 s of the 5.4 s of chart `Render` calls, the timelines 1.6 s (each draws at most a point per 0.75 px already).
+- **All other UI: about 5 s (10 %)** (`nocharts`: UI 4.0, render 0.5, other 0.5): the page, the clock, the live take cards (0.15 s), and the profiling build's own stall watch (it wakes the UI thread every 16 ms).
+- **Windows** has CPU to spare (24 cores): the analysis is 2,978 ms per 27.6 s take on 2 cores and the graphs' data 312 ms (`analysis-bench`); the desktop build has no probe sink for drawing, so drawing wasn't split out there.
+
 ## 8. Current state, at the time of writing
 
 **Branches (2026-10-10):** the user renamed them on GitHub: `dev` became `main` (everything up to `bc1ce48`, tagged `v0.1.0`), and `v0.2.0` became `dev/v0.2.0` (§8d–§8h, up to `8e88ea6`; not merged into `main` yet). The local branches were renamed to match and track `origin/main` and `origin/dev/v0.2.0`. The old `v0.2.0` branch name clashed with a `v0.2.0` tag; `dev/…` names can't coexist with a branch called `dev`. Commit `9c752e6`'s subject starts with a stray UTF-8 BOM from PowerShell 5.1's `Out-File`; write commit messages without a BOM.

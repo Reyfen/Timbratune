@@ -19,6 +19,10 @@ threads() {
   pid=$(a shell pidof "$pkg" | tr -d '\r')
   a shell "for t in /proc/$pid/task/*; do echo \"\${t##*/} \$(cut -d' ' -f14,15 \$t/stat) \$(cat \$t/comm)\"; done" | tr -d '\r' > "$1"
   echo "pid $pid" >> "$1"
+  # The whole process, including threads that have ended since (the thread pool's).
+  local stat
+  stat=$(a shell "cut -d' ' -f14,15 /proc/$pid/stat" | tr -d '\r')
+  echo "process $stat" >> "$1"
 }
 
 a shell am force-stop "$pkg"
