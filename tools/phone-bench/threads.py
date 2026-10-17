@@ -100,7 +100,7 @@ def main():
         r = analyze.run(folder, l)
         if r:
             frames.setdefault(l.rsplit('-', 1)[0], []).append(r)
-    for k in ('fps', 'janky%', '>50ms', 'updates', 'upd med ms', 'stalls'):
+    for k in ('fps', 'janky%', '>40ms%', '>50ms', 'updates', 'upd med ms', 'stalls'):
         print(f"{k:46s}" + ''.join(f"{statistics.median(r[k] for r in frames.get(n, [{k: float('nan')}])):11.2f}" for n in names))
 
 

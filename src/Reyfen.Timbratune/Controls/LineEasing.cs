@@ -80,8 +80,11 @@ public sealed class LineEasing(Control owner, Action? redraw = null)
     /// charts' cost while recording (HANDOFF §8t), and the eye hardly tells the two apart in a
     /// 0.25 s ease. All lines share one clock, so they redraw on the same frames (frames between
     /// them stay free). A frame callback's time is the same for every callback of that frame.
+    /// The minimum gap is 24 ms, between one and two 60 Hz frames: frame times jitter by a few
+    /// ms, and at 30 ms a two-frame gap sometimes measured short, so a third frame was skipped
+    /// too (10 % of the Pixel 4a's frames came 50 ms apart, HANDOFF §8u).
     /// </summary>
-    private static readonly TimeSpan MinFrameInterval = TimeSpan.FromMilliseconds(30);
+    private static readonly TimeSpan MinFrameInterval = TimeSpan.FromMilliseconds(24);
     private static TimeSpan? s_drawnAt;
 
     // Experiment (profiling builds): "ease60" redraws on every frame, as before.

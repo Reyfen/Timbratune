@@ -1,9 +1,11 @@
-// Streams a WAV through LiveAnalyzer in 100 ms ticks (as the app does) and reports, per
-// live graph, how steady and how accurate its current dot is:
+// Streams a WAV through LiveAnalyzer in ticks (-tick MS, default 200 ms as the app does) and
+// reports, per live graph, how steady and how accurate its current dot is:
 //   dot step    — mean |change of the dot| between ticks
 //   tail change — mean |revision| of the last 1 s of the line between ticks
 //   dot error   — mean |dot − final line at the same time| (final = after the last tick;
 //                 for pitch, the exact final contour)
+//   shown error — what the screen shows between ticks: every 50 ms of audio, |the newest
+//                 dot − the final line at that moment| (stale dots between updates count)
 // all as % of the graph's range. "baseline" = the smoothing without prediction (newest
 // value held); "app" = the settings the app uses (LiveTimelinesViewModel).
 //
@@ -25,14 +27,21 @@ using System.Globalization;
 
 if (args.Length < 1)
 {
-    Console.Error.WriteLine("usage: dotnet run -c Release -- take.wav [formantBlockSeconds]");
+    Console.Error.WriteLine("usage: dotnet run -c Release -- take.wav [formantBlockSeconds] [-tick MS]");
     return 2;
 }
 Reyfen.Timbratune.Acoustics.Sound sound;
 using (var f = File.OpenRead(args[0])) sound = Reyfen.Timbratune.Acoustics.WavDecoder.Decode(f);
 var fs = sound.SamplingFrequency;
 var mono = sound.ToMono().ToArray();
-var block = args.Length > 1 ? double.Parse(args[1], CultureInfo.InvariantCulture) : LiveAnalyzer.DefaultFormantBlockSeconds;
+var tickMs = 200;
+var rest = args.Skip(1).ToList();
+if (rest.IndexOf("-tick") is var ti and >= 0)
+{
+    tickMs = int.Parse(rest[ti + 1], CultureInfo.InvariantCulture);
+    rest.RemoveRange(ti, 2);
+}
+var block = rest.Count > 0 ? double.Parse(rest[0], CultureInfo.InvariantCulture) : LiveAnalyzer.DefaultFormantBlockSeconds;
 var live = new LiveAnalyzer(fs, formantBlockSeconds: block);
 
 // As LiveTimelinesViewModel.Compute: the contour of a quick update, else the result's detail.
@@ -77,10 +86,18 @@ for (var m = 0; m < metrics.Length; m++)
 var mismatches = 0;
 var sw = System.Diagnostics.Stopwatch.StartNew();
 LiveSnapshot final = LiveSnapshot.Empty;
-var step = (int)(fs / 10);
+var step = (int)Math.Round(fs * tickMs / 1000);
+var sample = (int)Math.Round(fs * 0.05);
+var shownDots = new TimedValue?[metrics.Length]; // the newest dot of the last tick's "app" line
+var shown = new List<(double T, double? Dot)>[metrics.Length];
+for (var m = 0; m < metrics.Length; m++) shown[m] = [];
 for (var i = 0; i < mono.Length; i += step)
 {
-    live.Append(mono.AsSpan(i, Math.Min(step, mono.Length - i)));
+    var n = Math.Min(step, mono.Length - i);
+    // Between ticks the screen keeps the last tick's dots: sample them every 50 ms of audio.
+    for (var k = sample; k <= n; k += sample)
+        for (var m = 0; m < metrics.Length; m++) shown[m].Add(((i + k) / fs, shownDots[m] is { } dot && (i + k) / fs - dot.T <= 0.3 + tickMs / 1000.0 ? dot.Value : null));
+    live.Append(mono.AsSpan(i, n));
     var tick = live.Update();
     final = tick;
     var frame = LiveTimelinesViewModel.Compute(tick, lines);
@@ -93,13 +110,14 @@ for (var i = 0; i < mono.Length; i += step)
             var line = Line(points, spec, tick, metrics[m].Line < 0);
             if (spec == metrics[m].Spec && !Same(line, metrics[m].Line < 0 ? frame.PitchLine : frame.Lines[metrics[m].Line])) mismatches++;
             stats[m, v].Add(line, tick.Elapsed);
+            if (spec == metrics[m].Spec) shownDots[m] = Stat.LastDot(line);
         }
     }
 }
-Console.WriteLine($"formant block {block} s: {sw.Elapsed.TotalSeconds:0.00} s of updates for {mono.Length / fs:0.0} s of audio");
+Console.WriteLine($"formant block {block} s, tick {tickMs} ms: {sw.Elapsed.TotalSeconds:0.00} s of updates for {mono.Length / fs:0.0} s of audio");
 if (mismatches > 0) Console.WriteLine($"WARNING: {mismatches} 'app' lines differ from LiveTimelinesViewModel.Compute; the tool no longer measures what the app draws");
 
-Console.WriteLine("metric    variant     dot step  tail change  dot error   (% of range)");
+Console.WriteLine("metric    variant     dot step  tail change  dot error  shown error  (% of range)");
 for (var m = 0; m < metrics.Length; m++)
 {
     var finalLine = (metrics[m].Line < 0 ? metrics[m].Get(final) : RecentWindow.Smooth(metrics[m].Get(final), metrics[m].Spec))
@@ -108,10 +126,32 @@ for (var m = 0; m < metrics.Length; m++)
     {
         var (steps, tail, err) = stats[m, v].Result(finalLine);
         var r = metrics[m].Range;
-        Console.WriteLine($"{metrics[m].Name,-9} {variants[v].Name,-10} {100 * steps / r,8:0.00}  {100 * tail / r,10:0.00}  {100 * err / r,9:0.00}");
+        var shownText = variants[v].Name == "app" ? $"{100 * ShownError(shown[m], finalLine) / r,11:0.00}" : "";
+        Console.WriteLine($"{metrics[m].Name,-9} {variants[v].Name,-10} {100 * steps / r,8:0.00}  {100 * tail / r,10:0.00}  {100 * err / r,9:0.00}  {shownText}");
     }
 }
 return 0;
+
+// Mean |shown dot − final line at that moment| over the samples with a dot and a final value within 60 ms.
+static double ShownError(List<(double T, double? Dot)> samples, List<TimedValue> finalLine)
+{
+    double err = 0;
+    var n = 0;
+    var times = finalLine.Select(x => x.T).ToArray();
+    foreach (var (t, dot) in samples)
+    {
+        if (dot is not { } d || times.Length == 0) continue;
+        var i = Array.BinarySearch(times, t);
+        if (i < 0) i = ~i;
+        var best = -1;
+        foreach (var j in new[] { i - 1, i })
+            if (j >= 0 && j < times.Length && (best < 0 || Math.Abs(times[j] - t) < Math.Abs(times[best] - t))) best = j;
+        if (best < 0 || Math.Abs(times[best] - t) >= 0.06) continue;
+        err += Math.Abs(finalLine[best].Value - d);
+        n++;
+    }
+    return err / Math.Max(1, n);
+}
 
 static bool Same(IReadOnlyList<TimedValue> a, IReadOnlyList<TimedValue> b)
 {
@@ -129,6 +169,13 @@ sealed class Stat
     private TimedValue? _prev;
     private Dictionary<long, double>? _prevLine;
     private readonly List<TimedValue> _dots = [];
+
+    /// <summary>The line's newest value (the dot), or null.</summary>
+    public static TimedValue? LastDot(List<TimedValue> line)
+    {
+        for (var i = line.Count - 1; i >= 0; i--) if (!double.IsNaN(line[i].Value)) return line[i];
+        return null;
+    }
 
     public void Add(List<TimedValue> line, double elapsed)
     {

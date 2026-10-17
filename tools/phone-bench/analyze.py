@@ -3,7 +3,8 @@
 Usage: py -I analyze.py <dir> [labelA labelB]
 Each run <label>-<n> has <label>-<n>.latency (dumpsys SurfaceFlinger --latency samples) and
 <label>-<n>.logcat (PERF probes). Per run: frames presented while recording, fps over that span,
-% of frame intervals over 25 ms ("janky", HANDOFF §8d), the count over 50 ms, Stop to saved,
+% of frame intervals over 25 ms ("janky", HANDOFF §8d; at a 30 fps glide every frame is over 25 ms,
+so use '>40ms%' then), the count over 50 ms, Stop to saved,
 the live update medians and the UI stalls. Then the medians per build and, for two builds, a
 two-sided shuffle (permutation) test of the janky share and fps.
 """
@@ -59,6 +60,8 @@ def run(folder, label):
         'fps': len(f) / span,
         'janky%': 100 * sum(g > 25 for g in gaps) / len(gaps),
         '>50ms': sum(g > 50 for g in gaps),
+        # With the glide at 30 fps (two 60 Hz frames), a late frame is one more than 40 ms after the last.
+        '>40ms%': 100 * sum(g > 40 for g in gaps) / len(gaps),
         'stop s': stop / 1000,
         'analyze s': p.get('stop.analyze', [0])[-1] / 1000,
         'updates': len(upd),
@@ -113,7 +116,7 @@ def main():
     show(medians)
     pair = sys.argv[2:4] if len(sys.argv) >= 4 else list(builds)[:2]
     if len(pair) == 2 and all(p in builds for p in pair):
-        for k in ('janky%', 'fps', 'stop s', 'upd med ms'):
+        for k in ('janky%', '>40ms%', 'fps', 'stop s', 'upd med ms'):
             a = [r[k] for r in builds[pair[0]]]
             b = [r[k] for r in builds[pair[1]]]
             print(f'{k}: {pair[0]} {statistics.median(a):.2f} vs {pair[1]} {statistics.median(b):.2f}, shuffle p = {shuffle_p(a, b):.3f}')
