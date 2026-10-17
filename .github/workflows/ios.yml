@@ -34,10 +34,12 @@ jobs:
 
       - name: Select Xcode
         run: |
-          # The Xcode for the iOS SDK the project targets (net10.0-ios26.0 -> the newest Xcode 26.0.x).
+          # The newest Xcode of the iOS SDK's major version the project targets (net10.0-ios26.0 ->
+          # the newest Xcode 26.x; 26.0 itself can't compile asset catalogs on these runners, which
+          # lack its simulator runtime).
           sdk="$(sed -n 's:.*<TargetFramework>net[0-9.]*-ios\([0-9.]*\)</TargetFramework>.*:\1:p' src/Reyfen.Timbratune.iOS/Reyfen.Timbratune.iOS.csproj)"
           ls -d /Applications/Xcode_*.app
-          xcode="$(ls -d /Applications/Xcode_"$sdk"*.app | grep -viE 'beta|rc' | sort -V | tail -1)"
+          xcode="$(ls -d /Applications/Xcode_"${sdk%%.*}".*.app | grep -viE 'beta|rc' | sort -V | tail -1)"
           if [ -z "$xcode" ]; then echo "::error::No Xcode $sdk on this runner"; exit 1; fi
           sudo xcode-select -s "$xcode/Contents/Developer"
           xcodebuild -version
