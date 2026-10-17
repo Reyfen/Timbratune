@@ -8,9 +8,10 @@ namespace Reyfen.Timbratune.Controls;
 /// Display-only easing for the live lines: when a chart gets a new line, the drawn line
 /// glides from what was on screen to the new values over <see cref="EaseSeconds"/>, so
 /// values that arrive in bursts or get corrected move smoothly instead of jumping.
-/// NaN values are line breaks and are never eased.
+/// NaN values are line breaks and are never eased. <paramref name="redraw"/> redraws what shows
+/// the line (by default the whole <paramref name="owner"/>).
 /// </summary>
-public sealed class LineEasing(Control owner)
+public sealed class LineEasing(Control owner, Action? redraw = null)
 {
     /// <summary>How long the drawn line takes to reach newly arrived values.</summary>
     public const double EaseSeconds = 0.25;
@@ -59,13 +60,38 @@ public sealed class LineEasing(Control owner)
     {
         if (_frameRequested || TopLevel.GetTopLevel(owner) is not { } top) return;
         _frameRequested = true;
-        top.RequestAnimationFrame(_ =>
+        top.RequestAnimationFrame(frameTime =>
         {
             _frameRequested = false;
-            owner.InvalidateVisual();
+            if (!Paced(frameTime))
+            {
+                RequestFrame();
+                return;
+            }
+            if (redraw is null) owner.InvalidateVisual();
+            else redraw();
             if (Progress() < 1) RequestFrame();
             else _from = null;
         });
+    }
+
+    /// <summary>
+    /// The glide redraws at most about 30 times a second: at the display's 60 it was most of the
+    /// charts' cost while recording (HANDOFF §8t), and the eye hardly tells the two apart in a
+    /// 0.25 s ease. All lines share one clock, so they redraw on the same frames (frames between
+    /// them stay free). A frame callback's time is the same for every callback of that frame.
+    /// </summary>
+    private static readonly TimeSpan MinFrameInterval = TimeSpan.FromMilliseconds(30);
+    private static TimeSpan? s_drawnAt;
+
+    // Experiment (profiling builds): "ease60" redraws on every frame, as before.
+    private static bool Paced(TimeSpan frameTime)
+    {
+        if (frameTime == s_drawnAt || Diagnostics.Perf.Flags.Contains("ease60")) return true;
+        // A clock that went backwards (another top level's timer) starts over.
+        if (s_drawnAt is { } drawn && frameTime > drawn && frameTime - drawn < MinFrameInterval) return false;
+        s_drawnAt = frameTime;
+        return true;
     }
 
     /// <summary>The line <paramref name="to"/>, with each value moved <paramref name="p"/> of the way from <paramref name="from"/>'s value at that time.</summary>

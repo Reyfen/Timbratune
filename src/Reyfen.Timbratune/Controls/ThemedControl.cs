@@ -22,7 +22,7 @@ public abstract class ThemedControl : Control
         ActualThemeVariantChanged += (_, _) =>
         {
             _colors.Clear();
-            InvalidateVisual();
+            Redraw();
         };
         EffectiveViewportChanged += (_, e) =>
         {
@@ -30,7 +30,7 @@ public abstract class ThemedControl : Control
                           && e.EffectiveViewport.Intersects(new Rect(Bounds.Size));
             if (visible == IsOnScreen) return;
             IsOnScreen = visible;
-            if (visible) InvalidateVisual(); // draw what changed while it was out of view
+            if (visible) Redraw(); // draw what changed while it was out of view
         };
     }
 
@@ -40,6 +40,9 @@ public abstract class ThemedControl : Control
     /// of the charts are visible at a time, and redrawing the rest made live recording stutter.
     /// </summary>
     public bool IsOnScreen { get; private set; } = true;
+
+    /// <summary>Redraws everything the control shows (charts drawn in layers redraw each layer).</summary>
+    protected virtual void Redraw() => InvalidateVisual();
 
     protected Color C(string key, Color? fallback = null)
     {
