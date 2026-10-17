@@ -12,7 +12,7 @@ calibrated on.
 used as a basis for this module; only the papers and the manual's descriptions were.
 Praat itself (GPLv3) is not part of Timbratune: it is never shipped or linked, and is
 only run as an optional, separate test oracle to check the numbers. This module is
-MIT licensed, like the rest of Timbratune.
+licensed like the rest of Timbratune (see `LICENSE` at the repository root).
 
 | Component | Based on |
 |---|---|

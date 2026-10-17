@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!-- Import decoding through an ffmpeg program (found on the PATH, or downloaded for the user on
        Linux): practically every format. Runs it as a separate process, so nothing of FFmpeg is
-       linked or shipped and Timbratune stays MIT. Desktop heads only. -->
+       linked or shipped (its LGPL never touches Timbratune's own license). Desktop heads only. -->
   <PropertyGroup>
     <RootNamespace>Reyfen.Timbratune.Audio.Ffmpeg</RootNamespace>
     <IsTrimmable>true</IsTrimmable>

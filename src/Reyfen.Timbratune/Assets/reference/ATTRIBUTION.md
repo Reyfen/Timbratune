@@ -8,5 +8,5 @@ CC BY 4.0.
 - <https://datashare.ed.ac.uk/handle/10283/3443>
 - <https://creativecommons.org/licenses/by/4.0/>
 
-Copied unchanged from `Euphonia-TypeScript/dashboard-react/public/`, where
+Copied unchanged from Euphonia's `dashboard-react/public/`, where
 `scripts/build_reference_set.py` generates them.
