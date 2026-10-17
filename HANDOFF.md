@@ -1355,6 +1355,22 @@ Version 0.4.0 ports the research formant ceiling that follows the voice (R1b) an
 
 Probes per run: `analysis.formants` 239.6 → 389.6 ms (resampling 201.4 → 298.8, Burg frames 38.3 → 90.8), `analysis.formants.path` 5.5 ms; `live.formants` 524.5 → 1,382.0 ms, `live.formants.path` 22.0 ms; everything else unchanged (HNR, pitch, series, assembly). Rounds were consistent (full analysis: v0.3.0 320–341, v0.4.0 478–498 ms). The median live tick is unchanged; the formant blocks (every 0.5 s of audio) make the slow ticks twice as slow. The cost is the 3 extra ceilings' resampling and Burg frames (their rates add up to 55 kHz instead of 21 kHz), not the path. The research's estimate (saved ×1.2–1.3, live ×1.1) was too low. Above the refactoring's +3 % budget, which doesn't apply to a version that measures more on purpose; whether it is acceptable is the owner's call with the phone numbers (F11).
 
+**F11, performance on the Pixel 4a** (Release profiling builds, LLVM AOT, both under the separate app id `com.reyfen.timbratune.research`, so the owner's app and takes were never touched; v0.3.0 from the `C:\Projects\Reyfen\tt-base` worktree with only the share-provider fix applied, v0.4.0 from `771344b`; 6 alternating pairs of cold-start 28 s fake-mic recordings of `long.wav`, `tools/phone-bench`; medians, shuffle test p):
+
+| Build | fps | janky % | frames > 50 ms | live updates | update median / full | UI stalls | Stop to saved (analysis) |
+|---|---|---|---|---|---|---|---|
+| v0.3.0 | 52.0 | 10.4 (9.2–11.4) | 17.5 | 227.5 | 40.3 / 58.6 ms | 28 | 4.70 s (3.99 s) |
+| v0.4.0 | 47.7 | 12.6 (11.5–14.0) | 32 | 193 | 48.9 / 75.4 ms | 32.5 | 6.43 s (5.70 s) |
+
+- Every difference is significant (p ≈ 0.013 for janky %, fps, Stop and the update median). The live analysis keeps up (no backlog: a slow update makes the next one wait for the next 100 ms tick, so there are 15 % fewer of them), but frames are lost while recording (−4.3 fps, +2.2 points janky, almost twice the frames over 50 ms), and Stop to saved takes 1.7 s longer (+37 %). `live.formants.path` 0.4 ms per update. The size timeline adds drawing too (desktop `live.compute` +8.8 %).
+- Conditions: battery at 17 % throughout (charging over USB but not gaining), Battery Saver off; the builds alternated, so both saw the same.
+- Not measured: the Pixel 9 (not connected).
+- **This is the owner's decision** (decision 3: measure the five ceilings first). The options in RESEARCH-ALGORITHMS §12.4: after the first seconds, track only the chosen ceiling and its neighbours live (3 instead of 5), or score the extra ceilings on every second block; the saved analysis could also skip ceilings no voiced piece can use. None is built.
+- The phone was cleaned afterwards (fake mic, flags, profiling takes); the research-id app is still installed beside the owner's app: removing it is the owner's choice (it holds nothing of theirs).
+- Android permission note: `ab.sh` installs with `-g`, so the test app has the microphone permission without a prompt.
+
+**F12, Linux:** in WSL `Ubuntu-24.04` (user `tester`, a fresh export of `771344b` in `~/tt-v040`, beside the older `~/tt`): all 280 tests pass, goldens included; `build.ps1 linux` builds `Timbratune-v0.4.0-linux-x64.deb` and the AppImage. The AppImage wasn't started this time.
+
 ## 8. Current state, at the time of writing
 
 **Branches (2026-10-10):** the user renamed them on GitHub: `dev` became `main` (everything up to `bc1ce48`, tagged `v0.1.0`), and `v0.2.0` became `dev/v0.2.0` (§8d–§8h, up to `8e88ea6`; not merged into `main` yet). The local branches were renamed to match and track `origin/main` and `origin/dev/v0.2.0`. The old `v0.2.0` branch name clashed with a `v0.2.0` tag; `dev/…` names can't coexist with a branch called `dev`. Commit `9c752e6`'s subject starts with a stray UTF-8 BOM from PowerShell 5.1's `Out-File`; write commit messages without a BOM.
