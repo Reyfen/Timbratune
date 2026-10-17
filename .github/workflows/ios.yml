@@ -5,6 +5,7 @@
 #   IOS_PROFILE_BASE64         base64 of "Timbratune AppStore" (.mobileprovision)
 #   ASC_KEY_ID, ASC_ISSUER_ID  App Store Connect API key (Users and Access › Integrations)
 #   ASC_P8                     the key's .p8 file, as text or base64
+#   ASC_APP_ID                 optional: the app's Apple ID (a number, App Information in App Store Connect)
 name: iOS
 
 on:
@@ -106,6 +107,7 @@ jobs:
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_APP_ID: ${{ secrets.ASC_APP_ID }}
           UPLOAD: ${{ github.event_name != 'workflow_dispatch' || inputs.upload }}
         run: |
           args=(--build-number "${{ github.run_number }}")

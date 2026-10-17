@@ -53,6 +53,21 @@ echo "Built $final"
 
 if [ "$upload" = true ]; then
   : "${ASC_KEY_ID:?ASC_KEY_ID is needed for --upload}" "${ASC_ISSUER_ID:?ASC_ISSUER_ID is needed for --upload}"
-  xcrun altool --upload-app --type ios --file "$final" --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
+  # With the app's Apple ID (App Store Connect › the app › App Information › Apple ID, a number)
+  # altool needn't look the app up by bundle id.
+  if [ -n "${ASC_APP_ID:-}" ]; then
+    version_args=(--apple-id "$ASC_APP_ID" --bundle-id "$(sed -n 's:.*<ApplicationId>\(.*\)</ApplicationId>.*:\1:p' "$root/src/Reyfen.Timbratune.iOS/Reyfen.Timbratune.iOS.csproj")" \
+      --bundle-version "$build_number" --bundle-short-version-string "$version")
+    cmd=(xcrun altool --upload-package "$final" --type ios "${version_args[@]}")
+  else
+    cmd=(xcrun altool --upload-app --type ios --file "$final")
+  fi
+  # altool can report an error and still exit 0: its output decides.
+  log="$(mktemp)"
+  "${cmd[@]}" --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID" 2>&1 | tee "$log"
+  if [ "${PIPESTATUS[0]}" -ne 0 ] || grep -qE '(^|[^A-Za-z])ERROR' "$log"; then
+    echo "Upload FAILED (see altool's messages above)." >&2
+    exit 1
+  fi
   echo "Uploaded to App Store Connect; it shows in TestFlight once Apple has processed it."
 fi

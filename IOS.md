@@ -35,6 +35,7 @@ Repository › Settings › Secrets and variables › Actions › New repository
 | `ASC_KEY_ID` | App Store Connect API key id |
 | `ASC_ISSUER_ID` | Its issuer id |
 | `ASC_P8` | The key's `.p8` file, as text or base64 |
+| `ASC_APP_ID` | Optional: the app's Apple ID, a number (App Store Connect › the app › App Information). Without it the upload looks the app up by bundle id. |
 
 Base64 of a file in PowerShell, copied to the clipboard:
 
