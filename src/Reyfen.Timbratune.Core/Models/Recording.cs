@@ -84,6 +84,17 @@ public sealed class Formants
 
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public int? CeilingSwitches { get; set; }
+
+    /// <summary>
+    /// Formant spacing ΔF (Hz) from F3 and F4 (Reby &amp; McComb 2003), median over the vowel-core moments,
+    /// and the apparent vocal-tract length it implies, c / 2ΔF (cm): the perceived size of the resonance,
+    /// not the body's. Measured with the ceiling path only (null for older takes).
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public double? DeltaFHz { get; set; }
+
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public double? VtlCm { get; set; }
 }
 
 public sealed class VoiceQuality

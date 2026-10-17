@@ -10,14 +10,14 @@ namespace Reyfen.Timbratune.Core.Models;
 public sealed class TakeSeries
 {
     /// <summary>What these series hold; bump when a series is added or redefined.</summary>
-    public const int CurrentVersion = 1;
+    public const int CurrentVersion = 2;
 
     public const string Pitch = "pitch", Loudness = "loudness", Hnr = "hnr", F1 = "f1", F2 = "f2", F3 = "f3",
-        Weight = "weight", Jitter = "jitter";
+        Weight = "weight", Jitter = "jitter", Size = "size";
 
     public int Version { get; set; } = CurrentVersion;
 
-    /// <summary>By name: pitch, loudness, hnr, f1, f2, f3, weight, jitter.</summary>
+    /// <summary>By name: pitch, loudness, hnr, f1, f2, f3, weight, jitter, and size (version 2, takes measured with the ceiling path).</summary>
     public Dictionary<string, FrameSeries> Series { get; set; } = [];
 }
 

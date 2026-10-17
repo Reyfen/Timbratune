@@ -36,6 +36,18 @@ public static class Zones
         new(1420, 2200, ZoneColorKey.Fem, "bright"),
     ];
 
+    /// <summary>
+    /// Perceived size (apparent vocal-tract length, cm), from the norms through this engine (RESONANCE-PLAN F8):
+    /// per-speaker medians of EARS and VTR readings, women 15.5–15.7 cm (90 % below 16.6–16.8), men 18.5–18.7 cm
+    /// (90 % above 17.3). Smaller reads lighter and more feminine.
+    /// </summary>
+    public static readonly IReadOnlyList<Zone> Size =
+    [
+        new(13, 16.6, ZoneColorKey.Fem, "smaller"),
+        new(16.6, 17.4, ZoneColorKey.Neutral, "neutral"),
+        new(17.4, 21, ZoneColorKey.Masc, "larger"),
+    ];
+
     public static readonly IReadOnlyList<Zone> F3 =
     [
         new(2100, 2560, ZoneColorKey.Masc, "deeper"),

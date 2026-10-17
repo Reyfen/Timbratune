@@ -35,7 +35,8 @@ public sealed class TakeTrends
     /// <summary>What these trends hold; older versions are re-analyzed once to fill in the newer measures.</summary>
     public const int CurrentVersion = 2;
 
-    /// <summary>1 (or absent): pitch, melody, endings, F2, F3, weight, HNR, jitter. 2: + loudness, pitch variability.</summary>
+    /// <summary>1 (or absent): pitch, melody, endings, F2, F3, weight, HNR, jitter. 2: + loudness, pitch variability;
+    /// from v0.4.0 also perceived size, for takes measured with the ceiling path (older takes have none to fill in).</summary>
     public int Version { get; set; } = 1;
     /// <summary>Slice length in whole seconds; the points sit at Step, 2·Step, 3·Step, …</summary>
     public double StepS { get; set; }

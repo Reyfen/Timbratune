@@ -22,7 +22,7 @@ public sealed class ExportTests : IDisposable
         var result = await new AcousticsAnalysisEngine().AnalyzeAsync(Wav);
         var series = Assert.IsType<TakeSeries>(result.Series);
         string[] names = [TakeSeries.Pitch, TakeSeries.Loudness, TakeSeries.Hnr, TakeSeries.F1, TakeSeries.F2, TakeSeries.F3,
-            TakeSeries.Weight, TakeSeries.Jitter];
+            TakeSeries.Weight, TakeSeries.Jitter, TakeSeries.Size];
         Assert.Equal(names.Order(), series.Series.Keys.Order());
         foreach (var name in names)
         {

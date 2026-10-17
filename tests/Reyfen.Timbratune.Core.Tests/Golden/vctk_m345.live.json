@@ -26,7 +26,9 @@
       "ceiling_hz": 4500,
       "ceiling_lowest_hz": 4500,
       "ceiling_highest_hz": 4500,
-      "ceiling_switches": 0
+      "ceiling_switches": 0,
+      "delta_f_hz": 993.34,
+      "vtl_cm": 17.62
     },
     "voice_quality": {
       "hnr_db": 11.66,
@@ -2109,7 +2111,8 @@
           "f3_hz": 2363.36,
           "weight_db": 11.94,
           "hnr_db": 11.15,
-          "jitter_pct": 2.56
+          "jitter_pct": 2.56,
+          "size": 18.42
         },
         {
           "t": 2,
@@ -2124,7 +2127,8 @@
           "f3_hz": 2605.77,
           "weight_db": 18.71,
           "hnr_db": 11.28,
-          "jitter_pct": 2.75
+          "jitter_pct": 2.75,
+          "size": 16.42
         },
         {
           "t": 3,
@@ -2139,7 +2143,8 @@
           "f3_hz": 2439.73,
           "weight_db": -3.99,
           "hnr_db": 9.28,
-          "jitter_pct": 8.51
+          "jitter_pct": 8.51,
+          "size": 20.86
         },
         {
           "t": 4,
@@ -2154,7 +2159,8 @@
           "f3_hz": 2595.68,
           "weight_db": 15.29,
           "hnr_db": 12.09,
-          "jitter_pct": 2.88
+          "jitter_pct": 2.88,
+          "size": 16.63
         },
         {
           "t": 5,
@@ -2169,7 +2175,8 @@
           "f3_hz": null,
           "weight_db": null,
           "hnr_db": null,
-          "jitter_pct": null
+          "jitter_pct": null,
+          "size": null
         },
         {
           "t": 6,
@@ -2184,7 +2191,8 @@
           "f3_hz": 2268.65,
           "weight_db": 13.58,
           "hnr_db": 6.39,
-          "jitter_pct": 4.35
+          "jitter_pct": 4.35,
+          "size": 18.58
         },
         {
           "t": 7,
@@ -2199,7 +2207,8 @@
           "f3_hz": 2392.52,
           "weight_db": 10.71,
           "hnr_db": 14.67,
-          "jitter_pct": 2.08
+          "jitter_pct": 2.08,
+          "size": 17.61
         },
         {
           "t": 8,
@@ -2214,7 +2223,8 @@
           "f3_hz": 1962.14,
           "weight_db": 12.7,
           "hnr_db": 10.88,
-          "jitter_pct": 4.04
+          "jitter_pct": 4.04,
+          "size": 19.66
         },
         {
           "t": 9,
@@ -2229,7 +2239,8 @@
           "f3_hz": null,
           "weight_db": 33.28,
           "hnr_db": 11.37,
-          "jitter_pct": 6.59
+          "jitter_pct": 6.59,
+          "size": null
         }
       ]
     }

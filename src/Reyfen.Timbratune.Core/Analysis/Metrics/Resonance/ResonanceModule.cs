@@ -23,6 +23,26 @@ public sealed class ResonanceModule : IMetricModule
     {
         Name = "f1", Title = "Resonance (F1)", Unit = "Hz",
         Take = r => r.Formants.F1Hz,
+        Card = new(CeilingNote),
+    };
+
+    /// <summary>
+    /// Perceived size: the apparent vocal-tract length from the spacing of F3 and F4 (Reby &amp; McComb 2003), the
+    /// main resonance number after pitch for how listeners hear a voice (RESEARCH-ALGORITHMS §3.3). It is what a
+    /// voice sounds like in size, not the speaker's body size.
+    /// </summary>
+    public static readonly MetricInfo Size = new()
+    {
+        Name = "size", Title = "Perceived size", Unit = "cm", Zones = Domain.Zones.Size, Lo = 13, Hi = 21,
+        Take = r => r.Formants.VtlCm,
+        Columns = MetricColumns.Trend,
+        Card = new(_ => "how big the resonance sounds: the vocal-tract length your F3–F4 spacing implies · smaller reads " +
+                        "lighter and more feminine · it's the size listeners *hear*, not your body's size"),
+        Compare = new(v => v.Formants?.VtlCm, Gendered: true,
+            "apparent vocal-tract length from F3–F4 · smaller = lighter, more feminine resonance · the second gender cue after pitch"),
+        Trend = new("perceived size · lower = smaller, lighter resonance", "Chart11") { MeasuredSinceVersion = TakeTrends.CurrentVersion },
+        Live = new("on loud vowels, median over about 2 s", LiveSmoothing.Vowel),
+        Chip = new("size cm"),
     };
 
     public static readonly MetricInfo F2 = new()
@@ -31,7 +51,7 @@ public sealed class ResonanceModule : IMetricModule
         Take = r => r.Formants.F2Hz,
         Columns = MetricColumns.Trend | MetricColumns.Phrase, ColumnKey = "f2_hz",
         Compare = new(v => v.Formants?.F2Hz, Gendered: true,
-            "main brightness cue · median over vowel nuclei · higher = smaller, brighter tract (reads feminine)"),
+            "brightness cue · median over vowel nuclei · higher = brighter (reads feminine) · depends on what you say, so compare takes of the same text"),
         Trend = new("brightness / vocal-tract size cue", "Chart4") { MeasuredSinceVersion = 1 },
         Live = new("on loud vowels, median over about 2 s", LiveSmoothing.Vowel),
         Chip = new("F2 Hz"),
@@ -47,7 +67,17 @@ public sealed class ResonanceModule : IMetricModule
         Live = new("on loud vowels, median over about 2 s", LiveSmoothing.Vowel),
     };
 
-    private static readonly IReadOnlyList<MetricInfo> All = MetricInfo.Numbered(F1, F2, F3);
+    private static readonly IReadOnlyList<MetricInfo> All = MetricInfo.Numbered(F1, Size, F2, F3);
+
+    /// <summary>The line under F1: which formant ceiling(s) the take was measured with.</summary>
+    internal static string CeilingNote(Recording r)
+    {
+        var f = r.Formants;
+        if (f.Method != Formants.PathMethod || f.CeilingHz is not { } main) return "measured at a fixed 5500/5000 Hz formant ceiling (before v0.4.0)";
+        if (f.CeilingSwitches is > 0 && f.CeilingLowestHz is { } lo && f.CeilingHighestHz is { } hi)
+            return $"formant ceiling followed the voice: {lo:0}–{hi:0} Hz, {f.CeilingSwitches} switch{(f.CeilingSwitches == 1 ? "" : "es")}, mostly {main:0} Hz";
+        return $"formant ceiling {main:0} Hz";
+    }
 
     public IReadOnlyList<MetricInfo> Metrics => All;
 
@@ -82,6 +112,9 @@ public sealed class ResonanceModule : IMetricModule
         var raw = context.Raw;
         var formants = VowelFormants(raw.Formants, raw.FormantMethod);
         var switches = raw.Get(CeilingSwitchesKey);
+        // Size from all vowel-core rows: the F2 jump gate is about F2, and leaving its rows out made the size
+        // of high voices less steady (EARS high-pitch women +0.30 cm against +0.21 cm, take-to-take ICC 0.91 against 0.92).
+        var deltaF = raw.FormantMethod == FormantCeilingMethod.Path ? FormantSpacing(raw.Formants) : null;
         context.Metrics.Formants = new Formants
         {
             Method = raw.FormantMethod == FormantCeilingMethod.Path ? Formants.PathMethod : null,
@@ -93,26 +126,47 @@ public sealed class ResonanceModule : IMetricModule
             CeilingLowestHz = Clean(raw.Get(CeilingLowestKey)),
             CeilingHighestHz = Clean(raw.Get(CeilingHighestKey)),
             CeilingSwitches = double.IsFinite(switches) ? (int)switches : null,
+            DeltaFHz = Clean(deltaF),
+            VtlCm = deltaF is { } d ? Clean(Math.Round(SpeedOfSoundCmPerS / (2 * d), 2)) : null,
         };
     }
 
-    /// <summary>The kept vowel-core rows as (time, F2, F3).</summary>
-    public object? DetailData(RawAnalysis raw) => VowelFormants(raw.Formants, raw.FormantMethod).Kept.Select(r => (r.T, r.F2, r.F3)).ToList();
+    /// <summary>What the phrase and trend columns come from: the kept rows, and every row's spacing (ceiling path only).</summary>
+    private sealed record DetailRows(IReadOnlyList<(double T, double F2, double F3)> Kept, IReadOnlyList<(double T, double DeltaF)> Spacing);
+
+    /// <summary>The module's own detail data, or kept rows handed in directly (<see cref="AnalysisPostProcessor.PhraseBreakdown(RecordingDetail, IReadOnlyList{ValueTuple{double, double}}?, IReadOnlyList{ValueTuple{double, double}}?)"/>).</summary>
+    private static DetailRows? RowsOf(object? data) => data switch
+    {
+        DetailRows rows => rows,
+        IReadOnlyList<(double T, double F2, double F3)> kept => new DetailRows(kept, []),
+        _ => null,
+    };
+
+    public object? DetailData(RawAnalysis raw)
+    {
+        var kept = VowelFormants(raw.Formants, raw.FormantMethod).Kept.Select(r => (r.T, r.F2, r.F3)).ToList();
+        var spacing = raw.FormantMethod == FormantCeilingMethod.Path
+            ? raw.Formants.Where(r => r.F3 > 0 && r.F4 > r.F3).Select(r => (r.T, Spacing(r.F3, r.F4))).ToList()
+            : [];
+        return new DetailRows(kept, spacing);
+    }
 
     public void FillPhrase(DetailInputs inputs, object? data, Phrase phrase, MetricValues columns)
     {
-        if (data is not IReadOnlyList<(double T, double F2, double F3)> rows) return;
-        var f2 = rows.Where(f => phrase.Start <= f.T && f.T <= phrase.End).Select(f => f.F2).ToList();
+        if (RowsOf(data) is not { } rows) return;
+        var f2 = rows.Kept.Where(f => phrase.Start <= f.T && f.T <= phrase.End).Select(f => f.F2).ToList();
         columns[F2] = f2.Count > 0 ? Clean(Median(f2)) : null;
     }
 
     public void FillTrend(DetailInputs inputs, object? data, in TrendWindow window, MetricValues columns)
     {
-        if (data is not IReadOnlyList<(double T, double F2, double F3)> rows) return;
+        if (RowsOf(data) is not { } rows) return;
         var w = window;
-        var formants = rows.Where(f => w.Contains(f.T)).ToList();
+        var formants = rows.Kept.Where(f => w.Contains(f.T)).ToList();
         columns[F2] = formants.Count > 0 ? Clean(Median(formants.Select(f => f.F2).ToList())) : null;
         columns[F3] = formants.Count > 0 ? Clean(Median(formants.Select(f => f.F3).ToList())) : null;
+        var spacing = rows.Spacing.Where(s => w.Contains(s.T)).Select(s => s.DeltaF).ToList();
+        columns[Size] = spacing.Count > 0 && Median(spacing) is { } d ? Clean(Math.Round(SpeedOfSoundCmPerS / (2 * d), 2)) : null;
     }
 
     public void BuildSeries(in TrackView t, SeriesLines lines)
@@ -130,9 +184,12 @@ public sealed class ResonanceModule : IMetricModule
         var f1 = b.ForSavedTake ? lines[F1] : null;
         var f2 = lines[F2];
         var f3 = lines[F3];
+        var size = lines[Size];
         f1?.Clear();
         f2.Clear();
         f3.Clear();
+        size.Clear();
+        var measureSize = t.FormantMethod == FormantCeilingMethod.Path;
         var track = t.Formants;
         for (var i = 0; i < loudTimes.Count; i++)
         {
@@ -142,6 +199,7 @@ public sealed class ResonanceModule : IMetricModule
             f1?.Add(new(time, v1));
             f2.Add(new(time, v2));
             f3.Add(new(time, v3));
+            if (measureSize && track.ValueAtTime(4, time) is var v4 && v4 > v3) size.Add(new(time, SpeedOfSoundCmPerS / (2 * Spacing(v3, v4))));
         }
     }
 
@@ -151,7 +209,28 @@ public sealed class ResonanceModule : IMetricModule
         series[TakeSeries.F1] = FrameSeriesBuilder.Series(lines[F1], "Hz", step, 1, FrameSeriesBuilder.FormantFrames);
         series[TakeSeries.F2] = FrameSeriesBuilder.Series(lines[F2], "Hz", step, 1, FrameSeriesBuilder.FormantFrames);
         series[TakeSeries.F3] = FrameSeriesBuilder.Series(lines[F3], "Hz", step, 1, FrameSeriesBuilder.FormantFrames);
+        if (lines[Size].Count > 0)
+            series[TakeSeries.Size] = FrameSeriesBuilder.Series(lines[Size], "cm", step, 2, "apparent vocal-tract length from F3-F4 on " + FrameSeriesBuilder.FormantFrames);
     }
+
+    /// <summary>The speed of sound in the warm, humid vocal tract (cm/s), as in Reby &amp; McComb (2003).</summary>
+    public const double SpeedOfSoundCmPerS = 35000;
+
+    /// <summary>
+    /// The formant spacing ΔF (Hz): per moment the least-squares fit of Fi = (2i − 1)/2 · ΔF through F3 and F4
+    /// (Reby &amp; McComb 2003; F3–F4 depend least on the vowel, RESEARCH-ALGORITHMS §3.2), then the median;
+    /// null without moments that have both.
+    /// </summary>
+    internal static double? FormantSpacing(IReadOnlyList<RawAnalysis.FormantRow> rows)
+    {
+        var spacings = new List<double>(rows.Count);
+        foreach (var r in rows)
+            if (r.F3 > 0 && r.F4 > r.F3) spacings.Add(Spacing(r.F3, r.F4));
+        return spacings.Count > 0 ? Median(spacings) : null;
+    }
+
+    /// <summary>One moment's ΔF: F3 = 2.5 ΔF and F4 = 3.5 ΔF fitted by least squares.</summary>
+    private static double Spacing(double f3, double f4) => (2.5 * f3 + 3.5 * f4) / (2.5 * 2.5 + 3.5 * 3.5);
 
     /// <summary>Fewer sampled moments than this say too little about how reliable the formants are.</summary>
     internal const int MinFramesForUsable = 30;

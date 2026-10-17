@@ -121,7 +121,7 @@ public static class RawAnalysisAssembler
         double f1 = track.ValueAtTime(1, t), f2 = track.ValueAtTime(2, t), f3 = track.ValueAtTime(3, t);
         if (!(f1 > 0 && f2 > 0 && f3 > 0)) return null; // also rejects NaN
         if (f1 < 250 || f1 > 1000) return null;
-        return new RawAnalysis.FormantRow(ceiling, t, f1, f2, f3);
+        return new RawAnalysis.FormantRow(ceiling, t, f1, f2, f3, track.ValueAtTime(4, t));
     }
 
     /// <summary>The selected times with a plausible F1 (250–1000 Hz) — measured at each formant ceiling.</summary>

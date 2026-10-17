@@ -25,7 +25,9 @@
       "ceiling_hz": 5000,
       "ceiling_lowest_hz": 5000,
       "ceiling_highest_hz": 6000,
-      "ceiling_switches": 1
+      "ceiling_switches": 1,
+      "delta_f_hz": 1167.49,
+      "vtl_cm": 14.99
     },
     "voice_quality": {
       "hnr_db": 13.74,

@@ -93,7 +93,7 @@ public static class FrameSeriesBuilder
     private static readonly string[] KeyOrder =
         [TakeSeries.Pitch, TakeSeries.Loudness, TakeSeries.Hnr, TakeSeries.F1, TakeSeries.F2, TakeSeries.F3, TakeSeries.Weight, TakeSeries.Jitter];
 
-    internal const string FormantFrames = "voiced pitch frames within 10 dB of the loudest frames (ignoring the top 1 %, so a click doesn't count), with F1 in 250-1000 Hz (5500 Hz ceiling)";
+    internal const string FormantFrames = "voiced pitch frames within 10 dB of the loudest frames (ignoring the top 1 %, so a click doesn't count), with F1 in 250-1000 Hz (the formant ceiling following the voice)";
 
     internal static FrameSeries Series(List<TimedValue> points, string unit, double? step, int digits, string description)
     {

@@ -1316,6 +1316,25 @@ Version 0.4.0 ports the research formant ceiling that follows the voice (R1b) an
 - Tests (`MicrophonePickerTests`): the choice reaches the recorder and the setting and comes back next session; a missing device stays chosen with the note, and is plain again once plugged in; one device or the fake mic: hidden. `CompositionTests` resolve it.
 - Not checked here: recording through a non-default device (this PC has one input device; recording would use the owner's real microphone). Android: SoundFlow lists what AAudio reports; with one device the picker stays hidden.
 
+**F8, perceived size (plan R2): evaluated, then ported.**
+- **The measure:** per vowel-core moment, ΔF from F3 and F4 (least squares of Fi = (2i − 1)/2 · ΔF, Reby & McComb 2003), the take's median ΔF, and the apparent vocal-tract length VTL = 35000 / 2ΔF cm. The vowel-core rows now carry F4. Over **all** vowel-core rows: leaving out the F2 jump gate's rows made high voices' size less steady (EARS high-pitch women +0.30 against +0.21 cm, ICC 0.91 against 0.92). Only with the ceiling path; older (Legacy) takes have none.
+- **Evaluation** (research clone `research/py/v040_size.py`, `results_v040_size.txt`; `formant-check -dump` of `ears` 749, `tmasc` 242, `mix_ears` 425, `mix_vtr` 226 and `vtr` 516 files, `z` and `r` lines), against R2's acceptance (RESEARCH-ALGORITHMS §8):
+
+| Line | Acceptance | Result (v0.4.0 engine) | Legacy |
+|---|---|---|---|
+| EARS take-to-take ICC of VTL (3 regular passages, 103 speakers) | ≥ 0.9 | **0.92** (women 0.79, men 0.74; F3 0.88) | 0.92 (F3 0.67) |
+| EARS high pitch − regular, women's VTL (n 60) | ±0.3 cm | **+0.21 cm** [IQR −0.38, +1.00]; men −0.93 cm (the raised larynx) | +0.49 cm |
+| OSF trans/masc: our VTL vs the authors' (Johnson 2020) | r ≥ 0.75 | **0.78** (n 240) | 0.76 |
+| OSF: F0 + size explain listeners' % "man" | R² ≥ 0.80 | **0.83** (F0 alone 0.76; F0 + F3 0.81) | |
+| Mixed-voice takes: each part vs the same voice alone | within 0.3 cm | median **0.13 cm** (EARS voice changes, 340 parts) and **0.17 cm** (M/F splices, 811 parts); 73 % and 68 % of parts within 0.3 cm, p90 0.66 / 0.73 cm | |
+| Live ≈ saved | | ≤ 0.22 cm on the fixtures (`LiveAnalysisTests`, bound 0.3 cm) | |
+
+  The mixed-voice line holds at the median, not for every part: a part's rows in a mixed take are a share of the take's ≤ 300 subsampled rows, so short parts carry sampling noise.
+- **Zones** (`Zones.Size`) from the norms through this engine, per-speaker medians: EARS women 15.68 cm (p90 16.77), men 18.48 (p10 17.32); VTR women 15.46 (p90 16.56), men 18.65 (p10 17.31). Smaller < 16.6 cm ≤ neutral < 17.4 cm ≤ larger (13–21 cm shown). Research clone `research/py/v040_size_norms.py`.
+- **Port** (REFACTOR-PLAN §14): `ResonanceModule.Size` ("Perceived size", cm), listed after F1 and before F2, so it is the first resonance card, trend chart and live timeline; a trend column (no phrase column), a live timeline (vowel smoothing), the `size` series (`TakeSeries.CurrentVersion` 2), a chip, the comparison blurb, colour `Chart11` (new, light and dark). Wording: the size listeners hear, never body size (RESEARCH-ALGORITHMS §3.2). `take.json` `formants.delta_f_hz`, `formants.vtl_cm`. `TakeTrends.CurrentVersion` stays 2: a backfill can't add size to an older take (it re-measures with the take's own Legacy method), so bumping it would only re-analyse every old take for nothing.
+- F2's comparison blurb now says it depends on the text; F1's card line says which ceiling(s) the take used ("formant ceiling followed the voice: 4500–5500 Hz, 1 switch, mostly 5500 Hz", "formant ceiling 5500 Hz", or "measured at a fixed 5500/5000 Hz formant ceiling (before v0.4.0)").
+- **Choices made without the owner, to confirm:** size shown in cm (not ΔF in Hz); the zone borders above; size before F2 everywhere; the reference voices have no size yet (their comparison row shows none). On the phones the first live timelines cost the most to draw (§8p): size adds one (F11 measures it).
+
 ## 8. Current state, at the time of writing
 
 **Branches (2026-10-10):** the user renamed them on GitHub: `dev` became `main` (everything up to `bc1ce48`, tagged `v0.1.0`), and `v0.2.0` became `dev/v0.2.0` (§8d–§8h, up to `8e88ea6`; not merged into `main` yet). The local branches were renamed to match and track `origin/main` and `origin/dev/v0.2.0`. The old `v0.2.0` branch name clashed with a `v0.2.0` tag; `dev/…` names can't coexist with a branch called `dev`. Commit `9c752e6`'s subject starts with a stray UTF-8 BOM from PowerShell 5.1's `Out-File`; write commit messages without a BOM.

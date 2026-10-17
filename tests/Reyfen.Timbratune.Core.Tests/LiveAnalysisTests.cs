@@ -106,6 +106,8 @@ public sealed class LiveAnalysisTests(ITestOutputHelper output)
             ("formants.f2_hz", e.Formants.F2Hz, a.Formants.F2Hz, 25),
             ("formants.f3_hz", e.Formants.F3Hz, a.Formants.F3Hz, 35),
             ("formants.ceiling_hz", e.Formants.CeilingHz, a.Formants.CeilingHz, Exact),
+            // Perceived size (cm): measured 0, 0, 0.12 and 0.22 cm.
+            ("formants.vtl_cm", e.Formants.VtlCm, a.Formants.VtlCm, 0.3),
             ("weight.h1a3c_db", e.Weight?.H1a3cDb, a.Weight?.H1a3cDb, 0.4),
             ("weight.tilt_db_khz", e.Weight?.TiltDbKhz, a.Weight?.TiltDbKhz, Exact),
         };

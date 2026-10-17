@@ -2200,7 +2200,8 @@
         "f3_hz": 2487.27,
         "weight_db": 0.95,
         "hnr_db": 10.01,
-        "jitter_pct": 2
+        "jitter_pct": 2,
+        "size": 19.26
       },
       {
         "t": 2,
@@ -2215,7 +2216,8 @@
         "f3_hz": 2740.59,
         "weight_db": 4.13,
         "hnr_db": 5.6,
-        "jitter_pct": 3.99
+        "jitter_pct": 3.99,
+        "size": 17.5
       },
       {
         "t": 3,
@@ -2230,7 +2232,8 @@
         "f3_hz": null,
         "weight_db": null,
         "hnr_db": null,
-        "jitter_pct": null
+        "jitter_pct": null,
+        "size": null
       },
       {
         "t": 4,
@@ -2245,7 +2248,8 @@
         "f3_hz": 2172.68,
         "weight_db": 9.22,
         "hnr_db": 12.63,
-        "jitter_pct": 2.85
+        "jitter_pct": 2.85,
+        "size": 20.03
       },
       {
         "t": 5,
@@ -2260,7 +2264,8 @@
         "f3_hz": 2334.2,
         "weight_db": 12.79,
         "hnr_db": 10.25,
-        "jitter_pct": 2.96
+        "jitter_pct": 2.96,
+        "size": 19.79
       },
       {
         "t": 6,
@@ -2275,7 +2280,8 @@
         "f3_hz": null,
         "weight_db": null,
         "hnr_db": null,
-        "jitter_pct": null
+        "jitter_pct": null,
+        "size": null
       },
       {
         "t": 7,
@@ -2290,7 +2296,8 @@
         "f3_hz": 2510.43,
         "weight_db": 3.11,
         "hnr_db": 5.28,
-        "jitter_pct": 2.71
+        "jitter_pct": 2.71,
+        "size": 18.87
       },
       {
         "t": 8,
@@ -2305,7 +2312,8 @@
         "f3_hz": 2254.14,
         "weight_db": 11.45,
         "hnr_db": 11.04,
-        "jitter_pct": 2.3
+        "jitter_pct": 2.3,
+        "size": 19.77
       },
       {
         "t": 9,
@@ -2320,7 +2328,8 @@
         "f3_hz": 2360.94,
         "weight_db": 15.19,
         "hnr_db": 8.09,
-        "jitter_pct": 2.75
+        "jitter_pct": 2.75,
+        "size": 18.22
       },
       {
         "t": 10,
@@ -2335,7 +2344,8 @@
         "f3_hz": 2043.83,
         "weight_db": 10.39,
         "hnr_db": 7.75,
-        "jitter_pct": 1.73
+        "jitter_pct": 1.73,
+        "size": 20.21
       }
     ]
   }

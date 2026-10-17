@@ -1686,7 +1686,8 @@
         "f3_hz": 3141.99,
         "weight_db": 3.2,
         "hnr_db": 12.17,
-        "jitter_pct": 1.8
+        "jitter_pct": 1.8,
+        "size": 14.03
       },
       {
         "t": 2,
@@ -1701,7 +1702,8 @@
         "f3_hz": 3214.04,
         "weight_db": 9.01,
         "hnr_db": 17.68,
-        "jitter_pct": 0.88
+        "jitter_pct": 0.88,
+        "size": 14.2
       },
       {
         "t": 3,
@@ -1716,7 +1718,8 @@
         "f3_hz": 3124.56,
         "weight_db": 2.2,
         "hnr_db": 16.3,
-        "jitter_pct": 1.53
+        "jitter_pct": 1.53,
+        "size": 14
       },
       {
         "t": 4,
@@ -1731,7 +1734,8 @@
         "f3_hz": 3150.07,
         "weight_db": 6.86,
         "hnr_db": 17.22,
-        "jitter_pct": 1.01
+        "jitter_pct": 1.01,
+        "size": 13.9
       },
       {
         "t": 5,
@@ -1746,7 +1750,8 @@
         "f3_hz": null,
         "weight_db": null,
         "hnr_db": null,
-        "jitter_pct": null
+        "jitter_pct": null,
+        "size": null
       },
       {
         "t": 6,
@@ -1761,7 +1766,8 @@
         "f3_hz": 2599.31,
         "weight_db": 5.39,
         "hnr_db": 11.5,
-        "jitter_pct": 2.24
+        "jitter_pct": 2.24,
+        "size": 16.56
       },
       {
         "t": 7,
@@ -1776,7 +1782,8 @@
         "f3_hz": 2568.79,
         "weight_db": 8.18,
         "hnr_db": 13.75,
-        "jitter_pct": 1.6
+        "jitter_pct": 1.6,
+        "size": 15.92
       }
     ]
   }

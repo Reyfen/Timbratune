@@ -7,6 +7,8 @@
 //         c <start> <ceiling>            the ceiling path's segments (start 0 for the first)
 //         s <t> <F1> <F2> <F3>           the formants the graphs read, every 6.25 ms
 //         p <t> <F1> <F2> <F3> <F4>      the same with F4 (for perceived size)
+//         z <ΔF> <VTL> <median F0>       perceived size (Hz, cm) and the median pitch (Hz)
+//         r <t> <F1> <F2> <F3> <F4>      the vowel-core rows
 //         w <t> <F0> <weight>            each weight frame
 //   formant-check -live [-method …] (-list … | file.wav …)
 //       each file recorded live as the app does (irregular chunks, an update every 100 ms, the take
@@ -81,6 +83,10 @@ if (dumpDir is not null)
             sb.Append($"s {t:0.#####} {track.ValueAtTime(1, t):0.#} {track.ValueAtTime(2, t):0.#} {track.ValueAtTime(3, t):0.#}\n");
         for (var t = 0.025; t < sound.Duration - 0.025; t += 0.00625)
             sb.Append($"p {t:0.#####} {track.ValueAtTime(1, t):0.#} {track.ValueAtTime(2, t):0.#} {track.ValueAtTime(3, t):0.#} {track.ValueAtTime(4, t):0.#}\n");
+        // Perceived size (RESONANCE-PLAN F8): the take's ΔF (Hz), VTL (cm) and median F0 (Hz), and the vowel-core rows.
+        sb.Append($"z {metrics.Formants.DeltaFHz:0.##} {metrics.Formants.VtlCm:0.##} {metrics.Pitch.MedianHz:0.##}\n");
+        foreach (var r in raw.Formants)
+            sb.Append($"r {r.T:0.#####} {r.F1:0.#} {r.F2:0.#} {r.F3:0.#} {r.F4:0.#}\n");
         var fs = raw.Get("sampling_frequency");
         foreach (var w in raw.WeightFrames)
             sb.Append($"w {w.T:0.#####} {w.F0:0.#} {WeightModule.CorrectedH1A3(w, fs):0.##}\n");

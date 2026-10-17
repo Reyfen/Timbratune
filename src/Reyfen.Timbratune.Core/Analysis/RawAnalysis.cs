@@ -32,8 +32,8 @@ public sealed class RawAnalysis
 
     public double Get(string key) => Summary.TryGetValue(key, out var v) ? v : double.NaN;
 
-    /// <summary>A vowel-core moment's F1–F3, measured with the formant ceiling <see cref="Ceiling"/> (Hz).</summary>
-    public readonly record struct FormantRow(double Ceiling, double T, double F1, double F2, double F3);
+    /// <summary>A vowel-core moment's F1–F4 (F4 NaN where unknown), measured with the formant ceiling <see cref="Ceiling"/> (Hz).</summary>
+    public readonly record struct FormantRow(double Ceiling, double T, double F1, double F2, double F3, double F4 = double.NaN);
 
     public readonly record struct WeightRow(
         double T, double F0, double F1, double F2, double F3,
