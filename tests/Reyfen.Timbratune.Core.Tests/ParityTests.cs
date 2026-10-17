@@ -10,7 +10,7 @@ namespace Reyfen.Timbratune.Core.Tests;
 
 /// <summary>
 /// Runs the app's analysis engine (pure C#, Reyfen.Timbratune.Acoustics) on the fixture
-/// clips and compares every metric with what Euphonia-TypeScript/analyze.py
+/// clips and compares every metric with what Euphonia's analyze.py
 /// (parselmouth) produced for the same WAV. Also checks the C# engine against
 /// the Praat-backed reference engine when Praat is installed.
 /// </summary>

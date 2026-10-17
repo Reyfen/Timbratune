@@ -2,7 +2,7 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
   <!--
     Theme tokens, mirroring the CSS custom properties in
-    Euphonia-TypeScript/dashboard-react/src/index.css:
+    Euphonia's dashboard-react/src/index.css:
       Light = "blossom" (the default), Dark = "dusk-plum".
     Custom-drawn controls look up the *Color* keys; XAML uses the *Brush* keys.
     Zone colours carry fixed meaning (see Reyfen.Timbratune.Core/Domain/Zones.cs):
