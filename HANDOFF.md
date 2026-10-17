@@ -1341,6 +1341,20 @@ Version 0.4.0 ports the research formant ceiling that follows the voice (R1b) an
 - Docs: CLAUDE.md (the plan, `Analysis/Ceilings/`, the re-analysis files, `tools/formant-check`, `tools/phone-bench`), REFACTOR-PLAN §10.
 - Not done here: the emulator smoke test; the Pixel 4a runs of F11 record and save takes through the whole app instead.
 
+**F10, performance on Windows** (`tools/analysis-bench -runs 10 -probes`, the same bench program in both: v0.3.0 `4f47e74` in a worktree against `771344b`; 6 rounds alternating, medians of the round medians; this machine, 24 cores, Release, `long.wav` 27.6 s, nothing else running):
+
+| Measure | v0.3.0 | v0.4.0 | Change |
+|---|---|---|---|
+| Full analysis | 333.4 ms | 489.2 ms | +46.7 % |
+| Full analysis allocation | 155.1 MB | 211.0 MB | +36.0 % |
+| Live update, quick / full (median per tick) | 8.82 / 9.48 ms | 8.97 / 9.53 ms | +1.6 / +0.5 % |
+| Live update, p95 per tick | 17.5 ms | 34.0 ms | +94 % |
+| Live updates, whole take | 2,573 ms | 3,463 ms | +34.6 % |
+| Live allocation | 8.52 MB/s | 10.86 MB/s | +27.5 % |
+| `live.compute` (drawing data), whole take | 294.5 ms | 320.6 ms | +8.8 % (the size timeline) |
+
+Probes per run: `analysis.formants` 239.6 → 389.6 ms (resampling 201.4 → 298.8, Burg frames 38.3 → 90.8), `analysis.formants.path` 5.5 ms; `live.formants` 524.5 → 1,382.0 ms, `live.formants.path` 22.0 ms; everything else unchanged (HNR, pitch, series, assembly). Rounds were consistent (full analysis: v0.3.0 320–341, v0.4.0 478–498 ms). The median live tick is unchanged; the formant blocks (every 0.5 s of audio) make the slow ticks twice as slow. The cost is the 3 extra ceilings' resampling and Burg frames (their rates add up to 55 kHz instead of 21 kHz), not the path. The research's estimate (saved ×1.2–1.3, live ×1.1) was too low. Above the refactoring's +3 % budget, which doesn't apply to a version that measures more on purpose; whether it is acceptable is the owner's call with the phone numbers (F11).
+
 ## 8. Current state, at the time of writing
 
 **Branches (2026-10-10):** the user renamed them on GitHub: `dev` became `main` (everything up to `bc1ce48`, tagged `v0.1.0`), and `v0.2.0` became `dev/v0.2.0` (§8d–§8h, up to `8e88ea6`; not merged into `main` yet). The local branches were renamed to match and track `origin/main` and `origin/dev/v0.2.0`. The old `v0.2.0` branch name clashed with a `v0.2.0` tag; `dev/…` names can't coexist with a branch called `dev`. Commit `9c752e6`'s subject starts with a stray UTF-8 BOM from PowerShell 5.1's `Out-File`; write commit messages without a BOM.
