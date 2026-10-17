@@ -1378,6 +1378,21 @@ Probes per run: `analysis.formants` 239.6 → 389.6 ms (resampling 201.4 → 298
    - Results: VTR (16 kHz) identical; EARS (48 kHz, 749 files) 97.7 % of graph frames identical to 0.1 Hz, p99 0.1 Hz, one take's near-tie switch flipped (its F2 card 9.9 Hz); trans/masc cards within 0.1 Hz, size within 0.01 cm. Goldens moved by ≤ 0.01 Hz (saved cards) and ≤ 0.04 Hz (live points).
 - **Bench now** (this machine, 5 runs): full analysis 489 → 384 ms (`analysis.formants.resample` 299 → 203 ms), live updates over the take 3,463 → 2,978 ms, p95 tick 34.0 → 20.9 ms, `live.formants` 1,382 → 901 ms (v0.3.0: 341 ms, 2,573 ms, 17.5 ms, 525 ms).
 
+**Pixel 4a after the optimisations** (`7c5f4df`, same method as F11, 6 alternating pairs against the same v0.3.0 build, battery 17 %):
+
+| Build | fps | janky % | frames > 50 ms | live updates | update median / full | UI stalls | Stop to saved (analysis) |
+|---|---|---|---|---|---|---|---|
+| v0.3.0 | 51.6 | 10.6 | 20.5 | 225 | 41.0 / 60.9 ms | 24 | 4.61 s (3.91 s) |
+| v0.4.0 before (F11) | 47.7 | 12.6 | 32 | 193 | 48.9 / 75.4 ms | 32.5 | 6.43 s (5.70 s) |
+| v0.4.0 now | 50.0 | 11.6 | 26.5 | 215.5 | 46.1 / 60.3 ms | 25.5 | 5.88 s (5.17 s) |
+
+Against v0.3.0 the cost fell from −4.3 to −1.6 fps, from +2.2 to +1.0 points of janky frames (shuffle p 0.03; the P7 cost the owner accepted was +1.1), and Stop from +1.7 to +1.3 s. Full live updates are back at v0.3.0's time.
+
+**Further options, not built** (each the owner's choice):
+- At Stop, reuse the live analysis' formant frames (they cover the whole take on the saved grid) instead of analysing the take's formants again: most of the remaining +1.3 s. The saved formants would then come from the live blocks: per frame a median 2–3 Hz off a whole-take analysis (F1), the same accuracy, but an imported WAV of the same take would differ by that much.
+- Analyse the candidates' frames only around voiced moments in the saved analysis (the others are never read): exact, about 10 % of the saved analysis, at the cost of moving Burg after pitch.
+- Larger live blocks (fewer transforms per second; resonance and size dots arrive later), or spreading a block's ceilings over two updates (lower peaks, same work).
+
 ## 8. Current state, at the time of writing
 
 **Branches (2026-10-10):** the user renamed them on GitHub: `dev` became `main` (everything up to `bc1ce48`, tagged `v0.1.0`), and `v0.2.0` became `dev/v0.2.0` (§8d–§8h, up to `8e88ea6`; not merged into `main` yet). The local branches were renamed to match and track `origin/main` and `origin/dev/v0.2.0`. The old `v0.2.0` branch name clashed with a `v0.2.0` tag; `dev/…` names can't coexist with a branch called `dev`. Commit `9c752e6`'s subject starts with a stray UTF-8 BOM from PowerShell 5.1's `Out-File`; write commit messages without a BOM.
