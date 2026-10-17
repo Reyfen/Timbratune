@@ -1260,6 +1260,14 @@ Phase P10 of `REFACTOR-PLAN.md` closes the refactoring of v0.3.0 (P0–P10, §8i
 
 **Next (later versions):** the telemetry adapters (Mixpanel, Sentry; §5), accounts and the avatar (§6) with settings sync (§5a.3), the browser head (§7).
 
+## 8t. v0.4.0: resonance plan F0, baselines and the phone bench (2026-10-17)
+
+Version 0.4.0 ports the research formant ceiling that follows the voice (R1b) and perceived size (R2) from `C:\Projects\Reyfen\Timbratune-research` (tag `research-r1b`), phase by phase: `RESONANCE-PLAN.md`.
+
+- **Desktop baselines of v0.3.0** (`4f47e74`'s code; this machine, 24 cores, .NET 10.0.11, Release, `long.wav`, 10 runs): `tools/analysis-bench/baseline-v030.json`. Full analysis 339.6 ms (143.3 MB), live update quick / full 8.98 / 9.57 ms per tick, whole take 2,602 ms, live 8.50 MB/s. `tools/live-steadiness` gives the numbers of §8i unchanged (F2 4.54 / 2.12 / 46.44, F3 0.73 / 0.35 / 4.26, weight 1.51 / 0.72 / 10.70).
+- **`tools/phone-bench`:** the phone A/B of §8d/§8i as scripts in the repo (`ab.sh`, `run.sh`, `analyze.py` with the shuffle test, `clean.sh`), for any package. Builds for it use the separate app id `com.reyfen.timbratune.research`, so the owner's installed app and its takes are never touched.
+- **Android builds from a long path fail:** the Mono AOT compiler can't open assemblies under the session scratchpad (`Can not open image …linked\Microsoft.Extensions.DependencyInjection.Abstractions.dll`). Build from a short path (e.g. a worktree at `C:\Projects\Reyfen	t-base`).
+
 ## 8. Current state, at the time of writing
 
 **Branches (2026-10-10):** the user renamed them on GitHub: `dev` became `main` (everything up to `bc1ce48`, tagged `v0.1.0`), and `v0.2.0` became `dev/v0.2.0` (§8d–§8h, up to `8e88ea6`; not merged into `main` yet). The local branches were renamed to match and track `origin/main` and `origin/dev/v0.2.0`. The old `v0.2.0` branch name clashed with a `v0.2.0` tag; `dev/…` names can't coexist with a branch called `dev`. Commit `9c752e6`'s subject starts with a stray UTF-8 BOM from PowerShell 5.1's `Out-File`; write commit messages without a BOM.
