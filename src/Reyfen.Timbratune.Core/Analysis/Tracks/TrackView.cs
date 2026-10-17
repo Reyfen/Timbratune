@@ -2,6 +2,7 @@ using Reyfen.Timbratune.Acoustics;
 using Reyfen.Timbratune.Acoustics.Formants;
 using Reyfen.Timbratune.Acoustics.Intensity;
 using Reyfen.Timbratune.Acoustics.Pitch;
+using Reyfen.Timbratune.Core.Analysis.Ceilings;
 
 namespace Reyfen.Timbratune.Core.Analysis.Tracks;
 
@@ -21,8 +22,19 @@ public readonly struct TrackView
     public PitchContour Pitch { get; init; }
     public IntensityContour Intensity { get; init; }
     public HarmonicityContour Harmonicity { get; init; }
-    public IFormantTrack Formants5500 { get; init; }
-    public IFormantTrack Formants5000 { get; init; }
+    /// <summary>How the formant ceiling was chosen.</summary>
+    public FormantCeilingMethod FormantMethod { get; init; }
+    /// <summary>The candidate ceilings (Hz), in the order of <see cref="FormantCandidates"/>.</summary>
+    public IReadOnlyList<double> FormantCeilings { get; init; }
+    /// <summary>The formant analysis at each candidate ceiling, as measured (Legacy: 5500 and 5000 Hz).</summary>
+    public IReadOnlyList<IFormantTrack> FormantCandidates { get; init; }
+    /// <summary>
+    /// The formants every metric reads: along <see cref="CeilingPath"/> (each moment from its ceiling's
+    /// median-smoothed analysis), or with Legacy, or without the path track, the 5500 Hz analysis.
+    /// </summary>
+    public IFormantTrack Formants { get; init; }
+    /// <summary>Which candidate holds when (<see cref="TrackSet.FormantPath"/>); null with Legacy or without that track.</summary>
+    public CeilingPath? CeilingPath { get; init; }
     /// <summary>LTAS samples at 100, 200, … 5000 Hz; empty when not measured.</summary>
     public IReadOnlyList<(double X, double Y)> Ltas { get; init; }
     /// <summary>Glottal pulse times, sorted.</summary>
@@ -88,16 +100,14 @@ public sealed class DerivedTracks
     }
 
     /// <summary>Stage 3: the derived tracks, from the gate, the voiced frames and the formants.</summary>
-    internal void ComputeStage3(IFormantTrack formants5500, IFormantTrack formants5000,
-        Func<double, double, RawAnalysis.WeightRow?> weightRow, TrackSet set)
+    internal void ComputeStage3(in TrackView formants, Func<double, double, RawAnalysis.WeightRow?> weightRow, TrackSet set)
     {
         if (set.Has(TrackSet.VowelFormantRows))
         {
             // vowel_formants(): the gated times subsampled to ≤ 300 (Subsample returns its input when
             // it is short enough: then a copy, as the gate list is reused).
             var selected = LoudTimes.Count <= 300 ? new List<double>(LoudTimes) : RawAnalysisAssembler.Subsample(LoudTimes, 300);
-            VowelFormantRows = RawAnalysisAssembler.VowelCoreFormants(selected,
-                [(RawAnalysisAssembler.FormantCeiling, formants5500), (5000, formants5000)]);
+            VowelFormantRows = RawAnalysisAssembler.VowelCoreFormants(selected, formants);
             FormantFramesTried = selected.Count;
             Tracks |= TrackSet.VowelFormantRows;
         }

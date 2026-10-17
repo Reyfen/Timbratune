@@ -97,6 +97,7 @@ public sealed class RawAnalysisBuilder
 {
     public Dictionary<string, double> Summary { get; } = new(StringComparer.Ordinal);
     public IReadOnlyList<RawAnalysis.FormantRow> Formants { get; set; } = [];
+    public Ceilings.FormantCeilingMethod FormantMethod { get; set; } = Ceilings.FormantCeilingMethod.Legacy;
     public int FormantFramesTried { get; set; }
     public IReadOnlyList<RawAnalysis.WeightRow> WeightFrames { get; set; } = [];
     public IReadOnlyList<(double X, double Y)> Ltas { get; set; } = [];
@@ -110,6 +111,7 @@ public sealed class RawAnalysisBuilder
     {
         Summary = Summary,
         Formants = Formants,
+        FormantMethod = FormantMethod,
         FormantFramesTried = FormantFramesTried,
         WeightFrames = WeightFrames,
         Ltas = Ltas,

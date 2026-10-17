@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using Reyfen.Timbratune.Core.Analysis;
+using Reyfen.Timbratune.Core.Analysis.Ceilings;
 using Reyfen.Timbratune.Core.Json;
 using Reyfen.Timbratune.Core.Models;
 using Xunit.Abstractions;
@@ -30,7 +31,8 @@ public sealed class ParityTests(ITestOutputHelper output)
             return;
         }
         var reference = (await praat.AnalyzeAsync(Fixture(clip + ".wav"))).Metrics;
-        var actual = (await new AcousticsAnalysisEngine { LoudOutlierFraction = 0 }.AnalyzeAsync(Fixture(clip + ".wav"))).Metrics;
+        // analyze.py's formant ceilings (5500/5000 Hz), as the Praat engine measures them.
+        var actual = (await new AcousticsAnalysisEngine { LoudOutlierFraction = 0, FormantMethod = FormantCeilingMethod.Legacy }.AnalyzeAsync(Fixture(clip + ".wav"))).Metrics;
         actual.Formants.UsablePct = null; // the reference engine doesn't report it
         // Same measurements, so after 2-dp rounding everything must be identical.
         var expectedJson = TimbratuneJson.WriteRecordings([reference]);
@@ -44,7 +46,7 @@ public sealed class ParityTests(ITestOutputHelper output)
     public async Task MatchesPythonAnalyzer(string clip)
     {
         // The reference gate: relative to the single loudest frame, as in analyze.py.
-        var result = await new AcousticsAnalysisEngine { LoudOutlierFraction = 0 }.AnalyzeAsync(Fixture(clip + ".wav"));
+        var result = await new AcousticsAnalysisEngine { LoudOutlierFraction = 0, FormantMethod = FormantCeilingMethod.Legacy }.AnalyzeAsync(Fixture(clip + ".wav"));
         var expected = TimbratuneJson.ReadRecordings(File.ReadAllText(Fixture(clip + ".expected.json")))[0];
         var expectedDetail = TimbratuneJson.ReadDetail(File.ReadAllText(Fixture(clip + ".expected-detail.json")))!;
         var actual = result.Metrics;

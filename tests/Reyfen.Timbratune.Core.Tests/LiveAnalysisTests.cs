@@ -61,7 +61,8 @@ public sealed class LiveAnalysisTests(ITestOutputHelper output)
         var samples = Samples(clip);
         var (snapshot, savedLength, updates, time) = Record(samples);
         Assert.InRange(samples.Length - savedLength, 0, 441); // at most 10 ms trimmed
-        var saved = AnalysisPostProcessor.Process(AcousticsAnalysisEngine.Measure(new Sound(samples[..savedLength], 44100)));
+        var saved = AnalysisPostProcessor.Process(AcousticsAnalysisEngine.Measure(new Sound(samples[..savedLength], 44100),
+            formantMethod: Reyfen.Timbratune.Core.Analysis.Ceilings.FormantCeilingMethod.Legacy));
         Assert.NotNull(snapshot.Result);
         var live = snapshot.Result!;
         var e = saved.Metrics;

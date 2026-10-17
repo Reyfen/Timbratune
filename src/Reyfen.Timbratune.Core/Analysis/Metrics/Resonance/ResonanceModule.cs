@@ -1,3 +1,4 @@
+using Reyfen.Timbratune.Core.Analysis.Ceilings;
 using Reyfen.Timbratune.Core.Analysis.Tracks;
 using Reyfen.Timbratune.Core.Models;
 using static Reyfen.Timbratune.Core.Analysis.AnalysisPostProcessor;
@@ -6,15 +7,16 @@ namespace Reyfen.Timbratune.Core.Analysis.Metrics.Resonance;
 
 /// <summary>
 /// Resonance (F1–F3): vowel_formants() of analyze.py — the vowel-core rows (≤ 300 loud voiced
-/// moments with a plausible F1, at both ceilings), the F2 stability gate and the ceiling with the
-/// steadier F2, their medians, and the usable share at 5500 Hz; F2 per phrase, F2/F3 per trend
-/// slice (from the kept rows); and the F1–F3 series on the gated frames (5500 Hz ceiling).
+/// moments with a plausible F1), the F2 stability gate, their medians and the usable share; F2 per
+/// phrase, F2/F3 per trend slice (from the kept rows); and the F1–F3 series on the gated frames.
+/// The formants follow the ceiling path (Ceilings/CeilingPathFinder); with the Legacy method the
+/// rows are measured at both 5500 and 5000 Hz and the ceiling with the steadier F2 wins.
 /// </summary>
 public sealed class ResonanceModule : IMetricModule
 {
     public string Name => "resonance";
 
-    public TrackSet RequiredTracks => TrackSet.Formants | TrackSet.LoudVowelGate | TrackSet.VowelFormantRows;
+    public TrackSet RequiredTracks => TrackSet.Formants | TrackSet.FormantPath | TrackSet.LoudVowelGate | TrackSet.VowelFormantRows;
 
     /// <summary>F1 mostly follows the vowel (mouth openness): saved and shown in the resonance section only.</summary>
     public static readonly MetricInfo F1 = new()
@@ -49,8 +51,20 @@ public sealed class ResonanceModule : IMetricModule
 
     public IReadOnlyList<MetricInfo> Metrics => All;
 
+    /// <summary>The summary keys of the ceiling path (Hz, Hz, Hz, count); absent with Legacy.</summary>
+    public const string CeilingKey = "formant_ceiling", CeilingLowestKey = "formant_ceiling_lowest",
+        CeilingHighestKey = "formant_ceiling_highest", CeilingSwitchesKey = "formant_ceiling_switches";
+
     public void Measure(in TrackView tracks, RawAnalysisBuilder raw)
     {
+        raw.FormantMethod = tracks.FormantMethod;
+        if (tracks.CeilingPath is { } path)
+        {
+            raw.Summary[CeilingKey] = tracks.FormantCeilings[path.Dominant];
+            raw.Summary[CeilingLowestKey] = tracks.FormantCeilings[path.Lowest];
+            raw.Summary[CeilingHighestKey] = tracks.FormantCeilings[path.Highest];
+            raw.Summary[CeilingSwitchesKey] = path.Switches;
+        }
         var derived = tracks.Derived;
         if (derived.Tracks.Has(TrackSet.VowelFormantRows))
         {
@@ -60,24 +74,29 @@ public sealed class ResonanceModule : IMetricModule
         // Tracks made without the derived rows: select them here, as the track stage would.
         var voiced = derived.Tracks.Has(TrackSet.VoicedFrames) ? derived.Voiced : RawAnalysisAssembler.VoicedFrames(tracks.Pitch);
         var selected = RawAnalysisAssembler.SelectVowelCoreTimes(voiced, tracks.Intensity, derived.LoudOutlierFraction);
-        (raw.Formants, raw.FormantFramesTried) = (RawAnalysisAssembler.VowelCoreFormants(selected,
-            [(RawAnalysisAssembler.FormantCeiling, tracks.Formants5500), (5000, tracks.Formants5000)]), selected.Count);
+        (raw.Formants, raw.FormantFramesTried) = (RawAnalysisAssembler.VowelCoreFormants(selected, tracks), selected.Count);
     }
 
     public void Summarize(MetricContext context)
     {
-        var formants = VowelFormants(context.Raw.Formants);
+        var raw = context.Raw;
+        var formants = VowelFormants(raw.Formants, raw.FormantMethod);
+        var switches = raw.Get(CeilingSwitchesKey);
         context.Metrics.Formants = new Formants
         {
             F1Hz = Clean(formants.F1),
             F2Hz = Clean(formants.F2),
             F3Hz = Clean(formants.F3),
-            UsablePct = UsableFormantPct(context.Raw),
+            UsablePct = UsableFormantPct(raw),
+            CeilingHz = Clean(raw.Get(CeilingKey)),
+            CeilingLowestHz = Clean(raw.Get(CeilingLowestKey)),
+            CeilingHighestHz = Clean(raw.Get(CeilingHighestKey)),
+            CeilingSwitches = double.IsFinite(switches) ? (int)switches : null,
         };
     }
 
     /// <summary>The kept vowel-core rows as (time, F2, F3).</summary>
-    public object? DetailData(RawAnalysis raw) => VowelFormants(raw.Formants).Kept.Select(r => (r.T, r.F2, r.F3)).ToList();
+    public object? DetailData(RawAnalysis raw) => VowelFormants(raw.Formants, raw.FormantMethod).Kept.Select(r => (r.T, r.F2, r.F3)).ToList();
 
     public void FillPhrase(DetailInputs inputs, object? data, Phrase phrase, MetricValues columns)
     {
@@ -113,7 +132,7 @@ public sealed class ResonanceModule : IMetricModule
         f1?.Clear();
         f2.Clear();
         f3.Clear();
-        var track = t.Formants5500;
+        var track = t.Formants;
         for (var i = 0; i < loudTimes.Count; i++)
         {
             var time = loudTimes[i];
@@ -140,30 +159,36 @@ public sealed class ResonanceModule : IMetricModule
     public const double UnreliableFormantsBelowPct = 75;
 
     /// <summary>
-    /// Share (%) of the sampled loud voiced moments with a usable F1 at the 5500 Hz ceiling;
+    /// Share (%) of the sampled loud voiced moments with a usable F1 (Legacy: at the 5500 Hz ceiling);
     /// null if there were fewer than <see cref="MinFramesForUsable"/> (or none were counted).
     /// </summary>
     internal static double? UsableFormantPct(RawAnalysis raw)
     {
         if (raw.FormantFramesTried < MinFramesForUsable) return null;
-        var usable = raw.Formants.Count(r => r.Ceiling == RawAnalysisAssembler.FormantCeiling);
+        var usable = raw.FormantMethod == FormantCeilingMethod.Legacy
+            ? raw.Formants.Count(r => r.Ceiling == RawAnalysisAssembler.FormantCeiling)
+            : raw.Formants.Count;
         return Math.Round(100.0 * usable / raw.FormantFramesTried, 1);
     }
 
     // ------------------------------------------------------------------
     // vowel_formants(): F2 stability gate + ceiling choice + medians
     // ------------------------------------------------------------------
+    /// <summary>
+    /// The F2 stability gate on the rows, then the medians. Legacy: per ceiling, and the ceiling with the
+    /// steadier F2 wins. Otherwise the rows are one track (the ceiling path), gated in time order.
+    /// </summary>
     /// <returns>Median F1–F3 plus the vowel-core frames they came from (for per-phrase F2).</returns>
     internal static (double? F1, double? F2, double? F3, List<RawAnalysis.FormantRow> Kept) VowelFormants(
-        IReadOnlyList<RawAnalysis.FormantRow> rows)
+        IReadOnlyList<RawAnalysis.FormantRow> rows, FormantCeilingMethod method = FormantCeilingMethod.Legacy)
     {
-        List<RawAnalysis.FormantRow> Gate(double ceiling)
+        List<RawAnalysis.FormantRow> Gate(double? ceiling)
         {
             var kept = new List<RawAnalysis.FormantRow>();
             double? prevF2 = null;
             foreach (var r in rows)
             {
-                if (r.Ceiling != ceiling) continue;
+                if (ceiling is { } c && r.Ceiling != c) continue;
                 // Drop frames where F2 jumps > 150 Hz vs the previous frame;
                 // prev_f2 advances even for dropped frames (as in analyze.py).
                 if (prevF2 is { } prev && Math.Abs(r.F2 - prev) > 150.0)
@@ -175,6 +200,13 @@ public sealed class ResonanceModule : IMetricModule
                 prevF2 = r.F2;
             }
             return kept;
+        }
+
+        if (method != FormantCeilingMethod.Legacy)
+        {
+            var kept = Gate(null);
+            return (Median(kept.Select(r => r.F1).ToList()), Median(kept.Select(r => r.F2).ToList()),
+                Median(kept.Select(r => r.F3).ToList()), kept);
         }
 
         List<RawAnalysis.FormantRow>? best = null;

@@ -3,6 +3,7 @@ using Reyfen.Timbratune.Acoustics.Numerics;
 using Reyfen.Timbratune.Acoustics.Pitch;
 using Reyfen.Timbratune.Acoustics.Spectral;
 using Reyfen.Timbratune.Acoustics.Streaming;
+using Reyfen.Timbratune.Core.Analysis.Ceilings;
 using Reyfen.Timbratune.Core.Diagnostics;
 
 namespace Reyfen.Timbratune.Core.Analysis.Tracks;
@@ -89,12 +90,8 @@ public sealed class LiveTrackProvider
             return row;
         }
 
-        // Stage 3: the derived tracks (full updates).
         var track5000 = _formants5000.Track();
-        if ((set & (TrackSet.VowelFormantRows | TrackSet.WeightFrames)) != 0)
-            using (Timing.Measure("live.derived")) _derived.ComputeStage3(track5500, track5000, WeightRow, set);
-
-        return new TrackView
+        var tracks = new TrackView
         {
             Tracks = set,
             Duration = view.Duration,
@@ -103,13 +100,19 @@ public sealed class LiveTrackProvider
             Pitch = pitch,
             Intensity = intensity,
             Harmonicity = harmonicity,
-            Formants5500 = track5500,
-            Formants5000 = track5000,
+            FormantMethod = FormantCeilingMethod.Legacy,
+            FormantCeilings = FormantCeilings.LegacyCandidates,
+            FormantCandidates = [track5500, track5000],
+            Formants = track5500,
             Ltas = set.Has(TrackSet.Ltas) ? RawAnalysisAssembler.LtasPoints(Ltas.FromSound(sound, 100)) : [],
             Pulses = _pulses.Pulses,
             StretchJitter = _pulses.StretchJitter,
             WeightRow = WeightRow,
             Derived = _derived,
         };
+        // Stage 3: the derived tracks (full updates).
+        if ((set & (TrackSet.VowelFormantRows | TrackSet.WeightFrames)) != 0)
+            using (Timing.Measure("live.derived")) _derived.ComputeStage3(tracks, WeightRow, set);
+        return tracks;
     }
 }

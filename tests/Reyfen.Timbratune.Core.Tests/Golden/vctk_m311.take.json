@@ -17,10 +17,14 @@
       "sd_hz": 35.2
     },
     "formants": {
-      "f1_hz": 419.27,
-      "f2_hz": 1452.35,
-      "f3_hz": 2477.7,
-      "usable_pct": 98.2
+      "f1_hz": 415.86,
+      "f2_hz": 1398.4,
+      "f3_hz": 2376.49,
+      "usable_pct": 100,
+      "ceiling_hz": 4500,
+      "ceiling_lowest_hz": 4500,
+      "ceiling_highest_hz": 4500,
+      "ceiling_switches": 0
     },
     "voice_quality": {
       "hnr_db": 9.37,
@@ -33,8 +37,8 @@
       "max_db": 74.45
     },
     "weight": {
-      "h1a3c_db": 12.05,
-      "h1a3_db": 31.54,
+      "h1a3c_db": 9.26,
+      "h1a3_db": 26.85,
       "tilt_db_khz": -3.57
     },
     "register": {

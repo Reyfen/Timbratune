@@ -1,4 +1,5 @@
 using Reyfen.Timbratune.Acoustics;
+using Reyfen.Timbratune.Core.Analysis.Ceilings;
 using Reyfen.Timbratune.Core.Analysis.Tracks;
 using Reyfen.Timbratune.Core.Diagnostics;
 using Reyfen.Timbratune.Core.Models;
@@ -34,6 +35,9 @@ public sealed class AcousticsAnalysisEngine : IAnalysisEngine
     /// <summary>The loudest share of frames ignored for the vowel-core loudness gate (see <see cref="RawAnalysisAssembler.LoudOutlierFraction"/>); 0 = analyze.py's gate.</summary>
     public double LoudOutlierFraction { get; init; } = RawAnalysisAssembler.LoudOutlierFraction;
 
+    /// <summary>How the formant ceiling is chosen: the ceiling path, or analyze.py's 5500/5000 Hz (the parity tests, older takes).</summary>
+    public FormantCeilingMethod FormantMethod { get; init; } = FormantCeilingMethod.Path;
+
     public bool IsAvailable => true;
     public string? UnavailableReason => null;
 
@@ -62,7 +66,7 @@ public sealed class AcousticsAnalysisEngine : IAnalysisEngine
         // Stage weights: share of the analysis time measured on a 27.6 s take (Release).
         var stages = new StageProgress(progress is null ? null : progress.Report, 93.5, 2, 1, 2.5);
         TrackView tracks;
-        using (Timing.Measure("analysis.measure")) tracks = MeasureTracks(sound, LoudOutlierFraction, stages.Stage(0));
+        using (Timing.Measure("analysis.measure")) tracks = MeasureTracks(sound, LoudOutlierFraction, stages.Stage(0), FormantMethod);
         RawAnalysis raw;
         using (Timing.Measure("analysis.assemble")) raw = RawAnalysisAssembler.Assemble(tracks);
         stages.Complete(1);
@@ -76,10 +80,10 @@ public sealed class AcousticsAnalysisEngine : IAnalysisEngine
     }
 
     /// <summary>All raw measurements of one sound (independent analyses run in parallel).</summary>
-    public static RawAnalysis Measure(Sound sound, Action<double>? progress = null)
+    public static RawAnalysis Measure(Sound sound, Action<double>? progress = null, FormantCeilingMethod formantMethod = FormantCeilingMethod.Path)
     {
         var stages = new StageProgress(progress, 0.97, 0.03);
-        var tracks = MeasureTracks(sound, stages.Stage(0));
+        var tracks = MeasureTracks(sound, RawAnalysisAssembler.LoudOutlierFraction, stages.Stage(0), formantMethod);
         RawAnalysis raw;
         using (Timing.Measure("analysis.assemble")) raw = RawAnalysisAssembler.Assemble(tracks);
         stages.Complete(1);
@@ -92,6 +96,7 @@ public sealed class AcousticsAnalysisEngine : IAnalysisEngine
         MeasureTracks(sound, RawAnalysisAssembler.LoudOutlierFraction, progress);
 
     /// <summary>The same with another loud-vowel gate (0 = analyze.py's).</summary>
-    public static TrackView MeasureTracks(Sound sound, double loudOutlierFraction, Action<double>? progress = null) =>
-        SavedTrackProvider.Measure(sound, TrackSet.All, loudOutlierFraction, progress);
+    public static TrackView MeasureTracks(Sound sound, double loudOutlierFraction, Action<double>? progress = null,
+        FormantCeilingMethod formantMethod = FormantCeilingMethod.Path) =>
+        SavedTrackProvider.Measure(sound, TrackSet.All, loudOutlierFraction, progress, formantMethod);
 }

@@ -12,8 +12,10 @@ public sealed class RawAnalysis
     /// hnr, jitter_local, shimmer_local, intensity_mean/min/max (NaN = undefined).
     /// </summary>
     public required IReadOnlyDictionary<string, double> Summary { get; init; }
-    /// <summary>Vowel-core candidates that passed the F1 gate, in time order per ceiling.</summary>
+    /// <summary>Vowel-core candidates that passed the F1 gate, in time order per ceiling (Legacy) or in time order.</summary>
     public required IReadOnlyList<FormantRow> Formants { get; init; }
+    /// <summary>How <see cref="Formants"/> were measured; Legacy for analyze.py's (and the Praat reference engine's) two ceilings.</summary>
+    public Ceilings.FormantCeilingMethod FormantMethod { get; init; } = Ceilings.FormantCeilingMethod.Legacy;
     /// <summary>How many loud voiced moments were tried for <see cref="Formants"/> (≤ 300); 0 = not counted.</summary>
     public int FormantFramesTried { get; init; }
     public required IReadOnlyList<WeightRow> WeightFrames { get; init; }
@@ -30,6 +32,7 @@ public sealed class RawAnalysis
 
     public double Get(string key) => Summary.TryGetValue(key, out var v) ? v : double.NaN;
 
+    /// <summary>A vowel-core moment's F1–F3, measured with the formant ceiling <see cref="Ceiling"/> (Hz).</summary>
     public readonly record struct FormantRow(double Ceiling, double T, double F1, double F2, double F3);
 
     public readonly record struct WeightRow(

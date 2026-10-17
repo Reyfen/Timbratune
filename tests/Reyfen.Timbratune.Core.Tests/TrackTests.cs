@@ -18,9 +18,11 @@ public sealed class TrackTests
     public void ATrackBringsWhatItIsComputedFrom()
     {
         Assert.Equal(TrackSet.Pitch | TrackSet.Pulses, TrackSet.Pulses.WithDependencies());
-        Assert.Equal(TrackSet.Pitch | TrackSet.Intensity | TrackSet.Formants | TrackSet.VoicedFrames | TrackSet.LoudVowelGate | TrackSet.VowelFormantRows,
-            TrackSet.VowelFormantRows.WithDependencies());
-        Assert.Equal(TrackSet.Pitch | TrackSet.Formants | TrackSet.VoicedFrames | TrackSet.WeightFrames, TrackSet.WeightFrames.WithDependencies());
+        Assert.Equal(TrackSet.Pitch | TrackSet.Formants | TrackSet.FormantPath, TrackSet.FormantPath.WithDependencies());
+        Assert.Equal(TrackSet.Pitch | TrackSet.Intensity | TrackSet.Formants | TrackSet.FormantPath | TrackSet.VoicedFrames | TrackSet.LoudVowelGate
+            | TrackSet.VowelFormantRows, TrackSet.VowelFormantRows.WithDependencies());
+        Assert.Equal(TrackSet.Pitch | TrackSet.Formants | TrackSet.FormantPath | TrackSet.VoicedFrames | TrackSet.WeightFrames,
+            TrackSet.WeightFrames.WithDependencies());
         Assert.Equal(TrackSet.All, TrackSet.All.WithDependencies());
         Assert.True(TrackSet.LiveFull.Has(TrackSet.Live));
         Assert.False(TrackSet.LiveFull.Has(TrackSet.Ltas));
@@ -33,7 +35,7 @@ public sealed class TrackTests
         Assert.Equal(TrackSet.Pitch | TrackSet.Intensity | TrackSet.VoicedFrames | TrackSet.LoudVowelGate, view.Tracks);
         Assert.NotNull(view.Pitch);
         Assert.Null(view.Harmonicity);
-        Assert.Null(view.Formants5500);
+        Assert.Null(view.Formants);
         Assert.Empty(view.Pulses);
         Assert.Equal(TrackSet.VoicedFrames | TrackSet.LoudVowelGate, view.Derived.Tracks);
         Assert.NotEmpty(view.Derived.LoudTimes);

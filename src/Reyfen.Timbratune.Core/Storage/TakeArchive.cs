@@ -46,7 +46,7 @@ public static class TakeArchive
             SourceFile = keepSource && !string.IsNullOrEmpty(recording.SourceFile) ? recording.SourceFile : null,
         },
         Audio = openAudio is null ? new ExportedAudio() : ReadFormat(openAudio),
-        Analysis = Settings(detail),
+        Analysis = Settings(recording, detail),
         Metrics = Metrics(recording),
     };
 
@@ -101,14 +101,17 @@ public static class TakeArchive
         return export;
     }
 
-    private static AnalysisSettings Settings(RecordingDetail detail) => new()
+    private static AnalysisSettings Settings(Recording recording, RecordingDetail detail) => new()
     {
         PitchFloorHz = AcousticsAnalysisEngine.PitchFloor,
         PitchCeilingHz = AcousticsAnalysisEngine.PitchCeiling,
         PitchStepS = AcousticsAnalysisEngine.PitchStep,
         IntensityStepS = AcousticsAnalysisEngine.IntensityStep,
         HnrStepS = AcousticsAnalysisEngine.HnrStep,
-        FormantCeilingHz = RawAnalysisAssembler.FormantCeiling,
+        // A take with a ceiling path records its main ceiling; older takes used 5500 Hz (and 5000 Hz).
+        FormantCeilingHz = recording.Formants.CeilingHz ?? RawAnalysisAssembler.FormantCeiling,
+        FormantMethod = recording.Formants.CeilingHz is null ? "legacy" : "path",
+        FormantCeilingsHz = recording.Formants.CeilingHz is null ? null : [.. Analysis.Ceilings.FormantCeilings.PathCandidates],
         FormantCount = AcousticsAnalysisEngine.FormantCount,
         FormantWindowS = AcousticsAnalysisEngine.FormantWindow,
         FormantStepS = AcousticsAnalysisEngine.FormantWindow / 4,

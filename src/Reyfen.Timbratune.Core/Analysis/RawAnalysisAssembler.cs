@@ -97,6 +97,33 @@ public static class RawAnalysisAssembler
         double outlierFraction = LoudOutlierFraction) =>
         Subsample(LoudVoicedTimes(voiced, intensity, [], outlierFraction), 300);
 
+    /// <summary>
+    /// The selected times with a plausible F1 (250–1000 Hz). With Legacy, measured at both ceilings
+    /// (all 5500 Hz rows, then all 5000 Hz rows); otherwise on <see cref="TrackView.Formants"/>, each row
+    /// tagged with the ceiling that holds at its time.
+    /// </summary>
+    public static List<RawAnalysis.FormantRow> VowelCoreFormants(List<double> selected, in TrackView tracks)
+    {
+        if (tracks.FormantMethod == Ceilings.FormantCeilingMethod.Legacy)
+            return VowelCoreFormants(selected, [(tracks.FormantCeilings[0], tracks.FormantCandidates[0]), (tracks.FormantCeilings[1], tracks.FormantCandidates[1])]);
+        var rows = new List<RawAnalysis.FormantRow>();
+        var path = tracks.CeilingPath;
+        foreach (var t in selected)
+        {
+            if (PlausibleRow(tracks.Formants, t, path is null ? Ceilings.FormantCeilings.FallbackHz : tracks.FormantCeilings[path.At(t)]) is { } row)
+                rows.Add(row);
+        }
+        return rows;
+    }
+
+    private static RawAnalysis.FormantRow? PlausibleRow(IFormantTrack track, double t, double ceiling)
+    {
+        double f1 = track.ValueAtTime(1, t), f2 = track.ValueAtTime(2, t), f3 = track.ValueAtTime(3, t);
+        if (!(f1 > 0 && f2 > 0 && f3 > 0)) return null; // also rejects NaN
+        if (f1 < 250 || f1 > 1000) return null;
+        return new RawAnalysis.FormantRow(ceiling, t, f1, f2, f3);
+    }
+
     /// <summary>The selected times with a plausible F1 (250–1000 Hz) — measured at each formant ceiling.</summary>
     public static List<RawAnalysis.FormantRow> VowelCoreFormants(List<double> selected, (double Ceiling, IFormantTrack Track)[] ceilings)
     {
@@ -104,12 +131,7 @@ public static class RawAnalysisAssembler
         foreach (var (ceiling, track) in ceilings)
         {
             foreach (var t in selected)
-            {
-                double f1 = track.ValueAtTime(1, t), f2 = track.ValueAtTime(2, t), f3 = track.ValueAtTime(3, t);
-                if (!(f1 > 0 && f2 > 0 && f3 > 0)) continue; // also rejects NaN
-                if (f1 < 250 || f1 > 1000) continue;
-                rows.Add(new RawAnalysis.FormantRow(ceiling, t, f1, f2, f3));
-            }
+                if (PlausibleRow(track, t, ceiling) is { } row) rows.Add(row);
         }
         return rows;
     }
@@ -169,7 +191,7 @@ public static class RawAnalysisAssembler
     /// <summary>
     /// One weight row: a Hamming-windowed narrowband spectrum (window max(25 ms, 3 periods))
     /// gives H1 (peak near F0) and A3 (peak near the harmonic closest to F3), alongside
-    /// F1–F3 and their bandwidths from the 5500 Hz formant track.
+    /// F1–F3 and their bandwidths from the formant track (<see cref="TrackView.Formants"/>).
     /// </summary>
     public static RawAnalysis.WeightRow? MeasureWeightRow(Sound sound, IFormantTrack formants, double t, double f0)
     {

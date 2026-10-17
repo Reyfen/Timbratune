@@ -57,6 +57,23 @@ public sealed class Formants
     /// </summary>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public double? UsablePct { get; set; }
+
+    /// <summary>
+    /// The formant ceiling (Hz) of most of the take, when the ceiling followed the voice (v0.4.0 and
+    /// later); null for takes analysed with the fixed 5500/5000 Hz choice of older versions.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public double? CeilingHz { get; set; }
+
+    /// <summary>The lowest and highest ceilings (Hz) the take used, and how often it changed (with <see cref="CeilingHz"/>).</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public double? CeilingLowestHz { get; set; }
+
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public double? CeilingHighestHz { get; set; }
+
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public int? CeilingSwitches { get; set; }
 }
 
 public sealed class VoiceQuality

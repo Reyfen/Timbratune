@@ -4,6 +4,7 @@ using Reyfen.Timbratune.Acoustics.Intensity;
 using Reyfen.Timbratune.Acoustics.Pitch;
 using Reyfen.Timbratune.Acoustics.Spectral;
 using Reyfen.Timbratune.Acoustics.Voice;
+using Reyfen.Timbratune.Core.Analysis.Ceilings;
 using Reyfen.Timbratune.Core.Diagnostics;
 
 namespace Reyfen.Timbratune.Core.Analysis.Tracks;
@@ -11,18 +12,21 @@ namespace Reyfen.Timbratune.Core.Analysis.Tracks;
 /// <summary>
 /// The tracks of a whole sound (the saved analysis), with the same kernels and settings as
 /// analyze.py's Praat calls. Stage 1 runs its tracks in parallel on all cores, then stage 2
-/// (pulses beside voiced frames, sounding and the gate), then the derived tracks.
+/// (pulses beside voiced frames, sounding, the gate and the formant ceiling path), then the
+/// derived tracks.
 /// </summary>
 public static class SavedTrackProvider
 {
     public static TrackView Measure(Sound sound, TrackSet set = TrackSet.All,
-        double loudOutlierFraction = RawAnalysisAssembler.LoudOutlierFraction, Action<double>? progress = null)
+        double loudOutlierFraction = RawAnalysisAssembler.LoudOutlierFraction, Action<double>? progress = null,
+        FormantCeilingMethod formantMethod = FormantCeilingMethod.Path)
     {
         set = set.WithDependencies();
         PitchContour pitch = null!;
         IntensityContour intensity = null!;
         HarmonicityContour harmonicity = null!;
-        IFormantTrack formant5500 = null!, formant5000 = null!;
+        var ceilings = FormantCeilings.Candidates(formantMethod);
+        FormantContour[] candidates = [];
         IReadOnlyList<(double X, double Y)> ltas = [];
         // Weights: how long each stage takes (ms, 30 s take on a Pixel 4a, all running together);
         // pulses run after the rest, so theirs is scaled to their share of the wall time.
@@ -37,10 +41,9 @@ public static class SavedTrackProvider
         if (set.Has(TrackSet.Formants))
             stage1.Add(() =>
             {
-                // Both ceilings share the resampling's forward transform.
+                // All candidate ceilings share the resampling's forward transform.
                 using (Timing.Measure("analysis.formants"))
                 {
-                    double[] ceilings = [RawAnalysisAssembler.FormantCeiling, 5000];
                     var formantStages = new StageProgress(stages.Stage(3), 85, 15);
                     Sound[] resampled;
                     using (Timing.Measure("analysis.formants.resample"))
@@ -48,8 +51,8 @@ public static class SavedTrackProvider
                     FormantContour[] contours;
                     using (Timing.Measure("analysis.formants.frames"))
                         contours = FormantAnalyzer.BurgResampled(resampled, ceilings, 0, AcousticsAnalysisEngine.FormantCount,
-                            AcousticsAnalysisEngine.FormantWindow, 50, formantStages.Stage(1));
-                    (formant5500, formant5000) = (contours[0], contours[1]);
+                            AcousticsAnalysisEngine.FormantWindow, 50, formantStages.Stage(1), FormantCeilings.GridOrigin(formantMethod));
+                    candidates = contours;
                 }
             });
         if (set.Has(TrackSet.Ltas))
@@ -58,18 +61,19 @@ public static class SavedTrackProvider
 
         var derived = new DerivedTracks();
         double[] pulses = [];
+        IFormantTrack formants = candidates.Length > 0 ? candidates[FormantCeilings.FallbackIndex(ceilings)] : null!;
+        CeilingPath? path = null;
+        var stage2 = new List<Action>(3) { () => derived.ComputeStage2(pitch, intensity, set, loudOutlierFraction) };
         if (set.Has(TrackSet.Pulses))
-            Parallel.Invoke(
-                () => { using (Timing.Measure("analysis.pulses")) pulses = PulseDetector.PeriodicCrossCorrelation(sound, pitch); },
-                () => derived.ComputeStage2(pitch, intensity, set, loudOutlierFraction));
-        else derived.ComputeStage2(pitch, intensity, set, loudOutlierFraction);
+            stage2.Add(() => { using (Timing.Measure("analysis.pulses")) pulses = PulseDetector.PeriodicCrossCorrelation(sound, pitch); });
+        if (set.Has(TrackSet.FormantPath) && formantMethod == FormantCeilingMethod.Path)
+            stage2.Add(() => { using (Timing.Measure("analysis.formants.path")) (formants, path) = FindPath(candidates, ceilings, pitch); });
+        Parallel.Invoke([.. stage2]);
         stages.Complete(5);
 
-        var formants = formant5500;
-        Func<double, double, RawAnalysis.WeightRow?> weightRow = (t, f0) => RawAnalysisAssembler.MeasureWeightRow(sound, formants, t, f0);
-        using (Timing.Measure("analysis.derived")) derived.ComputeStage3(formant5500, formant5000, weightRow, set);
-
-        return new TrackView
+        var formantsRead = formants;
+        Func<double, double, RawAnalysis.WeightRow?> weightRow = (t, f0) => RawAnalysisAssembler.MeasureWeightRow(sound, formantsRead, t, f0);
+        var view = new TrackView
         {
             Tracks = set,
             Duration = sound.Duration,
@@ -78,13 +82,32 @@ public static class SavedTrackProvider
             Pitch = pitch,
             Intensity = intensity,
             Harmonicity = harmonicity,
-            Formants5500 = formant5500,
-            Formants5000 = formant5000,
+            FormantMethod = formantMethod,
+            FormantCeilings = ceilings,
+            FormantCandidates = candidates,
+            Formants = formants,
+            CeilingPath = path,
             Ltas = ltas,
             Pulses = pulses,
             StretchJitter = null!, // derived from the pulses when the series need it
             WeightRow = weightRow,
             Derived = derived,
         };
+        using (Timing.Measure("analysis.derived")) derived.ComputeStage3(view, weightRow, set);
+        return view;
+    }
+
+    /// <summary>
+    /// The ceiling path over the candidates as measured (the median would hide the label slips the
+    /// scores look for), then the formants along it from the used candidates, median-smoothed.
+    /// </summary>
+    private static (IFormantTrack Formants, CeilingPath Path) FindPath(FormantContour[] candidates, IReadOnlyList<double> ceilings, PitchContour pitch)
+    {
+        var path = new CeilingPath();
+        new CeilingPathFinder().Find(candidates, pitch, FormantCeilings.FallbackIndex(ceilings), path);
+        var smoothed = new IFormantTrack?[candidates.Length];
+        for (var i = 0; i < smoothed.Length; i++)
+            if (path.Uses(i)) smoothed[i] = FormantMedian.Smooth(candidates[i]);
+        return (new SwitchedFormantTrack(smoothed, path), path);
     }
 }

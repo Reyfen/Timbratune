@@ -68,7 +68,14 @@ public sealed class AnalysisSettings
     public double PitchStepS { get; set; }
     public double IntensityStepS { get; set; }
     public double HnrStepS { get; set; }
+    /// <summary>The take's formant ceiling (Hz): with <see cref="FormantMethod"/> "path", the one of most of the take.</summary>
     public double FormantCeilingHz { get; set; }
+    /// <summary>"path" (the ceiling followed the voice, v0.4.0 and later) or "legacy" (5500/5000 Hz); null in older exports.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? FormantMethod { get; set; }
+    /// <summary>The candidate ceilings (Hz) of the path; null otherwise.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public List<double>? FormantCeilingsHz { get; set; }
     public int FormantCount { get; set; }
     public double FormantWindowS { get; set; }
     public double FormantStepS { get; set; }
