@@ -34,7 +34,7 @@ jobs:
 
       - name: Select Xcode
         run: |
-          # The Xcode for the iOS SDK the project targets (net10.0-ios26.5 -> the newest Xcode 26.5.x).
+          # The Xcode for the iOS SDK the project targets (net10.0-ios26.0 -> the newest Xcode 26.0.x).
           sdk="$(sed -n 's:.*<TargetFramework>net[0-9.]*-ios\([0-9.]*\)</TargetFramework>.*:\1:p' src/Reyfen.Timbratune.iOS/Reyfen.Timbratune.iOS.csproj)"
           ls -d /Applications/Xcode_*.app
           xcode="$(ls -d /Applications/Xcode_"$sdk"*.app | grep -viE 'beta|rc' | sort -V | tail -1)"
