@@ -47,7 +47,8 @@ public static class SavedTrackProvider
                     var formantStages = new StageProgress(stages.Stage(3), 85, 15);
                     Sound[] resampled;
                     using (Timing.Measure("analysis.formants.resample"))
-                        resampled = FormantAnalyzer.ResampleForCeilings(sound, ceilings, formantStages.Stage(0));
+                        resampled = FormantAnalyzer.ResampleForCeilings(sound, ceilings, formantStages.Stage(0),
+                            halfRateLowPass: FormantCeilings.HalfRateLowPass(formantMethod));
                     FormantContour[] contours;
                     using (Timing.Measure("analysis.formants.frames"))
                         contours = FormantAnalyzer.BurgResampled(resampled, ceilings, 0, AcousticsAnalysisEngine.FormantCount,

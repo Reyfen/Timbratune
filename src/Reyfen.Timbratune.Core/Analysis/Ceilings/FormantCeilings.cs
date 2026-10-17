@@ -41,6 +41,13 @@ public static class FormantCeilings
     public static FormantCeilingMethod MethodOf(Models.Recording take) =>
         take.Formants.Method == Models.Formants.PathMethod ? FormantCeilingMethod.Path : FormantCeilingMethod.Legacy;
 
+    /// <summary>
+    /// Whether the resampling to the candidates' rates computes its low-pass at half the rate (about half the
+    /// work; RESONANCE-PLAN, optimisation): the path's candidates, all below a quarter of 44.1 kHz. Legacy keeps
+    /// the full-rate low-pass of analyze.py's Praat calls.
+    /// </summary>
+    public static bool HalfRateLowPass(FormantCeilingMethod method) => method == FormantCeilingMethod.Path;
+
     /// <summary>The index of <see cref="FallbackHz"/> among <paramref name="candidates"/> (0 if absent).</summary>
     public static int FallbackIndex(IReadOnlyList<double> candidates)
     {

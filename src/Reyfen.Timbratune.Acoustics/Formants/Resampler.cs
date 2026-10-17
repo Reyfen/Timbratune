@@ -27,8 +27,19 @@ public static class Resampler
     /// transform are repeated per rate (the formant analysis needs 10 and 11 kHz versions of
     /// every take). Each result is identical to <see cref="Resample"/> at that rate.
     /// </summary>
+    /// <param name="outputRange">
+    /// Only the new samples with From ≤ t ≤ To (s, in the sound's time) are computed; the others are 0.
+    /// For a caller that reads only part of the result (the live formant tracker keeps the middle of
+    /// each block); the computed samples are identical to the whole resampling's.
+    /// </param>
+    /// <param name="halfLength">
+    /// When every new rate is below a quarter of the old one: the low-passed signal is computed at half the
+    /// old rate (every second sample, from an inverse transform of half the length, about half the work)
+    /// and the new samples are interpolated from that. The low-pass is the same; the interpolation reads a
+    /// signal sampled less densely, so the result differs very slightly from the full-length one.
+    /// </param>
     public static Sound[] ResampleAll(Sound sound, IReadOnlyList<double> newSamplingFrequencies, int sincDepth = 50,
-        Action<double>? progress = null)
+        Action<double>? progress = null, (double From, double To)? outputRange = null, bool halfLength = false)
     {
         var grid = sound.Grid;
         var rates = newSamplingFrequencies.Count;
@@ -63,17 +74,21 @@ public static class Resampler
                 if (ratio < 1)
                 {
                     // The filtered signal is only needed for the interpolation: a pooled buffer.
-                    var (buffer, start, length) = spectrum!.LowPassed(ratio, RatePart(0, 0.9));
+                    var half = halfLength && ratio < 0.5;
+                    var (buffer, start, length) = half ? spectrum!.LowPassedHalf(ratio, RatePart(0, 0.9)) : spectrum!.LowPassed(ratio, RatePart(0, 0.9));
                     try
                     {
-                        results[r][ch] = Interpolate(buffer, start, length, grid, newSamplingFrequencies[r], sincDepth, RatePart(0.9, 0.1));
+                        // At half the rate the samples are the even ones: from the first, every 2 × the step.
+                        var source = half ? grid with { Count = length, Step = 2 * grid.Step } : grid;
+                        results[r][ch] = Interpolate(buffer, start, length, source, newSamplingFrequencies[r], sincDepth, RatePart(0.9, 0.1),
+                            outputRange, grid);
                     }
                     finally
                     {
                         Release(buffer);
                     }
                 }
-                else results[r][ch] = Interpolate(channel!, 0, channel!.Length, grid, newSamplingFrequencies[r], sincDepth, RatePart(0.9, 0.1));
+                else results[r][ch] = Interpolate(channel!, 0, channel!.Length, grid, newSamplingFrequencies[r], sincDepth, RatePart(0.9, 0.1), outputRange, grid);
             });
         }
         return results.Select((channels, r) => new Sound(channels, NewGrid(grid, newSamplingFrequencies[r]))).ToArray();
@@ -88,20 +103,27 @@ public static class Resampler
     }
 
     /// <summary>The new samples read off <paramref name="source"/> with windowed-sinc interpolation.</summary>
-    /// <param name="source">The signal: <paramref name="length"/> samples from <paramref name="start"/>.</param>
+    /// <param name="source">The signal: <paramref name="length"/> samples from <paramref name="start"/>, on <paramref name="grid"/>.</param>
+    /// <param name="original">The sound's own grid, which the new grid is made from.</param>
     private static double[] Interpolate(double[] source, int start, int length, TimeGrid grid, double newSamplingFrequency, int sincDepth,
-        Action<double>? progress)
+        Action<double>? progress, (double From, double To)? outputRange, TimeGrid original)
     {
-        var newGrid = NewGrid(grid, newSamplingFrequency);
+        var newGrid = NewGrid(original, newSamplingFrequency);
         var n = newGrid.Count;
-        var chunks = (n + Chunk - 1) / Chunk;
+        var (first, last) = (0, n);
+        if (outputRange is { } range)
+        {
+            first = Math.Clamp((int)Math.Floor(newGrid.XToIndex(range.From)), 0, n);
+            last = Math.Clamp((int)Math.Ceiling(newGrid.XToIndex(range.To)) + 1, first, n);
+        }
+        var chunks = (last - first + Chunk - 1) / Chunk;
         var counter = new FrameProgress(chunks, progress);
         var output = new double[n];
         // Every output sample is independent, so chunks run in parallel with identical results.
         Parallel.For(0, chunks, Parallelism.Options, c =>
         {
-            var end = Math.Min(n, (c + 1) * Chunk);
-            for (var i = c * Chunk; i < end; i++)
+            var end = Math.Min(last, first + (c + 1) * Chunk);
+            for (var i = first + c * Chunk; i < end; i++)
                 output[i] = SincInterpolator.Interpolate(source.AsSpan(start, length), grid.XToIndex(newGrid.IndexToX(i)) + 1, sincDepth);
             counter.Done();
         });
@@ -181,6 +203,55 @@ public static class Resampler
                 var done = 0;
                 Fft.RealInverseHalf(re, im, nfft, padded, progress is null ? null : () => progress((double)++done / passes));
                 return (padded, Padding, _length);
+            }
+            catch
+            {
+                Release(padded);
+                throw;
+            }
+            finally
+            {
+                System.Buffers.ArrayPool<double>.Shared.Return(re);
+                System.Buffers.ArrayPool<double>.Shared.Return(im);
+            }
+        }
+
+        /// <summary>
+        /// The same low-passed signal at half the rate (its even samples), from an inverse transform of half
+        /// the length: with nothing left above a quarter of the bins, the half-length spectrum is the kept bins
+        /// (halved, for the transform's 1/n). Needs <paramref name="ratio"/> &lt; 0.5. <c>Length</c> samples
+        /// from <c>Start</c> (the even samples of the signal, the first being its first) in a pooled <c>Buffer</c>.
+        /// </summary>
+        public (double[] Buffer, int Start, int Length) LowPassedHalf(double ratio, Action<double>? progress)
+        {
+            var nfft = _nfft;
+            var half = nfft / 2;
+            var bins = half / 2 + 1;
+            var re = System.Buffers.ArrayPool<double>.Shared.Rent(bins);
+            var im = System.Buffers.ArrayPool<double>.Shared.Rent(bins);
+            var padded = RentCleared(half);
+            try
+            {
+                // The same cut-off as LowPassed, on the full spectrum's bins 0..nfft/4 (all above it are zero).
+                var cut = (int)Math.Floor(ratio * nfft);
+                for (var k = 0; k < bins; k++)
+                {
+                    re[k] = 0.5 * _re[k];
+                    im[k] = 0.5 * _im[k];
+                }
+                for (var k = 1; k < bins; k++)
+                {
+                    if (2 * k + 1 >= cut) re[k] = 0;
+                    if (2 * k + 2 >= cut) im[k] = 0;
+                }
+                re[bins - 1] = 0;
+                im[bins - 1] = 0;
+                im[0] = 0;
+                var passes = Fft.PassCount(half / 2);
+                var done = 0;
+                Fft.RealInverseHalf(re, im, half, padded, progress is null ? null : () => progress((double)++done / passes));
+                // Padding is even, so the signal's first sample is an even one.
+                return (padded, Padding / 2, (_length + 1) / 2);
             }
             catch
             {

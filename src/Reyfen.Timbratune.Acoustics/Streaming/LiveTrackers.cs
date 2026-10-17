@@ -126,9 +126,12 @@ public sealed class LiveIntensityTracker(double samplingFrequency, double minimu
 /// <param name="gridOrigin">Null: each block's frames are centred in its segment. A time (s, in the
 /// recording): every block's frames fall on gridOrigin + k × step, the grid the saved analysis
 /// uses with the same origin (<see cref="FormantAnalyzer.Burg"/>), so live and saved frames coincide.</param>
+/// <param name="halfRateLowPass">The resampling's low-pass at half the rate (<see cref="FormantAnalyzer.BurgAll"/>), as the saved analysis given the same.</param>
 public sealed class LiveFormantTracker(double formantCeiling, double maxFormants = 5, double windowLength = 0.025,
-    double preEmphasisFrom = 50, double blockSeconds = 0.5, double marginSeconds = 0.25, double? gridOrigin = null)
+    double preEmphasisFrom = 50, double blockSeconds = 0.5, double marginSeconds = 0.25, double? gridOrigin = null,
+    bool halfRateLowPass = false)
 {
+    private readonly bool _halfRateLowPass = halfRateLowPass;
     private readonly List<(double T, FormantValue[] Formants)> _frames = [];
     private readonly List<(double T, FormantValue[] Formants)> _smoothed = [];
     private readonly double _maxFormants = maxFormants, _windowLength = windowLength, _preEmphasisFrom = preEmphasisFrom;
@@ -149,7 +152,7 @@ public sealed class LiveFormantTracker(double formantCeiling, double maxFormants
     /// </summary>
     public static void UpdateAll(IReadOnlyList<LiveFormantTracker> trackers, LiveSignalView signal, bool final = false)
     {
-        foreach (var group in trackers.GroupBy(t => (t.CoveredUntil, t._maxFormants, t._windowLength, t._preEmphasisFrom, t._blockSeconds, t._marginSeconds, t._gridOrigin)))
+        foreach (var group in trackers.GroupBy(t => (t.CoveredUntil, t._maxFormants, t._windowLength, t._preEmphasisFrom, t._blockSeconds, t._marginSeconds, t._gridOrigin, t._halfRateLowPass)))
         {
             var members = group.ToList();
             var lead = members[0];
@@ -160,8 +163,11 @@ public sealed class LiveFormantTracker(double formantCeiling, double maxFormants
             if (duration - segmentStart < 2 * lead._windowLength + 0.01) continue;
 
             var segment = signal.AsSound().ExtractPart(segmentStart, duration);
+            // On a fixed grid, only the frames this block keeps are analysed (a frame either side to spare).
+            var spare = 2 * lead._windowLength;
             var contours = FormantAnalyzer.BurgAll(segment, members.Select(m => m.FormantCeiling).ToList(), 0, lead._maxFormants,
-                lead._windowLength, lead._preEmphasisFrom, gridOrigin: lead._gridOrigin - segmentStart);
+                lead._windowLength, lead._preEmphasisFrom, gridOrigin: lead._gridOrigin - segmentStart,
+                frameRange: (lead.CoveredUntil - segmentStart - spare, keepUntil - segmentStart + spare), halfRateLowPass: lead._halfRateLowPass);
             for (var k = 0; k < members.Count; k++)
             {
                 var tracker = members[k];

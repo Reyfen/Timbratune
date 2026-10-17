@@ -65,7 +65,7 @@ public sealed class LiveTrackProvider
         for (var i = 0; i < _formants.Length; i++)
         {
             _formants[i] = new LiveFormantTracker(_ceilings[i], AcousticsAnalysisEngine.FormantCount, AcousticsAnalysisEngine.FormantWindow, 50,
-                formantBlockSeconds, gridOrigin: origin);
+                formantBlockSeconds, gridOrigin: origin, halfRateLowPass: FormantCeilings.HalfRateLowPass(formantMethod));
             _weightCache[i] = new ConcurrentDictionary<long, RawAnalysis.WeightRow?>();
         }
         _frames = new IFormantFrames[_ceilings.Count];

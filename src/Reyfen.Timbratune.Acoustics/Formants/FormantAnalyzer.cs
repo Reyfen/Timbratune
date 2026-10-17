@@ -107,22 +107,29 @@ public static class FormantAnalyzer
     /// then each ceiling's frames run in parallel. Each contour is identical to <see cref="Burg"/>'s.
     /// </summary>
     public static FormantContour[] BurgAll(Sound sound, IReadOnlyList<double> formantCeilings, double timeStep, double maxFormants,
-        double windowLength, double preEmphasisFrom, Action<double>? progress = null, double? gridOrigin = null)
+        double windowLength, double preEmphasisFrom, Action<double>? progress = null, double? gridOrigin = null,
+        (double From, double To)? frameRange = null, bool halfRateLowPass = false)
     {
         const double resampleShare = 0.85;
-        var resampled = ResampleForCeilings(sound, formantCeilings, progress is null ? null : f => progress(resampleShare * f));
+        // With a frame range only the samples its frames' windows read are resampled (and one before
+        // each window for the pre-emphasis); a few samples to spare.
+        (double, double)? samples = frameRange is { } fr && gridOrigin is not null
+            ? (fr.From - windowLength - 0.002, fr.To + windowLength + 0.002) : null;
+        var resampled = ResampleForCeilings(sound, formantCeilings, progress is null ? null : f => progress(resampleShare * f), samples, halfRateLowPass);
         return BurgResampled(resampled, formantCeilings, timeStep, maxFormants, windowLength, preEmphasisFrom,
-            progress is null ? null : f => progress(resampleShare + (1 - resampleShare) * f), gridOrigin);
+            progress is null ? null : f => progress(resampleShare + (1 - resampleShare) * f), gridOrigin, frameRange);
     }
 
     /// <summary>The channel average at 2 × each ceiling (the first half of <see cref="BurgAll"/>; shared forward transform).</summary>
-    public static Sound[] ResampleForCeilings(Sound sound, IReadOnlyList<double> formantCeilings, Action<double>? progress = null)
+    /// <param name="halfRateLowPass">See <see cref="Resampler.ResampleAll"/>'s halfLength: about half the work, very slightly different samples.</param>
+    public static Sound[] ResampleForCeilings(Sound sound, IReadOnlyList<double> formantCeilings, Action<double>? progress = null,
+        (double From, double To)? outputRange = null, bool halfRateLowPass = false)
     {
         // As in Burg: the channel average first, then each ceiling's 2 × ceiling sampling rate.
         var mono = new Sound([sound.ToMono()], sound.Grid);
         var nyquist = 0.5 * sound.SamplingFrequency;
         var needed = formantCeilings.Select((c, i) => (c, i)).Where(x => Math.Abs(x.c / nyquist - 1) >= 1e-12).ToList();
-        var resampled = Resampler.ResampleAll(mono, needed.Select(x => 2 * x.c).ToList(), 50, progress);
+        var resampled = Resampler.ResampleAll(mono, needed.Select(x => 2 * x.c).ToList(), 50, progress, outputRange, halfRateLowPass);
         var result = new Sound[formantCeilings.Count];
         for (var i = 0; i < result.Length; i++) result[i] = mono;
         for (var k = 0; k < needed.Count; k++) result[needed[k].i] = resampled[k];
@@ -131,7 +138,8 @@ public static class FormantAnalyzer
 
     /// <summary>The second half of <see cref="BurgAll"/>: each ceiling's frames (in parallel) on its resampled sound.</summary>
     public static FormantContour[] BurgResampled(Sound[] resampled, IReadOnlyList<double> formantCeilings, double timeStep,
-        double maxFormants, double windowLength, double preEmphasisFrom, Action<double>? progress = null, double? gridOrigin = null)
+        double maxFormants, double windowLength, double preEmphasisFrom, Action<double>? progress = null, double? gridOrigin = null,
+        (double From, double To)? frameRange = null)
     {
         const double resampleShare = 0.85;
         var results = new FormantContour[formantCeilings.Count];
@@ -148,7 +156,7 @@ public static class FormantAnalyzer
                         stages[i] = Math.Clamp((f - resampleShare) / (1 - resampleShare), 0, 1);
                         progress(stages.Average());
                     }
-                }, gridOrigin);
+                }, gridOrigin, frameRange);
         });
         return results;
     }
@@ -165,8 +173,13 @@ public static class FormantAnalyzer
     /// sound. That grid is the same for any part of a recording, so blocks analysed while recording
     /// and the whole take afterwards give frames at the same times.
     /// </param>
+    /// <param name="frameRange">
+    /// With a <paramref name="gridOrigin"/>: only the frames with From ≤ t &lt; To (the live tracker keeps
+    /// the middle of each block). Each is computed exactly as without the range.
+    /// </param>
     public static FormantContour Burg(Sound sound, double timeStep, double maxFormants, double formantCeiling,
-        double windowLength, double preEmphasisFrom, Action<double>? progress = null, double? gridOrigin = null)
+        double windowLength, double preEmphasisFrom, Action<double>? progress = null, double? gridOrigin = null,
+        (double From, double To)? frameRange = null)
     {
         var halfWindow = windowLength;
         var dt = timeStep > 0 ? timeStep : halfWindow / 4.0;
@@ -217,13 +230,21 @@ public static class FormantAnalyzer
         var window = GaussianWindow(windowSamples);
         var newNyquist = 0.5 / dx;
 
+        // Frames [skip, skip + frameCount) of the grid; times stay first + f × dt with f on the whole grid.
+        var skip = 0;
+        if (frameRange is { } range && gridOrigin is not null)
+        {
+            var from = Math.Clamp((int)Math.Ceiling((range.From - first) / dt - 1e-9), 0, frameCount);
+            var to = Math.Clamp((int)Math.Ceiling((range.To - first) / dt - 1e-9), from, frameCount);
+            (skip, frameCount) = (from, to - from);
+        }
         var frames = new FormantValue[frameCount][];
         var counter = new FrameProgress(frameCount, frameProgress);
         // One set of working arrays per worker thread, reused for all its frames.
         var maxLength = Math.Max(windowSamples, 2 * halfWindowSamples) + 2;
         Parallel.For(0, frameCount, Parallelism.Options, () => new FrameScratch(maxLength, poles), (f, _, scratch) =>
         {
-            var t = first + f * dt;
+            var t = first + (f + skip) * dt;
             var leftSample = (int)Math.Floor((t - grid.First) / dx + 1); // 1-based
             var start = Math.Max(1, leftSample + 1 - halfWindowSamples);
             var end = Math.Min(grid.Count, leftSample + halfWindowSamples);
@@ -241,7 +262,7 @@ public static class FormantAnalyzer
             return scratch;
         }, _ => { });
         progress?.Invoke(1);
-        return new FormantContour(new TimeGrid(sound.Grid.XMin, sound.Grid.XMax, frameCount, dt, first), frames);
+        return new FormantContour(new TimeGrid(sound.Grid.XMin, sound.Grid.XMax, frameCount, dt, first + skip * dt), frames);
     }
 
     /// <summary>First-order pre-emphasis y[i] = x[i] − e^(−2π·F·Δt)·x[i−1], in place.</summary>
