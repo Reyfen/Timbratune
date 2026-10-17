@@ -4,10 +4,10 @@
        head: it needs the ios workload and a Mac with Xcode. Built and uploaded to TestFlight by
        .github/workflows/ios.yml through scripts/build-ios.sh; see IOS.md. -->
   <PropertyGroup>
-    <!-- The iOS SDK version is pinned: each needs its own Xcode (ios26.5 = Xcode 26.5, what the
-         GitHub macOS runners have; the unversioned TFM takes the newest, which needs Xcode 27).
+    <!-- The iOS SDK version is pinned: each needs its own Xcode (ios26.0 = Xcode 26.0, which the
+         GitHub macOS runners have; .NET 10.0.4xx offers 26.0 and 27.0, and the unversioned TFM takes 27.0, which needs Xcode 27).
          The workflow selects the Xcode matching this number. -->
-    <TargetFramework>net10.0-ios26.5</TargetFramework>
+    <TargetFramework>net10.0-ios26.0</TargetFramework>
     <SupportedOSPlatformVersion>15.0</SupportedOSPlatformVersion>
     <OutputType>Exe</OutputType>
     <RootNamespace>Reyfen.Timbratune.iOS</RootNamespace>
