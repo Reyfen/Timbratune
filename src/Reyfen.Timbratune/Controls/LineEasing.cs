@@ -60,41 +60,16 @@ public sealed class LineEasing(Control owner, Action? redraw = null)
     {
         if (_frameRequested || TopLevel.GetTopLevel(owner) is not { } top) return;
         _frameRequested = true;
-        top.RequestAnimationFrame(frameTime =>
+        // Every frame while gliding: pacing it to 30 fps (skipping every other frame) saved no CPU on
+        // a Pixel 4a and made a tenth of the frames late (HANDOFF §8u).
+        top.RequestAnimationFrame(_ =>
         {
             _frameRequested = false;
-            if (!Paced(frameTime))
-            {
-                RequestFrame();
-                return;
-            }
             if (redraw is null) owner.InvalidateVisual();
             else redraw();
             if (Progress() < 1) RequestFrame();
             else _from = null;
         });
-    }
-
-    /// <summary>
-    /// The glide redraws at most about 30 times a second: at the display's 60 it was most of the
-    /// charts' cost while recording (HANDOFF §8t), and the eye hardly tells the two apart in a
-    /// 0.25 s ease. All lines share one clock, so they redraw on the same frames (frames between
-    /// them stay free). A frame callback's time is the same for every callback of that frame.
-    /// The minimum gap is 24 ms, between one and two 60 Hz frames: frame times jitter by a few
-    /// ms, and at 30 ms a two-frame gap sometimes measured short, so a third frame was skipped
-    /// too (10 % of the Pixel 4a's frames came 50 ms apart, HANDOFF §8u).
-    /// </summary>
-    private static readonly TimeSpan MinFrameInterval = TimeSpan.FromMilliseconds(24);
-    private static TimeSpan? s_drawnAt;
-
-    // Experiment (profiling builds): "ease60" redraws on every frame, as before.
-    private static bool Paced(TimeSpan frameTime)
-    {
-        if (frameTime == s_drawnAt || Diagnostics.Perf.Flags.Contains("ease60")) return true;
-        // A clock that went backwards (another top level's timer) starts over.
-        if (s_drawnAt is { } drawn && frameTime > drawn && frameTime - drawn < MinFrameInterval) return false;
-        s_drawnAt = frameTime;
-        return true;
     }
 
     /// <summary>The line <paramref name="to"/>, with each value moved <paramref name="p"/> of the way from <paramref name="from"/>'s value at that time.</summary>
