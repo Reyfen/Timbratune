@@ -29,12 +29,12 @@ Repository › Settings › Secrets and variables › Actions › New repository
 
 | Secret | What |
 |---|---|
-| `IOS_CERTIFICATE_P12` | The Apple Distribution certificate (`.p12`), base64 |
-| `IOS_CERTIFICATE_PASSWORD` | Its password |
-| `IOS_PROVISIONING_PROFILE` | `Timbratune AppStore` (`.mobileprovision`), base64 |
+| `IOS_P12_BASE64` | The Apple Distribution certificate (`.p12`), base64 |
+| `IOS_P12_PASSWORD` | Its password |
+| `IOS_PROFILE_BASE64` | `Timbratune AppStore` (`.mobileprovision`), base64 |
 | `ASC_KEY_ID` | App Store Connect API key id |
 | `ASC_ISSUER_ID` | Its issuer id |
-| `ASC_PRIVATE_KEY` | The key's `.p8` file, pasted as text |
+| `ASC_P8` | The key's `.p8` file, as text or base64 |
 
 Base64 of a file in PowerShell, copied to the clipboard:
 
