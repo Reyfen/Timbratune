@@ -1,6 +1,6 @@
 # Third-party notices
 
-Timbratune itself is under the terms in [`LICENSE`](LICENSE). The parts below come from other
+Timbratune itself is under the terms in [`LICENSE.md`](LICENSE.md). The parts below come from other
 projects and stay under their own licenses.
 
 ## Euphonia (MIT)
