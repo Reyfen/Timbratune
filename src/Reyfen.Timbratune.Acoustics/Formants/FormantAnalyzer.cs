@@ -16,17 +16,38 @@ public interface IFormantTrack
     double BandwidthAtTime(int number, double t);
 }
 
-/// <summary>Formant tracks: per frame the resonances found, lowest first.</summary>
-public sealed class FormantContour : IFormantTrack
+/// <summary>
+/// Formant frames in time order, however they are held (a whole-sound contour, the live track):
+/// what the frame-by-frame algorithms (<see cref="FormantSmoothness"/>, <see cref="FormantMedian"/>) read.
+/// </summary>
+public interface IFormantFrames
 {
+    int FrameCount { get; }
+
+    /// <summary>The time (s) of frame <paramref name="index"/> (0-based); increasing with the index.</summary>
+    double FrameTime(int index);
+
+    /// <summary>The resonances of frame <paramref name="index"/>, lowest first.</summary>
+    ReadOnlySpan<FormantValue> FrameAt(int index);
+}
+
+/// <summary>Formant tracks: per frame the resonances found, lowest first.</summary>
+public sealed class FormantContour : IFormantTrack, IFormantFrames
+{
+    private readonly FormantValue[][] _frames;
+
     internal FormantContour(TimeGrid grid, FormantValue[][] frames)
     {
         Grid = grid;
-        Frames = frames;
+        _frames = frames;
     }
 
     public TimeGrid Grid { get; }
-    public IReadOnlyList<IReadOnlyList<FormantValue>> Frames { get; }
+    public IReadOnlyList<IReadOnlyList<FormantValue>> Frames => _frames;
+
+    public int FrameCount => _frames.Length;
+    public double FrameTime(int index) => Grid.IndexToX(index);
+    public ReadOnlySpan<FormantValue> FrameAt(int index) => _frames[index];
 
     /// <summary>Frequency of formant <paramref name="number"/> (1 = F1) at time t, interpolated between frames.</summary>
     public double ValueAtTime(int number, double t) => AtTime(number, t, f => f.Frequency);
@@ -86,12 +107,12 @@ public static class FormantAnalyzer
     /// then each ceiling's frames run in parallel. Each contour is identical to <see cref="Burg"/>'s.
     /// </summary>
     public static FormantContour[] BurgAll(Sound sound, IReadOnlyList<double> formantCeilings, double timeStep, double maxFormants,
-        double windowLength, double preEmphasisFrom, Action<double>? progress = null)
+        double windowLength, double preEmphasisFrom, Action<double>? progress = null, double? gridOrigin = null)
     {
         const double resampleShare = 0.85;
         var resampled = ResampleForCeilings(sound, formantCeilings, progress is null ? null : f => progress(resampleShare * f));
         return BurgResampled(resampled, formantCeilings, timeStep, maxFormants, windowLength, preEmphasisFrom,
-            progress is null ? null : f => progress(resampleShare + (1 - resampleShare) * f));
+            progress is null ? null : f => progress(resampleShare + (1 - resampleShare) * f), gridOrigin);
     }
 
     /// <summary>The channel average at 2 × each ceiling (the first half of <see cref="BurgAll"/>; shared forward transform).</summary>
@@ -110,7 +131,7 @@ public static class FormantAnalyzer
 
     /// <summary>The second half of <see cref="BurgAll"/>: each ceiling's frames (in parallel) on its resampled sound.</summary>
     public static FormantContour[] BurgResampled(Sound[] resampled, IReadOnlyList<double> formantCeilings, double timeStep,
-        double maxFormants, double windowLength, double preEmphasisFrom, Action<double>? progress = null)
+        double maxFormants, double windowLength, double preEmphasisFrom, Action<double>? progress = null, double? gridOrigin = null)
     {
         const double resampleShare = 0.85;
         var results = new FormantContour[formantCeilings.Count];
@@ -127,7 +148,7 @@ public static class FormantAnalyzer
                         stages[i] = Math.Clamp((f - resampleShare) / (1 - resampleShare), 0, 1);
                         progress(stages.Average());
                     }
-                });
+                }, gridOrigin);
         });
         return results;
     }
@@ -138,8 +159,14 @@ public static class FormantAnalyzer
     /// <param name="windowLength">Effective window length in seconds; the Gaussian window is twice this long.</param>
     /// <param name="preEmphasisFrom">Frequency (Hz) above which a +6 dB/octave pre-emphasis applies.</param>
     /// <param name="progress">Called with the fraction of frames analyzed so far (0–1), from any thread.</param>
+    /// <param name="gridOrigin">
+    /// Null: the frames are centred in the sound (Praat's layout), so their times depend on where it
+    /// ends. A time: the frames are every gridOrigin + k × time step whose whole window lies in the
+    /// sound. That grid is the same for any part of a recording, so blocks analysed while recording
+    /// and the whole take afterwards give frames at the same times.
+    /// </param>
     public static FormantContour Burg(Sound sound, double timeStep, double maxFormants, double formantCeiling,
-        double windowLength, double preEmphasisFrom, Action<double>? progress = null)
+        double windowLength, double preEmphasisFrom, Action<double>? progress = null, double? gridOrigin = null)
     {
         var halfWindow = windowLength;
         var dt = timeStep > 0 ? timeStep : halfWindow / 4.0;
@@ -168,6 +195,22 @@ public static class FormantAnalyzer
             frameCount = 1;
             first = grid.First + 0.5 * physicalDuration;
             windowSamples = grid.Count;
+        }
+        else if (gridOrigin is { } origin)
+        {
+            // The window's centre may go from half a window after the sound's start to half a
+            // window before its end; a small tolerance keeps grid times that land on a bound.
+            const double tolerance = 1e-9;
+            var soundStart = grid.First - 0.5 * dx;
+            var earliest = soundStart + 0.5 * windowDuration;
+            var latest = soundStart + physicalDuration - 0.5 * windowDuration;
+            var firstIndex = Math.Ceiling((earliest - origin) / dt - tolerance);
+            var lastIndex = Math.Floor((latest - origin) / dt + tolerance);
+            if (lastIndex >= firstIndex)
+            {
+                first = origin + firstIndex * dt;
+                frameCount = (int)(lastIndex - firstIndex) + 1;
+            }
         }
         if (windowSamples < poles + 1) throw new ArgumentException("The analysis window is too short for this many formants.");
         var halfWindowSamples = windowSamples / 2;

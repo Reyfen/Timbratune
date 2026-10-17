@@ -123,12 +123,17 @@ public sealed class LiveIntensityTracker(double samplingFrequency, double minimu
 /// on both sides) goes through <see cref="FormantAnalyzer.Burg"/>, and only the
 /// frames clear of the margins are kept, so segment edges don't affect them.
 /// </summary>
+/// <param name="gridOrigin">Null: each block's frames are centred in its segment. A time (s, in the
+/// recording): every block's frames fall on gridOrigin + k × step, the grid the saved analysis
+/// uses with the same origin (<see cref="FormantAnalyzer.Burg"/>), so live and saved frames coincide.</param>
 public sealed class LiveFormantTracker(double formantCeiling, double maxFormants = 5, double windowLength = 0.025,
-    double preEmphasisFrom = 50, double blockSeconds = 0.5, double marginSeconds = 0.25)
+    double preEmphasisFrom = 50, double blockSeconds = 0.5, double marginSeconds = 0.25, double? gridOrigin = null)
 {
     private readonly List<(double T, FormantValue[] Formants)> _frames = [];
+    private readonly List<(double T, FormantValue[] Formants)> _smoothed = [];
     private readonly double _maxFormants = maxFormants, _windowLength = windowLength, _preEmphasisFrom = preEmphasisFrom;
     private readonly double _blockSeconds = blockSeconds, _marginSeconds = marginSeconds;
+    private readonly double? _gridOrigin = gridOrigin;
 
     /// <summary>Formants are known up to this time (s).</summary>
     public double CoveredUntil { get; private set; }
@@ -144,7 +149,7 @@ public sealed class LiveFormantTracker(double formantCeiling, double maxFormants
     /// </summary>
     public static void UpdateAll(IReadOnlyList<LiveFormantTracker> trackers, LiveSignalView signal, bool final = false)
     {
-        foreach (var group in trackers.GroupBy(t => (t.CoveredUntil, t._maxFormants, t._windowLength, t._preEmphasisFrom, t._blockSeconds, t._marginSeconds)))
+        foreach (var group in trackers.GroupBy(t => (t.CoveredUntil, t._maxFormants, t._windowLength, t._preEmphasisFrom, t._blockSeconds, t._marginSeconds, t._gridOrigin)))
         {
             var members = group.ToList();
             var lead = members[0];
@@ -156,7 +161,7 @@ public sealed class LiveFormantTracker(double formantCeiling, double maxFormants
 
             var segment = signal.AsSound().ExtractPart(segmentStart, duration);
             var contours = FormantAnalyzer.BurgAll(segment, members.Select(m => m.FormantCeiling).ToList(), 0, lead._maxFormants,
-                lead._windowLength, lead._preEmphasisFrom);
+                lead._windowLength, lead._preEmphasisFrom, gridOrigin: lead._gridOrigin - segmentStart);
             for (var k = 0; k < members.Count; k++)
             {
                 var tracker = members[k];
@@ -164,6 +169,9 @@ public sealed class LiveFormantTracker(double formantCeiling, double maxFormants
                 for (var i = 0; i < contour.Grid.Count; i++)
                 {
                     var t = contour.Grid.IndexToX(i) + segmentStart;
+                    // On a fixed grid: exactly the saved analysis' frame time, not one rounded differently.
+                    if (tracker._gridOrigin is { } origin)
+                        t = origin + Math.Round((t - origin) / contour.Grid.Step) * contour.Grid.Step;
                     if (t < tracker.CoveredUntil || t >= keepUntil) continue;
                     tracker._frames.Add((t, contour.Frames[i] as FormantValue[] ?? [.. contour.Frames[i]]));
                 }
@@ -177,11 +185,37 @@ public sealed class LiveFormantTracker(double formantCeiling, double maxFormants
     /// the same live update (the frames are only ever appended).
     /// </summary>
     public IFormantTrack Track() => new StitchedFormantTrack(_frames, _frames.Count);
+
+    /// <summary>The frames so far as <see cref="IFormantFrames"/> (a view, valid like <see cref="Track"/>'s).</summary>
+    public IFormantFrames Frames() => new StitchedFormantTrack(_frames, _frames.Count);
+
+    /// <summary>Frames of <see cref="_smoothed"/> before this index had all their later neighbours: final.</summary>
+    private int _smoothedFinal;
+
+    /// <summary>
+    /// The frames so far, each formant median-smoothed over <see cref="FormantMedian.DefaultWidth"/>
+    /// frames, as a track (a view, valid like <see cref="Track"/>'s). Frames are only ever appended,
+    /// so a smoothed frame is final once its later neighbours exist: only the last few are computed
+    /// again, and on the final update the window is clipped at the end as for the whole take.
+    /// </summary>
+    public IFormantTrack SmoothedTrack()
+    {
+        var source = new StitchedFormantTrack(_frames, _frames.Count);
+        _smoothed.RemoveRange(_smoothedFinal, _smoothed.Count - _smoothedFinal);
+        for (var i = _smoothed.Count; i < _frames.Count; i++)
+            _smoothed.Add((_frames[i].T, FormantMedian.Frame(source, i, _frames.Count)));
+        _smoothedFinal = Math.Max(0, _frames.Count - FormantMedian.DefaultWidth / 2);
+        return new StitchedFormantTrack(_smoothed, _smoothed.Count);
+    }
 }
 
 /// <summary>Formant frames at irregular times, interpolated like <see cref="FormantContour"/>.</summary>
-internal sealed class StitchedFormantTrack(IReadOnlyList<(double T, FormantValue[] Formants)> frames, int count) : IFormantTrack
+internal sealed class StitchedFormantTrack(IReadOnlyList<(double T, FormantValue[] Formants)> frames, int count) : IFormantTrack, IFormantFrames
 {
+    public int FrameCount => count;
+    public double FrameTime(int index) => frames[index].T;
+    public ReadOnlySpan<FormantValue> FrameAt(int index) => frames[index].Formants;
+
     public double ValueAtTime(int number, double t) => AtTime(number, t, f => f.Frequency);
     public double BandwidthAtTime(int number, double t) => AtTime(number, t, f => f.Bandwidth);
 

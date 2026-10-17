@@ -1268,6 +1268,11 @@ Version 0.4.0 ports the research formant ceiling that follows the voice (R1b) an
 - **`tools/phone-bench`:** the phone A/B of §8d/§8i as scripts in the repo (`ab.sh`, `run.sh`, `analyze.py` with the shuffle test, `clean.sh`), for any package. Builds for it use the separate app id `com.reyfen.timbratune.research`, so the owner's installed app and its takes are never touched.
 - **Android builds from a long path fail:** the Mono AOT compiler can't open assemblies under the session scratchpad (`Can not open image …linked\Microsoft.Extensions.DependencyInjection.Abstractions.dll`). Build from a short path (e.g. a worktree at `C:\Projects\Reyfen	t-base`).
 
+**F1, the Acoustics kernels** (not used by the app yet; every output identical, goldens unchanged):
+- `FormantAnalyzer.Burg` / `BurgAll` / `BurgResampled` take an optional `gridOrigin`: frames at origin + k × step wherever the whole window fits, instead of centred in the sound. `LiveFormantTracker` takes the same origin (frame times snapped to the grid), and has `Frames()` and an incrementally median-smoothed `SmoothedTrack()`.
+- `Formants/FormantSmoothness.cs`: `IFormantFrames`, `FormantSmoothness.Criterion` (Weenink 2015: Legendre P0–P2 fits of F1–F3 weighted 1/B², by Cholesky; W = (s²/k)^1.25 · χ²/d), `Pieces` (16 frames every 8 in voiced stretches of ≥ 8), `FormantMedian` (5-frame running median; a frame keeps its own bandwidth).
+- Live vs saved frames on the shared grid fall at the same times; their F3 differs by a median 2.4–3.2 Hz (VCTK f294 at 4500 Hz, m311 at 6500 Hz), because each live block is resampled on its own and 2 × ceiling doesn't divide 44.1 kHz. Exact equality would need the resampler to take a sample-grid offset.
+
 ## 8. Current state, at the time of writing
 
 **Branches (2026-10-10):** the user renamed them on GitHub: `dev` became `main` (everything up to `bc1ce48`, tagged `v0.1.0`), and `v0.2.0` became `dev/v0.2.0` (§8d–§8h, up to `8e88ea6`; not merged into `main` yet). The local branches were renamed to match and track `origin/main` and `origin/dev/v0.2.0`. The old `v0.2.0` branch name clashed with a `v0.2.0` tag; `dev/…` names can't coexist with a branch called `dev`. Commit `9c752e6`'s subject starts with a stray UTF-8 BOM from PowerShell 5.1's `Out-File`; write commit messages without a BOM.
