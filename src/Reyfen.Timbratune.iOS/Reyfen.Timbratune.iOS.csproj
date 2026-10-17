@@ -6,11 +6,9 @@
   <PropertyGroup>
     <!-- The iOS SDK version is pinned: .NET 10.0.4xx offers 26.0 and 27.0, and the unversioned
          TFM takes 27.0, which needs Xcode 27 (the GitHub macOS runners have 26.x). The workflow
-         builds with Xcode 26.5; the pack's check for exactly Xcode 26.0 is off (a newer 26.x SDK
-         is a superset). -->
+         builds with the matching Xcode 26.0.x. -->
     <TargetFramework>net10.0-ios26.0</TargetFramework>
     <SupportedOSPlatformVersion>15.0</SupportedOSPlatformVersion>
-    <ValidateXcodeVersion>false</ValidateXcodeVersion>
     <OutputType>Exe</OutputType>
     <RootNamespace>Reyfen.Timbratune.iOS</RootNamespace>
     <ApplicationId>pl.eleanorakagner.timbratune</ApplicationId>

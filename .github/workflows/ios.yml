@@ -34,14 +34,21 @@ jobs:
 
       - name: Select Xcode
         run: |
-          # Pinned. The project targets the iOS 26.0 SDK (net10.0-ios26.0, see its csproj); on the
-          # macos-26 image Xcode 26.0 can't compile asset catalogs (no 26.0 simulator runtime) and
-          # 26.6 lacks its macOS SDK, which actool needs. 26.5 works.
+          # The Xcode of the iOS SDK the project targets (net10.0-ios26.0, see its csproj): the
+          # newest 26.0.x. The .NET iOS 26.0 pack can't drive newer Xcodes' actool.
+          sdk="$(sed -n 's:.*<TargetFramework>net[0-9.]*-ios\([0-9.]*\)</TargetFramework>.*:\1:p' src/Reyfen.Timbratune.iOS/Reyfen.Timbratune.iOS.csproj)"
           ls -d /Applications/Xcode_*.app
-          xcode="$(ls -d /Applications/Xcode_26.5*.app | sort -V | tail -1)"
-          if [ -z "$xcode" ]; then echo "::error::No Xcode 26.5 on this runner"; exit 1; fi
+          xcode="$(ls -d /Applications/Xcode_"$sdk"*.app | grep -viE 'beta|rc' | sort -V | tail -1)"
+          if [ -z "$xcode" ]; then echo "::error::No Xcode $sdk on this runner"; exit 1; fi
           sudo xcode-select -s "$xcode/Contents/Developer"
           xcodebuild -version
+
+      - name: Install the iOS simulator runtime
+        # actool (the icon's asset catalog) needs the simulator runtime of the selected Xcode's
+        # SDK, and the runner image only has newer ones.
+        run: |
+          xcrun simctl runtime list || true
+          xcodebuild -downloadPlatform iOS
 
       - uses: actions/setup-dotnet@v5
         with:
