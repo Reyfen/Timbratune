@@ -4,25 +4,28 @@ using Avalonia;
 using Avalonia.Android;
 using Avalonia.Media;
 using Avalonia.Media.Fonts;
+using Microsoft.Extensions.DependencyInjection;
+using Reyfen.Timbratune.App;
+using Reyfen.Timbratune.Audio.Android;
 using Reyfen.Timbratune.Audio.SoundFlow;
-using Reyfen.Timbratune.Core.Analysis;
 using Reyfen.Timbratune.Core.Audio;
+using Reyfen.Timbratune.Core.Audio.Decoding;
 using Reyfen.Timbratune.Core.Storage;
-using Reyfen.Timbratune.Services;
+using Reyfen.Timbratune.Shared.Platform;
 
 namespace Reyfen.Timbratune.Android;
 
 /// <summary>
 /// The process: Avalonia 12 builds the app here, before any Activity exists, so the services
-/// (one audio engine and recorder for the process), fonts and renderer are set up here too.
-/// Anything that needs the Activity (permission requests, the share sheet) goes through
+/// (one container for the process: one audio engine and recorder), fonts and renderer are set up
+/// here too. Anything that needs the Activity (permission requests, the share sheet) goes through
 /// <see cref="MainActivity.Current"/>, as the Activity can be re-created.
 /// </summary>
 [Application] // label, icon and backup: Properties/AndroidManifest*.xml
-public sealed class AndroidApp : AvaloniaAndroidApplication<App>
+public sealed class AndroidApp : AvaloniaAndroidApplication<TimbratuneApp>
 {
-    private SoundFlowAudio? _audio;
-    private IAudioRecorder? _recorder;
+    // Lives as long as the process (Android ends it without a call back).
+    private ServiceProvider? _services;
 
     /// <summary>Vulkan is the first renderer asked for: its surface needs MainActivity's watcher.</summary>
     internal static bool VulkanWanted { get; private set; }
@@ -39,27 +42,37 @@ public sealed class AndroidApp : AvaloniaAndroidApplication<App>
         if (System.IO.File.Exists(flagsFile))
             Diagnostics.Perf.Flags = System.IO.File.ReadAllText(flagsFile).Split((char[])[' ', ',', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries).ToHashSet();
 #endif
-        _audio = new SoundFlowAudio();
         var fakeMic = FakeMic();
-        _recorder = fakeMic is not null ? new FileReplayRecorder(fakeMic) : _audio.CreateRecorder();
-        var audio = _audio;
-        var recorder = _recorder;
-        var paths = DataFolder();
 #if PROFILING
-        // Test takes recorded from the fake mic go to their own folder, not the user's takes.
-        if (fakeMic is not null) paths = new DataPaths(System.IO.Path.Combine(GetExternalFilesDir(null)!.AbsolutePath, "profiling-data"));
+        // Test takes recorded from the fake mic go to their own folder, and the user's takes aren't
+        // even looked at: DataFolder() would move a 0.2.0 install's takes out of private storage.
+        var paths = fakeMic is not null ? new DataPaths(System.IO.Path.Combine(GetExternalFilesDir(null)!.AbsolutePath, "profiling-data")) : DataFolder();
+#else
+        var paths = DataFolder();
 #endif
-        App.ServicesFactory = dialogs => new AppServices(
-            Store: new RecordingStore(paths),
-            Engine: new AcousticsAnalysisEngine(),
-            Recorder: recorder,
-            Playback: new PlaybackService(audio.CreatePlayer()),
-            Dialogs: dialogs,
-            RequestMicrophone: () => MainActivity.Current?.RequestMicrophoneAsync() ?? Task.FromResult(false),
-            LowerThreadPriority: () => global::Android.OS.Process.SetThreadPriority(global::Android.OS.ThreadPriority.Background),
-            Decoder: audio,
-            DataFolderHint: FolderHint(paths),
-            Sharer: new AndroidFileSharer(() => MainActivity.Current));
+        var hint = FolderHint(paths);
+        var services = new ServiceCollection().AddTimbratune();
+        services.AddSingleton(paths);
+        services.AddSingleton<IPlatformInfo>(new PlatformInfo
+        {
+            IsMobile = true,
+            CanOpenDataFolder = hint is null,
+            DataFolderHint = hint,
+            CanShare = true,
+            CanRunProcesses = false,
+        });
+        services.AddSingleton(_ => new SoundFlowAudio());
+        services.AddSingleton<IAudioDecoderProvider>(sp => new MiniaudioDecoderProvider(sp.GetRequiredService<SoundFlowAudio>));
+        services.AddSingleton<IAudioDecoderProvider, MediaCodecDecoderProvider>();
+        services.AddSingleton<IAudioRecorder>(sp => fakeMic is not null ? new FileReplayRecorder(fakeMic) : sp.GetRequiredService<SoundFlowAudio>().CreateRecorder());
+        services.AddSingleton<IAudioPlayer>(sp => sp.GetRequiredService<SoundFlowAudio>().CreatePlayer());
+        services.AddSingleton<IPermissions, AndroidPermissions>();
+        services.AddSingleton<IThreadPriority, AndroidThreadPriority>();
+        services.AddSingleton<IFileSharer>(new AndroidFileSharer(() => MainActivity.Current));
+        // Settings in the app's private folder, not with the takes in shared storage (a PC sees
+        // that one over USB, and settings would be lost with a moved data folder).
+        services.AddSingleton<IDataStore>(new FileSystemDataStore(FilesDir!.AbsolutePath));
+        _services = services.BuildServiceProvider();
 #if PROFILING
         // "noprobes": keep the fake mic and switches but log nothing (the probes' own cost out of the measurement).
         if (!Diagnostics.Perf.Flags.Contains("noprobes")) Diagnostics.Perf.Sink = line => global::Android.Util.Log.Info("Timbratune", line);
@@ -117,6 +130,11 @@ public sealed class AndroidApp : AvaloniaAndroidApplication<App>
         return null;
 #endif
     }
+
+    /// <summary>The app with this process' services (instead of the base class' parameterless one).</summary>
+    protected override AppBuilder CreateAppBuilder() =>
+        AppBuilder.Configure(() => new TimbratuneApp(_services ?? throw new InvalidOperationException("services are built in OnCreate")))
+            .UseAndroid();
 
     // Inter has no emoji, and Android's own emoji font is COLRv1, which this Skia can't draw
     // (boxes). So the app carries the emoji it uses as a tiny bitmap (CBDT) Noto Color Emoji

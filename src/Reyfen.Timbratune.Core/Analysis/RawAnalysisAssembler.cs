@@ -4,42 +4,13 @@ using Reyfen.Timbratune.Acoustics.Formants;
 using Reyfen.Timbratune.Acoustics.Intensity;
 using Reyfen.Timbratune.Acoustics.Pitch;
 using Reyfen.Timbratune.Acoustics.Spectral;
+using Reyfen.Timbratune.Core.Analysis.Metrics;
+using Reyfen.Timbratune.Core.Analysis.Tracks;
 
 namespace Reyfen.Timbratune.Core.Analysis;
 
 /// <summary>
-/// Frame-level measurements of a take (whole or so far). Everything the
-/// <see cref="RawAnalysisAssembler"/> needs, whether it came from the full
-/// analysis or from the live trackers.
-/// </summary>
-public sealed record FrameTracks
-{
-    public required double Duration { get; init; }
-    public required double SamplingFrequency { get; init; }
-    public required PitchContour Pitch { get; init; }
-    public required IntensityContour Intensity { get; init; }
-    public required double HnrMean { get; init; }
-    public required double Jitter { get; init; }
-    public required double Shimmer { get; init; }
-    public required IFormantTrack Formants5500 { get; init; }
-    public required IFormantTrack Formants5000 { get; init; }
-    /// <summary>
-    /// Weight row for a voiced frame (time, F0), or null when it can't be measured.
-    /// Must be thread-safe: rows are computed in parallel.
-    /// </summary>
-    public required Func<double, double, RawAnalysis.WeightRow?> WeightRow { get; init; }
-    public required IReadOnlyList<(double X, double Y)> Ltas { get; init; }
-    public required IReadOnlyList<(double Start, double End)> Sounding { get; init; }
-    /// <summary>The harmonicity track, for the per-slice HNR of the trends (optional).</summary>
-    public HarmonicityContour? Harmonicity { get; init; }
-    /// <summary>Glottal pulse times, for the per-slice jitter of the trends (optional).</summary>
-    public IReadOnlyList<double> Pulses { get; init; } = [];
-    /// <summary>See <see cref="RawAnalysisAssembler.LoudOutlierFraction"/>; 0 gives analyze.py's gate (the reference for the parity tests).</summary>
-    public double LoudOutlierFraction { get; init; } = RawAnalysisAssembler.LoudOutlierFraction;
-}
-
-/// <summary>
-/// The selection steps of analyze.py on top of the frame tracks: voiced frames,
+/// The selection steps of analyze.py on top of the tracks: voiced frames,
 /// the loud vowel-core gate, subsampling, the F1 gate, weight frames, the contour
 /// and the scalar summary. Shared by the full and the live analysis.
 /// </summary>
@@ -47,45 +18,16 @@ public static class RawAnalysisAssembler
 {
     public const double FormantCeiling = 5500;
 
-    public static RawAnalysis Assemble(FrameTracks t)
+    /// <summary>The raw values of a take from its tracks: each registered metric module adds its own.</summary>
+    public static RawAnalysis Assemble(in TrackView t) => Assemble(t, MetricRegistry.Default);
+
+    public static RawAnalysis Assemble(in TrackView t, MetricRegistry registry)
     {
-        var pitch = t.Pitch;
-        var intensity = t.Intensity;
-        var voiced = VoicedFrames(pitch);
-
-        var summary = new Dictionary<string, double>(StringComparer.Ordinal)
-        {
-            ["duration"] = t.Duration,
-            ["sampling_frequency"] = t.SamplingFrequency,
-            ["pitch_mean"] = pitch.Mean(),
-            ["pitch_median"] = pitch.Quantile(0.5),
-            ["pitch_min"] = pitch.Minimum(),
-            ["pitch_max"] = pitch.Maximum(),
-            ["pitch_sd"] = pitch.StandardDeviation(),
-            ["hnr"] = t.HnrMean,
-            ["jitter_local"] = t.Jitter,
-            ["shimmer_local"] = t.Shimmer,
-            ["intensity_mean"] = intensity.MeanEnergyDb(),
-            ["intensity_min"] = intensity.Minimum(),
-            ["intensity_max"] = intensity.Maximum(),
-        };
-
-        var contour = Contour(pitch);
-        var selected = SelectVowelCoreTimes(voiced, intensity, t.LoudOutlierFraction);
-
-        return new RawAnalysis
-        {
-            Summary = summary,
-            Formants = VowelCoreFormants(selected, [(FormantCeiling, t.Formants5500), (5000, t.Formants5000)]),
-            FormantFramesTried = selected.Count,
-            WeightFrames = WeightFrames(voiced, t.WeightRow),
-            Ltas = t.Ltas,
-            Contour = contour,
-            Sounding = t.Sounding,
-            HnrFrames = HnrFrames(t.Harmonicity),
-            IntensityFrames = Enumerable.Range(0, intensity.Db.Count).Select(i => (intensity.Grid.IndexToX(i), intensity.Db[i])).ToList(),
-            Pulses = t.Pulses,
-        };
+        var raw = new RawAnalysisBuilder();
+        raw.Summary["duration"] = t.Duration;
+        raw.Summary["sampling_frequency"] = t.SamplingFrequency;
+        foreach (var module in registry.Modules) module.Measure(t, raw);
+        return raw.Build();
     }
 
     /// <summary>(time, dB) of the voiced harmonicity frames.</summary>

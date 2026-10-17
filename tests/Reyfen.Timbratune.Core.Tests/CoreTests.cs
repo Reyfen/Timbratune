@@ -1,3 +1,4 @@
+using Reyfen.Timbratune.Core.Analysis.Metrics;
 using Reyfen.Timbratune.Core.Analysis;
 using Reyfen.Timbratune.Core.Domain;
 using Reyfen.Timbratune.Core.Json;
@@ -29,8 +30,20 @@ public sealed class ZonesTests
         Assert.Equal(expected, Zones.Fmt(v, unit));
 
     [Fact]
-    public void RegistryCoversEveryMetricKey() =>
-        Assert.Equal(Enum.GetValues<MetricKey>().Length, Metrics.All.Count);
+    public void RegistryNumbersEveryMetricOnce()
+    {
+        var registry = MetricRegistry.Default;
+        Assert.Equal(registry.Modules.Sum(m => m.Metrics.Count), registry.Count);
+        Assert.Equal(registry.Count, registry.Metrics.Select(m => m.Info.Name).Distinct().Count());
+        for (var i = 0; i < registry.Count; i++)
+        {
+            Assert.Equal(i, registry.Metrics[i].Id.Index);
+            Assert.Equal(registry.Metrics[i].Id, registry.Id(registry.Metrics[i].Info));
+        }
+        // Every metric some surface compares, charts or shows live has what that surface reads.
+        Assert.All(registry.Metrics.Where(m => m.Info.Compare is not null), m => Assert.NotNull(m.Info.Take));
+        Assert.All(registry.Metrics.Where(m => m.Info.Trend is not null), m => Assert.True(m.Info.Columns.HasFlag(MetricColumns.Trend)));
+    }
 }
 
 public sealed class JsonTests
@@ -268,7 +281,7 @@ public sealed class PostProcessorTests
         // 1500 → 1800 (jump, dropped, prev = 1800) → 1850 (kept: |1850-1800| ≤ 150)
         var rows = new[] { 1500.0, 1800, 1850, 1860, 1870, 1880 }
             .Select((f2, i) => new RawAnalysis.FormantRow(5500, i * 0.01, 500, f2, 2800)).ToList();
-        var (_, f2Median, _, kept) = AnalysisPostProcessor.VowelFormants(rows);
+        var (_, f2Median, _, kept) = Reyfen.Timbratune.Core.Analysis.Metrics.Resonance.ResonanceModule.VowelFormants(rows);
         Assert.Equal(1860, f2Median); // median of 1500, 1850, 1860, 1870, 1880
         Assert.Equal(5, kept.Count);
     }
@@ -299,9 +312,9 @@ public sealed class PostProcessorTests
             Sounding = [],
             FormantFramesTried = tried,
         };
-        Assert.Equal(60, AnalysisPostProcessor.UsableFormantPct(Raw(300, 180)));
-        Assert.Null(AnalysisPostProcessor.UsableFormantPct(Raw(29, 29))); // too few to say
-        Assert.Null(AnalysisPostProcessor.UsableFormantPct(Raw(0, 0)));   // not counted
+        Assert.Equal(60, Reyfen.Timbratune.Core.Analysis.Metrics.Resonance.ResonanceModule.UsableFormantPct(Raw(300, 180)));
+        Assert.Null(Reyfen.Timbratune.Core.Analysis.Metrics.Resonance.ResonanceModule.UsableFormantPct(Raw(29, 29))); // too few to say
+        Assert.Null(Reyfen.Timbratune.Core.Analysis.Metrics.Resonance.ResonanceModule.UsableFormantPct(Raw(0, 0)));   // not counted
     }
 
     [Fact]
@@ -326,17 +339,17 @@ public sealed class PostProcessorTests
             weightFrames: [(1.1, 12.0), (1.2, 14.0)]);
 
         Assert.Equal(2, result.Count);
-        Assert.Equal(210, result[0].MeanHz);
-        Assert.Equal(1550, result[0].F2Hz);
-        Assert.Null(result[0].WeightDb);
-        Assert.Equal(140, result[1].MeanHz);
-        Assert.Equal(13, result[1].WeightDb);
-        Assert.Equal(150, result[1].OffsetHz);
+        Assert.Equal(210, result[0][Col.Pitch]);
+        Assert.Equal(1550, result[0][Col.F2]);
+        Assert.Null(result[0][Col.Weight]);
+        Assert.Equal(140, result[1][Col.Pitch]);
+        Assert.Equal(13, result[1][Col.Weight]);
+        Assert.Equal(150, result[1][Col.Endings]);
         // melody uses in-register frames only: 140 and 160 Hz (120 is below the 130 Hz floor)
-        Assert.NotNull(result[1].MelodySt);
+        Assert.NotNull(result[1][Col.Melody]);
 
         // without F2/weight frames (older takes) those stay empty
-        Assert.All(AnalysisPostProcessor.PhraseBreakdown(detail), p => Assert.Null(p.F2Hz));
+        Assert.All(AnalysisPostProcessor.PhraseBreakdown(detail), p => Assert.Null(p[Col.F2]));
     }
 
     [Fact]

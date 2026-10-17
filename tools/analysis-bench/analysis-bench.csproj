@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Dev tool, not part of the solution: times the full analysis and the live updates, and
+       counts their allocations (REFACTOR-PLAN.md §3, gate 2).
+       usage: dotnet run -c Release (then two dashes) [take.wav] [-runs N (10)] [-out now.json] [-baseline before.json] [-types] -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ServerGarbageCollector>false</ServerGarbageCollector>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Reyfen.Timbratune\Reyfen.Timbratune.csproj" />
+  </ItemGroup>
+</Project>

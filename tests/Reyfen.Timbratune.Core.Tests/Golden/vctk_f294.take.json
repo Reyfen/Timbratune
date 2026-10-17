@@ -1,0 +1,52 @@
+[
+  {
+    "id": 0,
+    "label": "",
+    "note": "",
+    "date": "",
+    "source_file": "",
+    "audio": null,
+    "detail": null,
+    "duration_s": 9.81,
+    "pitch": {
+      "mean_hz": 162.82,
+      "median_hz": 178.85,
+      "min_hz": 68.44,
+      "max_hz": 255.87,
+      "range_hz": 187.44,
+      "sd_hz": 57.11
+    },
+    "formants": {
+      "f1_hz": 511.43,
+      "f2_hz": 1405.54,
+      "f3_hz": 2634.55,
+      "usable_pct": 96.4
+    },
+    "voice_quality": {
+      "hnr_db": 12.58,
+      "jitter_pct": 2.49,
+      "shimmer_pct": 9.92
+    },
+    "intensity": {
+      "mean_db": 67.51,
+      "min_db": -339.85,
+      "max_db": 78.46
+    },
+    "weight": {
+      "h1a3c_db": 5.5,
+      "h1a3_db": 17.15,
+      "tilt_db_khz": -7.35
+    },
+    "register": {
+      "floor_hz": 130,
+      "in_register_pct": 66.9,
+      "semitones_sd": 6.8,
+      "in_register_semitones_sd": 2.63,
+      "onset_sub_pct": 26,
+      "mid_sub_pct": 21.7,
+      "offset_sub_pct": 49.1,
+      "phrases_landed_pct": 40,
+      "n_phrases": 5
+    }
+  }
+]

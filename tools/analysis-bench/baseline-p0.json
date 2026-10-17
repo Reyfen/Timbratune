@@ -1,0 +1,15 @@
+{
+  "take_s": 27.6,
+  "runs": 10,
+  "machine": "TEDSMAINPC, 24 cores",
+  "full_ms": 355.73,
+  "full_alloc_mb": 154.233,
+  "live_update_light_ms": 9.561,
+  "live_update_full_ms": 9.691,
+  "live_update_total_ms": 2813.521,
+  "live_alloc_mb_per_s": 8.858,
+  "live_compute_total_ms": 291.691,
+  "live_compute_alloc_mb_per_s": 1.961,
+  "saved_hash": "504d74118fb5a222",
+  "live_hash": "3d166b64c72ee99b"
+}

@@ -17,10 +17,13 @@ namespace Reyfen.Timbratune.Controls;
 /// </summary>
 public sealed class ContourChart : ThemedControl
 {
+    /// <summary>Longest unvoiced gap inside a phrase that the pitch contours (live and saved) join with a straight line.</summary>
+    public const double ContourBridgeGap = Core.Analysis.Metrics.Pitch.PitchModule.ContourBridgeGap;
+
     public static readonly StyledProperty<RecordingDetail?> DetailProperty =
         AvaloniaProperty.Register<ContourChart, RecordingDetail?>(nameof(Detail));
     public static readonly StyledProperty<double> FemThresholdProperty =
-        AvaloniaProperty.Register<ContourChart, double>(nameof(FemThreshold), Metrics.FemininePitchHz);
+        AvaloniaProperty.Register<ContourChart, double>(nameof(FemThreshold), Core.Analysis.Metrics.Pitch.PitchModule.FemininePitchHz);
 
     /// <summary>Time axis length (s); 0 = the take's duration. Live views pass 10-second steps.</summary>
     public static readonly StyledProperty<double> AxisDurationProperty =
@@ -170,7 +173,7 @@ public sealed class ContourChart : ThemedControl
         // they stay visible on the pink band. The saved take's raw frames are joined across
         // short unvoiced gaps inside a phrase, as the live line is (it arrives already joined).
         var isLive = LiveLine is not null;
-        var bridge = ViewModels.LiveTimelinesViewModel.ContourBridgeGap;
+        var bridge = ContourBridgeGap;
         var belowPen = CachedPen(ref _belowPen, C("ZoneMascInk"), 1, 3);
         var abovePen = zones is null
             ? CachedPen(ref _abovePen, ZoneColor(ZoneColorKey.Fem), 0.9, 2.4)

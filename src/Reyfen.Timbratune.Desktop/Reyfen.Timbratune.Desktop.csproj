@@ -10,10 +10,13 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia.Desktop" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Reyfen.Timbratune\Reyfen.Timbratune.csproj" />
     <ProjectReference Include="..\Reyfen.Timbratune.Audio.SoundFlow\Reyfen.Timbratune.Audio.SoundFlow.csproj" />
+    <ProjectReference Include="..\Reyfen.Timbratune.Audio.MediaFoundation\Reyfen.Timbratune.Audio.MediaFoundation.csproj" />
+    <ProjectReference Include="..\Reyfen.Timbratune.Audio.Ffmpeg\Reyfen.Timbratune.Audio.Ffmpeg.csproj" />
   </ItemGroup>
   <!-- SkiaSharp 3 / HarfBuzzSharp ship debug symbols for their native libraries (~100 MB on
        win-x64), which a single-file publish would copy next to the executable. -->

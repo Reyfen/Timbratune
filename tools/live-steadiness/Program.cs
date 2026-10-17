@@ -6,9 +6,21 @@
 //                 for pitch, the exact final contour)
 // all as % of the graph's range. "baseline" = the smoothing without prediction (newest
 // value held); "app" = the settings the app uses (LiveTimelinesViewModel).
-using Reyfen.Timbratune.Analysis;
+//
+// Each tick's lines are computed right after its update, as the app does: LiveAnalyzer
+// refills its series lists in turn (two sets), so a snapshot's series are only valid until
+// the update after next. Keeping all snapshots and reading them at the end measured the
+// last update's data over and over (dots ≈ 0, loudness 24 %). The "app" lines are checked
+// against LiveTimelinesViewModel.Compute on every tick, so the tool can't drift from it.
+using Reyfen.Timbratune.Features.LiveMonitor;
 using Reyfen.Timbratune.Core.Analysis;
-using Reyfen.Timbratune.ViewModels;
+using Reyfen.Timbratune.Core.Analysis.Metrics;
+using Reyfen.Timbratune.Core.Analysis.Metrics.Clarity;
+using Reyfen.Timbratune.Core.Analysis.Metrics.Loudness;
+using Reyfen.Timbratune.Core.Analysis.Metrics.Resonance;
+using Reyfen.Timbratune.Core.Analysis.Metrics.Weight;
+using Reyfen.Timbratune.Core.Domain;
+using Reyfen.Timbratune.Core.Models;
 using System.Globalization;
 
 if (args.Length < 1)
@@ -22,32 +34,31 @@ var fs = sound.SamplingFrequency;
 var mono = sound.ToMono().ToArray();
 var block = args.Length > 1 ? double.Parse(args[1], CultureInfo.InvariantCulture) : LiveAnalyzer.DefaultFormantBlockSeconds;
 var live = new LiveAnalyzer(fs, formantBlockSeconds: block);
-var sw = System.Diagnostics.Stopwatch.StartNew();
-var ticks = new List<LiveSnapshot>();
-for (var i = 0; i < mono.Length; i += (int)(fs / 10))
-{
-    live.Append(mono.AsSpan(i, Math.Min((int)(fs / 10), mono.Length - i)));
-    ticks.Add(live.Update());
-}
-var final = ticks[^1];
-Console.WriteLine($"formant block {block} s: {sw.Elapsed.TotalSeconds:0.00} s of updates for {mono.Length / fs:0.0} s of audio");
+
+// As LiveTimelinesViewModel.Compute: the contour of a quick update, else the result's detail.
+static RecordingDetail? Detail(LiveSnapshot s) => s.Contour ?? s.Result?.Detail;
 
 static IReadOnlyList<TimedValue> Pitch(LiveSnapshot s)
 {
     var r = new List<TimedValue>();
-    if (s.Result?.Detail is not { } d) return r;
-    for (var i = 0; i < d.Frames.T.Count; i++) if (d.Frames.Hz[i] is { } hz) r.Add(new TimedValue(d.Frames.T[i], hz));
+    if (Detail(s) is not { } d) return r;
+    for (var i = 0; i < d.Frames.T.Count && i < d.Frames.Hz.Count; i++) if (d.Frames.Hz[i] is { } hz) r.Add(new TimedValue(d.Frames.T[i], hz));
     return r;
 }
 
-var metrics = new (string Name, Func<LiveSnapshot, IReadOnlyList<TimedValue>> Get, SmoothingSpec Spec, double Range)[]
+// Line = index into Frame.Lines (−1 = the pitch line), to check the "app" lines against Compute.
+var lines = LiveLine.From(MetricRegistry.Default);
+int LineOf(MetricInfo metric) => lines.Select((l, i) => (l, i)).First(x => x.l.Info == metric).i;
+(string, Func<LiveSnapshot, IReadOnlyList<TimedValue>>, SmoothingSpec, double, int) App(MetricInfo metric, double range) =>
+    (metric.Name, s => s.Series[metric], metric.Live!.Smoothing, range, LineOf(metric));
+var metrics = new (string Name, Func<LiveSnapshot, IReadOnlyList<TimedValue>> Get, SmoothingSpec Spec, double Range, int Line)[]
 {
-    ("pitch", Pitch, LiveTimelinesViewModel.PitchSmoothing, 260),
-    ("loudness", s => s.Series.Loudness, LiveTimelinesViewModel.LoudnessSmoothing, 33),
-    ("hnr", s => s.Series.Hnr, LiveTimelinesViewModel.FrameSmoothing, 30),
-    ("f2", s => s.Series.F2, LiveTimelinesViewModel.VowelSmoothing, 900),
-    ("f3", s => s.Series.F3, LiveTimelinesViewModel.VowelSmoothing, 1300),
-    ("weight", s => s.Series.Weight, LiveTimelinesViewModel.VowelSmoothing, 20),
+    ("pitch", Pitch, LiveTimelinesViewModel.PitchSmoothing, 260, -1),
+    App(LoudnessModule.Loudness, 33),
+    App(ClarityModule.Hnr, 30),
+    App(ResonanceModule.F2, 900),
+    App(ResonanceModule.F3, 1300),
+    App(WeightModule.Weight, 20),
 };
 var variants = new (string Name, Func<SmoothingSpec, SmoothingSpec> Make)[]
 {
@@ -55,39 +66,99 @@ var variants = new (string Name, Func<SmoothingSpec, SmoothingSpec> Make)[]
     ("app", s => s),
 };
 
-Console.WriteLine("metric    variant     dot step  tail change  dot error   (% of range)");
-foreach (var m in metrics)
-{
-    var finalLine = (m.Name == "pitch" ? m.Get(final) : RecentWindow.Smooth(m.Get(final), m.Spec))
-        .Where(x => !double.IsNaN(x.Value)).ToList();
-    foreach (var (name, make) in variants)
-    {
-        var spec = make(m.Spec);
-        double steps = 0, err = 0, tail = 0;
-        int nSteps = 0, nErr = 0, nTail = 0;
-        TimedValue? prev = null;
-        Dictionary<long, double>? prevLine = null;
-        foreach (var tick in ticks)
-        {
-            var line = RecentWindow.Smooth(m.Get(tick), spec, 0, tick.Elapsed);
-            var cur = new Dictionary<long, double>();
-            foreach (var x in line)
-                if (!double.IsNaN(x.Value) && x.T > tick.Elapsed - 1.0) cur[(long)Math.Round(x.T * 1e4)] = x.Value;
-            if (prevLine is not null)
-                foreach (var (k, v) in cur)
-                    if (prevLine.TryGetValue(k, out var pv)) { tail += Math.Abs(v - pv); nTail++; }
-            prevLine = cur;
+// The whole take shown (axis from 0), as the app's default view.
+static List<TimedValue> Line(IReadOnlyList<TimedValue> points, SmoothingSpec spec, LiveSnapshot s, bool pitch) => pitch
+    ? RecentWindow.Smooth(points, spec, 0, s.Elapsed, Detail(s)?.Phrases.Select(p => p.End).ToList())
+    : RecentWindow.Smooth(points, spec, 0, s.Elapsed);
 
-            TimedValue? dot = null;
-            for (var i = line.Count - 1; i >= 0; i--) if (!double.IsNaN(line[i].Value)) { dot = line[i]; break; }
-            if (dot is not { } d || tick.Elapsed - d.T > 0.3) { prev = null; continue; } // paused: no current point
-            if (prev is { } p) { steps += Math.Abs(d.Value - p.Value); nSteps++; }
-            prev = d;
-            if (finalLine.Count == 0) continue;
-            var near = finalLine.MinBy(x => Math.Abs(x.T - d.T));
-            if (Math.Abs(near.T - d.T) < 0.06) { err += Math.Abs(near.Value - d.Value); nErr++; }
+var stats = new Stat[metrics.Length, variants.Length];
+for (var m = 0; m < metrics.Length; m++)
+    for (var v = 0; v < variants.Length; v++) stats[m, v] = new Stat();
+var mismatches = 0;
+var sw = System.Diagnostics.Stopwatch.StartNew();
+LiveSnapshot final = LiveSnapshot.Empty;
+var step = (int)(fs / 10);
+for (var i = 0; i < mono.Length; i += step)
+{
+    live.Append(mono.AsSpan(i, Math.Min(step, mono.Length - i)));
+    var tick = live.Update();
+    final = tick;
+    var frame = LiveTimelinesViewModel.Compute(tick, lines);
+    for (var m = 0; m < metrics.Length; m++)
+    {
+        var points = metrics[m].Get(tick);
+        for (var v = 0; v < variants.Length; v++)
+        {
+            var spec = variants[v].Make(metrics[m].Spec);
+            var line = Line(points, spec, tick, metrics[m].Line < 0);
+            if (spec == metrics[m].Spec && !Same(line, metrics[m].Line < 0 ? frame.PitchLine : frame.Lines[metrics[m].Line])) mismatches++;
+            stats[m, v].Add(line, tick.Elapsed);
         }
-        Console.WriteLine($"{m.Name,-9} {name,-10} {100 * steps / Math.Max(1, nSteps) / m.Range,8:0.00}  {100 * tail / Math.Max(1, nTail) / m.Range,10:0.00}  {100 * err / Math.Max(1, nErr) / m.Range,9:0.00}");
+    }
+}
+Console.WriteLine($"formant block {block} s: {sw.Elapsed.TotalSeconds:0.00} s of updates for {mono.Length / fs:0.0} s of audio");
+if (mismatches > 0) Console.WriteLine($"WARNING: {mismatches} 'app' lines differ from LiveTimelinesViewModel.Compute; the tool no longer measures what the app draws");
+
+Console.WriteLine("metric    variant     dot step  tail change  dot error   (% of range)");
+for (var m = 0; m < metrics.Length; m++)
+{
+    var finalLine = (metrics[m].Line < 0 ? metrics[m].Get(final) : RecentWindow.Smooth(metrics[m].Get(final), metrics[m].Spec))
+        .Where(x => !double.IsNaN(x.Value)).ToList();
+    for (var v = 0; v < variants.Length; v++)
+    {
+        var (steps, tail, err) = stats[m, v].Result(finalLine);
+        var r = metrics[m].Range;
+        Console.WriteLine($"{metrics[m].Name,-9} {variants[v].Name,-10} {100 * steps / r,8:0.00}  {100 * tail / r,10:0.00}  {100 * err / r,9:0.00}");
     }
 }
 return 0;
+
+static bool Same(IReadOnlyList<TimedValue> a, IReadOnlyList<TimedValue> b)
+{
+    if (a.Count != b.Count) return false;
+    for (var i = 0; i < a.Count; i++)
+        if (a[i].T != b[i].T || !(a[i].Value == b[i].Value || double.IsNaN(a[i].Value) && double.IsNaN(b[i].Value))) return false;
+    return true;
+}
+
+/// <summary>One metric's running numbers under one smoothing, fed tick by tick.</summary>
+sealed class Stat
+{
+    private double _steps, _tail;
+    private int _nSteps, _nTail;
+    private TimedValue? _prev;
+    private Dictionary<long, double>? _prevLine;
+    private readonly List<TimedValue> _dots = [];
+
+    public void Add(List<TimedValue> line, double elapsed)
+    {
+        var cur = new Dictionary<long, double>();
+        foreach (var x in line)
+            if (!double.IsNaN(x.Value) && x.T > elapsed - 1.0) cur[(long)Math.Round(x.T * 1e4)] = x.Value;
+        if (_prevLine is not null)
+            foreach (var (k, v) in cur)
+                if (_prevLine.TryGetValue(k, out var pv)) { _tail += Math.Abs(v - pv); _nTail++; }
+        _prevLine = cur;
+
+        TimedValue? dot = null;
+        for (var i = line.Count - 1; i >= 0; i--) if (!double.IsNaN(line[i].Value)) { dot = line[i]; break; }
+        if (dot is not { } d || elapsed - d.T > 0.3) { _prev = null; return; } // paused: no current point
+        if (_prev is { } p) { _steps += Math.Abs(d.Value - p.Value); _nSteps++; }
+        _prev = d;
+        _dots.Add(d);
+    }
+
+    /// <summary>Mean dot step, mean tail change and mean dot error against <paramref name="finalLine"/>.</summary>
+    public (double Steps, double Tail, double Error) Result(List<TimedValue> finalLine)
+    {
+        double err = 0;
+        var nErr = 0;
+        if (finalLine.Count > 0)
+            foreach (var d in _dots)
+            {
+                var near = finalLine.MinBy(x => Math.Abs(x.T - d.T));
+                if (Math.Abs(near.T - d.T) < 0.06) { err += Math.Abs(near.Value - d.Value); nErr++; }
+            }
+        return (_steps / Math.Max(1, _nSteps), _tail / Math.Max(1, _nTail), err / Math.Max(1, nErr));
+    }
+}

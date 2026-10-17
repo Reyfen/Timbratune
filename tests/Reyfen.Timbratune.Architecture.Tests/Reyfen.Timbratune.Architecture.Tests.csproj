@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The dependency rules of REFACTOR-PLAN.md §1.1, §5 and §7, checked on the compiled assemblies. -->
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Reyfen.Timbratune.Acoustics\Reyfen.Timbratune.Acoustics.csproj" />
+    <ProjectReference Include="..\..\src\Reyfen.Timbratune.Core\Reyfen.Timbratune.Core.csproj" />
+    <ProjectReference Include="..\..\src\Reyfen.Timbratune.Audio.SoundFlow\Reyfen.Timbratune.Audio.SoundFlow.csproj" />
+    <ProjectReference Include="..\..\src\Reyfen.Timbratune\Reyfen.Timbratune.csproj" />
+  </ItemGroup>
+</Project>

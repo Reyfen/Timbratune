@@ -1,6 +1,8 @@
 using Reyfen.Timbratune.Acoustics.Numerics;
 using Reyfen.Timbratune.Acoustics.Pitch;
 using Reyfen.Timbratune.Acoustics.Voice;
+using Reyfen.Timbratune.Core.Analysis.Metrics;
+using Reyfen.Timbratune.Core.Analysis.Tracks;
 using Reyfen.Timbratune.Core.Models;
 
 namespace Reyfen.Timbratune.Core.Analysis;
@@ -12,9 +14,19 @@ namespace Reyfen.Timbratune.Core.Analysis;
 /// </summary>
 public sealed class FrameSeriesBuffers
 {
-    public readonly List<TimedValue> Loudness = [], Hnr = [], F2 = [], F3 = [], Weight = [], Jitter = [];
-    /// <summary>F1 at the same times as F2/F3; null = not collected (the live graphs don't show it).</summary>
-    public List<TimedValue>? F1;
+    /// <param name="metricCount">The registry's <see cref="MetricRegistry.Count"/>.</param>
+    /// <param name="forSavedTake">Also the series only a saved take keeps (F1; the live graphs don't show it).</param>
+    public FrameSeriesBuffers(int metricCount, bool forSavedTake = false)
+    {
+        Lines = new List<TimedValue>[metricCount];
+        for (var i = 0; i < Lines.Length; i++) Lines[i] = [];
+        ForSavedTake = forSavedTake;
+    }
+
+    /// <summary>One list per metric, by <see cref="MetricId.Index"/> (empty for metrics without a series).</summary>
+    public List<TimedValue>[] Lines { get; }
+
+    public bool ForSavedTake { get; }
     internal readonly List<(double T, double F0)> Voiced = [];
     internal readonly List<double> LoudTimes = [], LoudScratch = [];
     internal RawAnalysis.WeightRow?[] Rows = [];
@@ -30,51 +42,12 @@ public sealed class FrameSeriesBuffers
 /// </summary>
 public static class FrameSeriesBuilder
 {
-    /// <param name="stretchJitter">Per voiced stretch: its end time and local jitter (fraction; NaN = too few pulses).</param>
-    public static void Build(FrameTracks t, HarmonicityContour harmonicity, Func<double, double, RawAnalysis.WeightRow?> weightRow,
-        IReadOnlyList<(double End, double Jitter)> stretchJitter, FrameSeriesBuffers b)
+    /// <summary>Every module's series for these tracks, into <paramref name="b"/> (live: pooled, refilled).</summary>
+    public static void Build(in TrackView t, FrameSeriesBuffers b) => Build(t, b, MetricRegistry.Default);
+
+    public static void Build(in TrackView t, FrameSeriesBuffers b, MetricRegistry registry)
     {
-        var loudness = b.Loudness;
-        loudness.Clear();
-        for (var i = 0; i < t.Intensity.Db.Count; i++) loudness.Add(new(t.Intensity.Grid.IndexToX(i), t.Intensity.Db[i]));
-
-        var hnr = b.Hnr;
-        hnr.Clear();
-        for (var i = 0; i < harmonicity.Db.Count; i++)
-            if (harmonicity.Db[i] != HarmonicityContour.Unvoiced) hnr.Add(new(harmonicity.Grid.IndexToX(i), harmonicity.Db[i]));
-
-        var voiced = RawAnalysisAssembler.VoicedFrames(t.Pitch, b.Voiced);
-        var f1 = b.F1;
-        var f2 = b.F2;
-        var f3 = b.F3;
-        f1?.Clear();
-        f2.Clear();
-        f3.Clear();
-        foreach (var time in RawAnalysisAssembler.LoudVoicedTimes(voiced, t.Intensity, b.LoudTimes, t.LoudOutlierFraction, b.LoudScratch))
-        {
-            double v1 = t.Formants5500.ValueAtTime(1, time), v2 = t.Formants5500.ValueAtTime(2, time), v3 = t.Formants5500.ValueAtTime(3, time);
-            if (!(v1 >= 250 && v1 <= 1000 && v2 > 0 && v3 > 0)) continue;
-            f1?.Add(new(time, v1));
-            f2.Add(new(time, v2));
-            f3.Add(new(time, v3));
-        }
-
-        if (b.Rows.Length < voiced.Count) b.Rows = new RawAnalysis.WeightRow?[Math.Max(voiced.Count, 2 * b.Rows.Length)];
-        var rows = b.Rows;
-        Parallel.For(0, voiced.Count, Parallelism.Options, k => rows[k] = weightRow(voiced[k].T, voiced[k].F0));
-        var weight = b.Weight;
-        weight.Clear();
-        for (var k = 0; k < voiced.Count; k++)
-        {
-            if (rows[k] is not { } w) continue;
-            var value = AnalysisPostProcessor.CorrectedH1A3(w, t.SamplingFrequency);
-            if (double.IsFinite(value)) weight.Add(new(w.T, value));
-        }
-
-        var jitter = b.Jitter;
-        jitter.Clear();
-        foreach (var s in stretchJitter)
-            if (double.IsFinite(s.Jitter)) jitter.Add(new TimedValue(s.End, s.Jitter * 100));
+        for (var i = 0; i < registry.Modules.Count; i++) registry.Modules[i].BuildSeries(t, registry.LinesOf(i, b));
     }
 
     /// <summary>
@@ -99,40 +72,30 @@ public static class FrameSeriesBuilder
     /// The saved take's series from the full analysis' tracks (rounded as the saved contour
     /// is: times to 1 ms, Hz to 0.1, dB to 0.01, % to 0.001).
     /// </summary>
-    public static TakeSeries ForTake(FrameTracks t)
+    public static TakeSeries ForTake(in TrackView t) => ForTake(t, MetricRegistry.Default);
+
+    public static TakeSeries ForTake(in TrackView t, MetricRegistry registry)
     {
-        var harmonicity = t.Harmonicity ?? throw new ArgumentException("The tracks have no harmonicity.", nameof(t));
-        var b = new FrameSeriesBuffers { F1 = [] };
-        Build(t, harmonicity, t.WeightRow, StretchJitter(t.Pitch, t.Pulses), b);
+        if (t.Harmonicity is null) throw new ArgumentException("The tracks have no harmonicity.", nameof(t));
+        var b = new FrameSeriesBuffers(registry.Count, forSavedTake: true);
+        Build(t, b, registry);
+        var written = new Dictionary<string, FrameSeries>(StringComparer.Ordinal);
+        for (var i = 0; i < registry.Modules.Count; i++) registry.Modules[i].WriteSeries(t, registry.LinesOf(i, b), written);
 
-        var pitchStep = t.Pitch.Grid.Step;
-        var pitch = new FrameSeries { Unit = "Hz", StepS = pitchStep, Description = "every pitch frame; null = unvoiced" };
-        for (var i = 0; i < t.Pitch.FrameCount; i++)
-        {
-            var hz = t.Pitch.ValueInFrame(i);
-            pitch.T.Add(Math.Round(t.Pitch.Grid.IndexToX(i), 3));
-            pitch.Values.Add(t.Pitch.IsVoiced(i) && double.IsFinite(hz) ? Math.Round(hz, 1) : null);
-        }
-
-        return new TakeSeries
-        {
-            Series =
-            {
-                [TakeSeries.Pitch] = pitch,
-                [TakeSeries.Loudness] = Series(b.Loudness, "dB", t.Intensity.Grid.Step, 2, "every intensity frame"),
-                [TakeSeries.Hnr] = Series(b.Hnr, "dB", harmonicity.Grid.Step, 2, "voiced harmonicity frames"),
-                [TakeSeries.F1] = Series(b.F1, "Hz", pitchStep, 1, FormantFrames),
-                [TakeSeries.F2] = Series(b.F2, "Hz", pitchStep, 1, FormantFrames),
-                [TakeSeries.F3] = Series(b.F3, "Hz", pitchStep, 1, FormantFrames),
-                [TakeSeries.Weight] = Series(b.Weight, "dB", pitchStep, 2, "corrected H1*-A3* on measurable voiced pitch frames"),
-                [TakeSeries.Jitter] = Series(b.Jitter, "%", null, 3, "local jitter per voiced stretch, at the stretch end"),
-            },
-        };
+        // series.json keeps its key order whatever the module order: the known keys first, as always.
+        var take = new TakeSeries();
+        foreach (var key in KeyOrder)
+            if (written.Remove(key, out var known)) take.Series[key] = known;
+        foreach (var (key, other) in written) take.Series[key] = other;
+        return take;
     }
 
-    private const string FormantFrames = "voiced pitch frames within 10 dB of the loudest frames (ignoring the top 1 %, so a click doesn't count), with F1 in 250-1000 Hz (5500 Hz ceiling)";
+    private static readonly string[] KeyOrder =
+        [TakeSeries.Pitch, TakeSeries.Loudness, TakeSeries.Hnr, TakeSeries.F1, TakeSeries.F2, TakeSeries.F3, TakeSeries.Weight, TakeSeries.Jitter];
 
-    private static FrameSeries Series(List<TimedValue> points, string unit, double? step, int digits, string description)
+    internal const string FormantFrames = "voiced pitch frames within 10 dB of the loudest frames (ignoring the top 1 %, so a click doesn't count), with F1 in 250-1000 Hz (5500 Hz ceiling)";
+
+    internal static FrameSeries Series(List<TimedValue> points, string unit, double? step, int digits, string description)
     {
         var series = new FrameSeries { Unit = unit, StepS = step, Description = description };
         series.T.Capacity = series.Values.Capacity = points.Count;

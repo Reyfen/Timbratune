@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Import decoding through Android's own MediaExtractor + MediaCodec (AAC/M4A, 3GP/AMR,
+       Vorbis, Opus, WebM/MKV, the audio of videos). Like the Android head, not in
+       Timbratune.slnx, so the solution builds without the Android workload. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-android</TargetFramework>
+    <SupportedOSPlatformVersion>26</SupportedOSPlatformVersion>
+    <RootNamespace>Reyfen.Timbratune.Audio.Android</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Reyfen.Timbratune.Core\Reyfen.Timbratune.Core.csproj" />
+  </ItemGroup>
+</Project>

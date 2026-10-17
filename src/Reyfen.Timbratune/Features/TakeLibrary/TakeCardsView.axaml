@@ -1,0 +1,25 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="using:Reyfen.Timbratune.Controls"
+             xmlns:tl="using:Reyfen.Timbratune.Features.TakeLibrary"
+             x:Class="Reyfen.Timbratune.Features.TakeLibrary.TakeCardsView"
+             x:DataType="tl:TakeLibraryViewModel">
+  <!-- 📖 all recordings: one card per take, newest first. -->
+  <StackPanel Spacing="8">
+    <TextBlock Classes="section" Text="📖 All recordings" />
+    <Border Classes="card" IsVisible="{Binding NoRecordings}">
+      <TextBlock Classes="cap" TextAlignment="Center"
+                 Text="no recordings yet 💗&#10;record your first take above, or import one!" />
+    </Border>
+    <ItemsControl ItemsSource="{Binding Items}">
+      <ItemsControl.ItemsPanel>
+        <ItemsPanelTemplate><c:CardGrid MinItemWidth="340" /></ItemsPanelTemplate>
+      </ItemsControl.ItemsPanel>
+      <ItemsControl.ItemTemplate>
+        <DataTemplate x:DataType="tl:TakeCardViewModel">
+          <tl:TakeCardView />
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+  </StackPanel>
+</UserControl>

@@ -1,17 +1,18 @@
 # Timbratune refactoring plan
 
-*Status:* agreed 2026-10-15, not started.
+*Status:* agreed 2026-10-15; **done 2026-10-16** (P0–P10, HANDOFF §8i–§8s). What remains are the later versions: accounts and the avatar (§6), cloud settings sync (§5a.3), the telemetry adapters (§5) and the browser head (§7). To extend the app, follow §13 (a feature) and §14 (a metric).
 *Base:* `dev/v0.2.1` at `2b33f06`.
 *Work branch:* `dev/v0.3.0`.
 
-This is the target architecture and the order of work for splitting Timbratune into independent feature modules and per-metric analysis modules. It also prepares for wider audio import, opt-in analytics, and later accounts and a browser build.
+This was the target architecture and the order of work for splitting Timbratune into independent feature modules and per-metric analysis modules. It also prepares for wider audio import, opt-in analytics, and later accounts and a browser build.
 
 ## How to use this document (for agents)
 
 - **Read first:**
   - `CLAUDE.md` for the ground rules: commit only when asked, no Praat code, cross-platform, never touch the user's takes or running app, measure before claiming.
   - The relevant `HANDOFF.md` section, before touching live analysis, smoothing or performance (§8, §8d).
-- **Order of work:** do the phases in §9 in order. Each phase is small enough to review on its own, and ends green: build, tests, a UI check and the performance gates where they apply.
+- **The refactoring is done.** To add a feature or a metric, follow §13 or §14. The phases below are the record of how it was done.
+- **Order of work (historical):** do the phases in §9 in order. Each phase is small enough to review on its own, and ends green: build, tests, a UI check and the performance gates where they apply.
 - **Progress:** tick the checklist in §9 as phases land. Record measured numbers in `HANDOFF.md`, not here.
 - **Decisions:** if reality contradicts this plan (an API doesn't exist, a gate can't be met), stop and ask the owner. Don't silently change direction. Open questions are listed in §12.
 - **Scope:**
@@ -74,17 +75,18 @@ src/
       Decoding/                         format catalog, sniffer, decoder ports, registry (§4)
     Storage/                            ITakeStorage + IDataStore ports (§7 seam), RecordingStore (repository
                                         over ITakeStorage), FileSystemTakeStorage (today's layout), DataPaths,
-                                        TakeArchive, AppSettings
+                                        TakeArchive
+      Settings/                         SettingKey<T>, SettingScope, SettingsService, ISettingsStore, migrations (§5a)
   Reyfen.Timbratune/                    Avalonia UI library
     App/                                App.axaml(.cs), CompositionRoot (AddTimbratune), ViewLocator (hand-written map)
     Shell/                              ShellView (was MainView), ShellViewModel, overlay stack, back/Esc handling
     Shared/                             ports and state that features share; no feature code
       Navigation/                       IOverlayHost, IRouter base
       Messaging/                        IMessenger + message records (TakeSaved, TakeRenamed, TakeDeleted, ImportFinished…)
-      State/                            IActiveTakeService, ITakeCatalog, ILiveSession, IEntitlements (later)
+      State/                            IActiveTakeService, ITakeCatalog, ILiveSession, ISettings (§5a), IEntitlements (HasEverDonated; the rest later)
       Platform/                         IFileDialogs, IFileSharer, IPermissions, IPlatformInfo, ISecureStore,
                                         IExternalBrowser, IProcessRunner, IHttpDownloader
-      Analytics/                        IAnalytics, TakeAnalyzedEvent, NullAnalytics (the port only, §5)
+      Telemetry/                        IAnalytics, ICrashReporter, do-nothing defaults, limiter, crash hooks, consent, rollout (§5)
       Controls/  Themes/  Diagnostics/
     Features/                           each: View(s), ViewModel(s), Manager, Router, Add<Feature>() registration
       Recording/                        record panel; RecordingManager owns recorder + live session + save
@@ -94,7 +96,7 @@ src/
       MetricCompare/                    metric comparison modal (takes + reference voices)
       TakeActions/                      per-take dialog: save/export/share, rename, delete
       Import/                           picker, dropped-folder scan, trend backfill, FFmpeg offer (§4)
-      Analytics/                        MixpanelAnalytics + consent toggle (§5)
+      Analytics/                        (later) Mixpanel and Sentry adapters, consent switches (§5)
       CheatSheet/  About/               static content; footer (version, credits, data folder)
       Account/  Avatar/                 (later, §6)
   Reyfen.Timbratune.Audio.SoundFlow/    exists: recorder, player, miniaudio decoder provider
@@ -266,8 +268,15 @@ public interface IMetricModule
 
    **Budget:** at most +3 % time, and **no more allocations than the baseline**.
 3. **Phones** (Release profiling build, HANDOFF §8d):
-   - Pixel 9: ≥ 57.5 fps and ≤ 3.1 % janky while recording; stop-to-saved ≤ 2.7 s.
-   - Pixel 4a: re-measure against its own phase-0 baseline.
+   - Pixel 9: no worse than its phase-0 baseline (HANDOFF §8i: 3.3 % janky, 39.5 fps over the window, Stop 2.0 s), as an A/B with the P0 build; stop-to-saved ≤ 2.7 s. (The earlier ≥ 57.5 fps / ≤ 3.1 % was fps while drawing under Avalonia 11.3.)
+   - Pixel 4a: re-measure against its own phase-0 baseline (HANDOFF §8i: 52.4 fps, 9.0 % janky, Stop 4.6 s), as an A/B with the P0 build.
+   - **Schedule** (owner, 2026-10-16): each phone A/B is 6 alternating runs per build, about 13 minutes per phone, so phones are used only where they add information:
+     - **P5:** both phones (done).
+     - **P6:** the Pixel 4a only (the slower, more sensitive phone), backed by the bench A/B; the Pixel 9 check moves to P7.
+     - **P7:** both phones, against the P0 build, so the Pixel 9 run covers P6 and P7 together. On a Pixel 9 miss, measure the P6 build too to tell which phase caused it.
+     - **P9:** both phones, Release builds, every gate (no shortcut).
+     - Not 4 runs instead of 6: single runs vary by up to 4 points of janky % on the 4a.
+   - **The emulator never stands in for a phone gate:** it runs x86 at desktop speed with software rendering (SwiftShader) and Debug builds, so its frame times say nothing about the phones. It is for functional smoke tests (start, record, Stop, save, screens), which P7 needs anyway.
 4. **On a miss:** fix it or revert that step before continuing.
 
 ---
@@ -362,51 +371,160 @@ Linux is the one platform without a universal system decoder, hence §4.3.
 
 ---
 
-## 5. Usage analytics (Mixpanel)
+## 5. Telemetry: usage analytics, crash reports and logs
 
-**Requirements from the owner:**
-- Mixpanel.
-- Only **final results after an analysis**, never live data.
-- The bare minimum of information.
-- Lightweight, with **zero allocations when disabled**.
+**Status:** groundwork only (P8, HANDOFF §8q). The ports, consent, rollout rule and log points exist and are off; nothing is sent. There is no Mixpanel or Sentry package and no network code yet; the adapters come in a later version, once the owner has created the projects.
 
-**Structure:**
-- **The port** is in `Shared/Analytics`, so other features' managers can call it without depending on `Features/Analytics`:
-  - `IAnalytics { bool IsEnabled; void TakeAnalyzed(in TakeAnalyzedEvent e); }`
-  - `TakeAnalyzedEvent`, a `readonly record struct`
-  - `NullAnalytics.Instance`
-- **The implementation** is in `Features/Analytics`:
-  - `MixpanelAnalytics`: `HttpClient` POST to `/track`, or `api-eu.mixpanel.com`; no SDK.
-  - A source-generated `System.Text.Json` context.
-  - `AnalyticsSettings`: opt-in flag plus a random install id, kept in `AppSettings`.
-  - The consent toggle view/view model, in About.
+**Requirements from the owner (2026-10-16):**
+- Usage analytics with **Mixpanel**; crash and error reports with **Sentry**.
+- Eventually: performance data, errors, and anonymous user data: age range, **voice target** (the perceived gender the user trains towards: feminine, masculine, androgynous), approximate location (country) and purchase info (supporter or not).
+- Final results only, never live data. Lightweight, with **zero allocations when off**.
+- **Rollout:** everyone who ever donated, plus a limited share of the others, so the free plans are enough.
 
-**When disabled, nothing is allocated:**
-- DI registers `NullAnalytics.Instance` when the user hasn't opted in, or when no token was compiled in (`-p:MixpanelToken=…`, so the repo holds no token).
-- No `HttpClient`, JSON context, queue or subscription is created.
-- **Call sites:** only `RecordingManager` (after the saved analysis on Stop) and `ImportManager` (after an import), as `if (_analytics.IsEnabled) _analytics.TakeAnalyzed(new(...));`.
-- Live analysis never references analytics; an architecture test checks this.
+**Services** (free plans as the vendors' pages showed them on 2026-10-16; check again before signing up):
 
-**When enabled:**
-- One event per finished take, sent fire-and-forget in the background.
-- Dropped on failure: no retry queue, no persistence, no batching.
-- Turning the toggle off swaps in `NullAnalytics` and disposes the client.
+| Service | Free plan | EU hosting |
+|---|---|---|
+| Mixpanel | about 1M events a month | yes; chosen when the project is created (an existing project can't move) |
+| Sentry | 5,000 errors, 5 GB logs, 5M spans a month; 30 days of history; one member; events over the quota are refused, not billed | yes (Frankfurt); chosen when the organization is created |
 
-**Payload** (proposed minimum; the owner confirms, §12):
-- **Event:** `take_analyzed`.
-- **Identity:** `distinct_id` = random per-install GUID, plus `ip=0`.
-- **App:** `app_version`, `platform`.
-- **Take:** `duration_s` (rounded), `source` (recorded/imported).
-- **Results:** a **zone name per metric** (from `Presentation`), not raw Hz/dB values.
+- **EU hosting for both** (recommended; the owner confirms when creating the projects).
+- **Fallback for Sentry:** GlitchTip accepts the same SDK; its hosted free plan is small (1,000 events), self-hosted has no limit. Only the address changes.
+- **Not chosen:** BugSnag (7,500 events, 7 days of history), Firebase Crashlytics (Android only, awkward from .NET), Embrace (built around whole sessions; no .NET SDK, so on Android it would see only the Java side), Raygun (no free plan).
+- **Sentry session replay stays off:** Avalonia draws the window as one surface, so a replay is one opaque picture, and a privacy risk.
+
+**Built in P8:**
+- **The log** (`Core/Diagnostics/AppLog.cs`, in Core so Core services can log):
+  - `IAppLog { bool IsEnabled(level); void Write(level, area, message, error?) }` and `NullAppLog.Instance` (the default).
+  - `log.Log(level, area, $"…")` uses an interpolated-string handler: with the level off the message isn't formatted and nothing is allocated. Messages use the invariant culture.
+  - Core services take it as an optional constructor argument (`DecoderRegistry`, `SettingsService`).
+  - Lines are short and hold no voice data, labels or file names. Later they become Sentry breadcrumbs (the recent lines attached to each report) and Sentry logs.
+- **Log points:**
+  - `DecoderRegistry`: which decoder read a format; a decoder that failed; a probe that failed.
+  - `SettingsService`: a settings file that couldn't be saved.
+  - `RecordingManager`: recording started; take saved (length, analysis time, Stop to saved); Stop failed; a live update failed.
+  - `ImportManager`: import done (time) or failed; FFmpeg installed; the trend backfill failed.
+  - `CrashHooks`: unhandled errors.
+- **Ports** (`Shared/Telemetry/`, so managers call them without depending on a feature):
+  - `IAnalytics { bool IsEnabled; void TakeAnalyzed(in TakeAnalyzedEvent e); }`, `NullAnalytics.Instance`; `TakeAnalyzedEvent(Source, Take, ProcessingSeconds)` (`readonly record struct`; processing = Stop to saved, or the whole import).
+  - `AnalyticsPayload`, the whitelist: the take's length rounded to 5 s, the processing time to 0.1 s, and each zoned metric reduced to its zone name (`pitch: fem`, `pitch_sd: flat`). No raw values, label, note or file names.
+  - `ICrashReporter { bool IsEnabled; void Report(Exception, string area); }`, `NullCrashReporter.Instance`.
+  - `CrashReportLimiter` wraps the future adapter: each kind of error (area, type, throwing method) once, and at most 5 reports per session, so a crash loop can't use up the month.
+  - `CrashHooks`: UI-thread, AppDomain and unobserved-task errors go to the reporter and the log; with both off (the default) nothing is subscribed.
+  - `Shared/State/IEntitlements { bool HasEverDonated }`, `NoEntitlements` (answers no) until accounts exist (§6).
+- **Consent** (`TelemetryConsent`, `TelemetrySettings`, device-scoped, §5a):
+  - Two separate opt-ins, `telemetry.analytics` and `telemetry.crashReports`, both off by default.
+  - `telemetry.installId`: a random GUID, created at the first opt-in and forgotten when both are turned off.
+  - `AnalyticsOn` / `CrashReportsOn` = opted in **and** in the rollout.
+- **Rollout** (`TelemetryRollout`, `RolloutRates`):
+  - An install is in when it **ever donated**, or when its **bucket < rate × 10,000**.
+  - Bucket = FNV-1a of the install id, mod 10,000: the same on every run and platform, so an install is always in or always out at a given rate, and raising the rate only adds installs.
+  - Separate rates for analytics and crash reports (their budgets differ about 200×); the built-in default is 25 % each.
+- **Call sites:** `RecordingManager` (after a saved take) and `ImportManager` (after an import), as `if (_analytics.IsEnabled) _analytics.TakeAnalyzed(new(...));`. Crash reports where errors used to be swallowed silently (a live update, Stop, the trend backfill).
+- **DI:** `AddTimbratune` registers the do-nothing defaults, `NoEntitlements`, `RolloutRates.Default` and `TelemetryConsent`.
+- **Rule:** live analysis never references analytics or crash reports (`LiveAnalysisNeverReferencesTelemetry`, with a positive control). The log is allowed; in the live loop it only writes in the error path.
+
+**Later, with the adapters:**
+- `Features/Analytics`:
+  - `MixpanelAnalytics`: `HttpClient` POST to `api-eu.mixpanel.com/track`, no SDK, source-generated JSON; one event per finished take, fire-and-forget, dropped on failure (no queue, no retries).
+  - A Sentry adapter (`Sentry` package, EU DSN), wrapped in `CrashReportLimiter`, fed by the log as breadcrumbs.
+  - Registered as `sp => consent.AnalyticsOn ? new MixpanelAnalytics(...) : NullAnalytics.Instance` (likewise Sentry). The token and DSN are compiled in (`-p:MixpanelToken=…`), never in the repo.
+  - Turning a switch off swaps in the do-nothing default and disposes the client.
+- **Consent UI:** two switches in About (perhaps a one-time question too); the owner reviews the wording.
+- **Remote rates:** a small JSON file the owner hosts (e.g. in the repo), `{ "analytics": 0.25, "crashReports": 0.25 }`, read at most once a day, cached as a device setting, the built-in defaults when it can't be reached. Capacity changes without a release.
+- **User properties** (analytics only, each named in the consent text):
+  - age range (buckets, asked in the app, optional);
+  - voice target (feminine / masculine / androgynous; asked, or from a future target setting);
+  - country: Mixpanel's own geolocation from the IP (Mixpanel says it keeps the derived place, not the IP), or the app sends the country with `ip=0`;
+  - supporter (yes/no, from `IEntitlements`).
+- **Performance data:** the take event's processing time; later perhaps a sampled performance event (live update time, janky frames), rounded.
+- **Errors:** details go to Sentry; analytics gets at most counts.
 
 **Privacy:**
-- Voice results for gender-voice training are sensitive personal data. Analytics is therefore **opt-in, default off**.
-- No labels, file names or audio, and not linked to accounts (§6).
-- Document it in the README.
+- Voice training towards a gender is sensitive: a voice target together with usage can hint that someone is trans. Everything is opt-in and off by default, and each user property has its own line in the consent text.
+- Never labels, notes, file names, audio or raw values. EU hosting.
+- The supporter flag is used for the rollout and as one yes/no property; the account id is never sent (§6).
+- Document it in the README and a privacy text before the first adapter ships.
 
-**Tests:**
-- The `NullAnalytics` path allocates 0 bytes (`GC.GetAllocatedBytesForCurrentThread`).
-- The serialised payload contains only whitelisted keys.
+**Tests (P8, `TelemetryTests`):** the app starts with everything off; the call sites allocate 0 bytes when off; a log formats only the levels it keeps, in the invariant culture; the bucket is stable; the rollout follows the rate, only adds installs as it rises and always includes donors; nothing without consent; the install id comes with the first opt-in and goes with the last; the limiter; a take's payload holds zone names only.
+
+---
+
+## 5a. Settings that persist between sessions (local now, cloud sync later)
+
+**Today** nothing is saved between sessions: the theme toggle, live window choice and similar options reset on every start. **Goal:**
+- typed settings that persist on every platform;
+- each setting marked **device-only** or **synced**;
+- synced settings later follow the user's account to other devices (§6).
+
+### 5a.1 Declaring settings: each feature owns its own
+
+```csharp
+public enum SettingScope { Device, Synced }          // secrets are never settings: they go to ISecureStore (§6)
+
+public sealed record SettingKey<T>(string Id, T Default, SettingScope Scope, JsonTypeInfo<T> Json);
+
+// in Features/Recording/RecordingSettings.cs (example)
+public static class RecordingSettings
+{
+    public static readonly SettingKey<string> LiveWindow =
+        new("recording.liveWindow", "10s", SettingScope.Synced, SettingsJson.Default.String);
+}
+```
+
+- **Ids** are namespaced by feature (`recording.*`, `import.*`, `shell.*`) and never reused.
+- **Registration:** each feature registers its keys in `Add<Feature>Feature()` (`ISettingsRegistry`). There is no central settings class to edit, so features stay independent.
+- **AOT:** values are serialised with source-generated `System.Text.Json` (`JsonTypeInfo<T>`), so it is trim/AOT safe.
+
+**Which scope, as a starting point** (the owner confirms; §12):
+
+| Scope | Examples |
+|---|---|
+| **Device** | window size/position, Android renderer, data folder, FFmpeg path / "not now" / installed version, decoder priorities, analytics and crash-report opt-ins and install id (consent is per device), last-seen version, performance flags |
+| **Synced** | theme, live window length, display preferences (units, which cards are shown), cheat-sheet/tips dismissed, reference-voice choice |
+| **Never a setting** | OAuth tokens and secrets (`ISecureStore`), takes and analysis (`ITakeStorage`), anything about the user's voice |
+
+### 5a.2 The service
+
+- **Port:** `Shared/State/ISettings`, with `T Get<T>(SettingKey<T>)`, `void Set<T>(SettingKey<T>, T)` and a `Changed` event carrying the key.
+- **Reads** come from an in-memory snapshot loaded once at startup. Features read a setting once and subscribe; settings are never read on the analysis hot path.
+- **Writes** update memory at once and are saved **debounced** (about 0.5 s) on a background task. The file is written atomically: a temp file, then a rename.
+- **Format:** two JSON documents, each with a `schemaVersion`:
+  - `settings.device.json`;
+  - `settings.synced.json`, the local copy of the synced settings.
+- **Upgrades:** migrations run on load.
+- **Different app versions on different devices:** unknown keys are **kept and written back unchanged**, so an older app version never deletes a newer version's settings.
+- **Corruption:** a damaged file falls back to defaults and is kept as `.bak`, so one bad file never stops the app from starting.
+
+**Storage port:** `ISettingsStore`, which loads and saves one document by name. It sits on `IDataStore` (§7, phase P2):
+
+| Platform | Location |
+|---|---|
+| Windows / Linux / macOS | the data folder (`%APPDATA%\Timbratune`, `$XDG_DATA_HOME/Timbratune`, `~/Library/Application Support/Timbratune`); `TIMBRATUNE_DATA_DIR` moves it with the takes |
+| Android | the app's internal `FilesDir`, not the external folder where takes live |
+| iOS | Application Support |
+| Browser (later) | OPFS or `localStorage` |
+
+### 5a.3 Cloud sync (later, together with accounts in §6)
+
+- **What syncs:** only `Synced` keys, only when the user is signed in and has sync on. There is a "Sync settings" toggle, default **on** once signed in.
+- **Port:** `ISettingsSyncProvider` in `Shared/Platform`, implemented in a separate adapter project. Pull and push the synced document, keyed by the account.
+- **Recommended backend:** the **same small serverless backend as the Patreon token exchange** (§6). It stores one small JSON document per account id, so it works the same on Windows, Linux, Android, iOS, macOS and the browser, whatever the sign-in provider.
+  - Platform services (iCloud key-value store, Google Play Saved Games) only cover some platforms. They could be added later as extra adapters behind the same port.
+- **Offline first:** the local copy is always the source the app reads. Sync runs on start, on resume, and debounced after a change.
+- **Merging:** each synced key stores `{value, updatedAt, deviceId}`; the newer `updatedAt` wins, and `deviceId` breaks ties. Removed keys leave a tombstone. This means two devices changing *different* settings never overwrite each other.
+- **Sign-out** keeps the local copy and stops syncing.
+- **Device restore:** Android Auto Backup rules include only the settings files. Takes stay excluded, given the size limit and privacy.
+- **Privacy:** synced settings hold no voice data, labels or results. Syncing takes is a separate, later decision, not part of this design.
+
+### 5a.4 Tests
+
+- Round-trips, defaults and migrations.
+- Unknown keys are preserved, and a corrupt file falls back to defaults.
+- Debounced, atomic save (kill-during-write leaves the old file).
+- Merge rules: per-key last-writer-wins, tombstones, ties.
+- An architecture test: features use only `ISettings`, never files.
+- A test that no `SettingKey` id contains "token" or "secret".
 
 ---
 
@@ -430,14 +548,14 @@ Features/Avatar/   AvatarManager (avatar.json in the data folder, never uploaded
 **Constraints:**
 - **Patreon needs a tiny serverless backend** for the OAuth token exchange, because the client secret can't ship in the app. It returns only the tier. Apple sign-in off Apple platforms would need the same.
 - **Entitlements work offline** after one check. Expiry is a grace period, and the core app is never locked.
-- **Privacy:** keep only the provider account id and the entitlement. Not linked to analytics or takes.
+- **Privacy:** keep only the provider account id and the entitlement. Not linked to takes; analytics gets only the supporter yes/no (the rollout and one property, §5), never the account id.
 - **Cost when unused:** providers are factories, so nothing is created until the sign-in sheet opens.
 - **Dependencies:** prefer plain OAuth. Vendor SDKs (Play Games) stay in the head that needs them.
 
 **Seams in this refactor:**
 - `ISecureStore` and `IExternalBrowser` in `Shared/Platform`.
 - An empty header slot in the Shell.
-- One `AppSettings` store in the data folder.
+- The settings service with `Device`/`Synced` scopes (§5a). Cloud sync then only needs `ISettingsSyncProvider`.
 
 ---
 
@@ -497,92 +615,129 @@ Every phase ends with:
 Ask the owner before each commit.
 
 - [ ] **P0. Safety net.**
-  - Golden snapshot tests: `take.json`, `detail.json`, `series.json` and the final live snapshot for each VCTK fixture.
-  - Reflection-based architecture tests (the rules in §1.1, §5 and §7).
-  - `tools/analysis-bench`.
-  - Baselines: bench numbers, `tools/live-steadiness`, Pixel 9 and 4a frame times. Record them in HANDOFF.
-- [ ] **P1. Infrastructure.**
+  - [x] Golden snapshot tests: `take.json`, `detail.json`, `series.json` and the final live snapshot for each VCTK fixture.
+  - [x] Reflection-based architecture tests (the rules in §1.1, §5 and §7).
+  - [x] `tools/analysis-bench`.
+  - Baselines, recorded in HANDOFF §8i:
+    - [x] bench numbers (`tools/analysis-bench/baseline-p0.json`) and `tools/live-steadiness`;
+    - [x] Pixel 4a frame times (2026-10-16: 52.4 fps, 9.0 % janky, Stop 4.6 s; P4 within its spread; HANDOFF §8i).
+    - [x] Pixel 9 frame times (2026-10-16: 39.5 fps over the window, 3.3 % janky, Stop 2.0 s; P4 within its spread; HANDOFF §8i).
+- [x] **P1. Infrastructure.**
   - MS.DI, `CompositionRoot`/`AddTimbratune()`, `ViewLocator`.
   - `Shared/Navigation`, `Messaging`, `State`, `Platform`.
   - `AppInfo` / `IFeatureFlags` / `IPlatformInfo`.
   - Heads move to DI. `MainViewModel` still exists but gets its services from DI.
-- [ ] **P2. Storage and scheduling seams** (§7):
-  - `ITakeStorage`/`IDataStore` + `FileSystemTakeStorage` + `AppSettings`;
+  - *As built (HANDOFF §8j):* `App` became `App/TimbratuneApp` (a class can't share the `App` namespace's name). `Shared/State` is left to the P3 steps that extract its implementations from `MainViewModel`/`RecordViewModel` (`ISettings` to P2). The platform ports with no consumer yet (`ISecureStore`, `IExternalBrowser`, `IProcessRunner`, `IHttpDownloader`) come with their features (P4, later). `OverlayHost`/`RouterBase` and the message records exist but are first used by the Shell and features in P3.
+- [x] **P2. Storage and scheduling seams** (§7):
+  - `ITakeStorage`/`IDataStore` + `FileSystemTakeStorage`;
+  - the settings service (§5a: keys, scopes, file store, migrations; local only). The theme and live-window choice become the first persisted settings;
   - stream-based analysis entry points;
   - `IAnalysisScheduler`.
 
   Store tests and the migration test must pass unchanged.
-- [ ] **P3. UI features, one per step:**
-  - [ ] CheatSheet + About
-  - [ ] TakeActions
-  - [ ] MetricCompare
-  - [ ] Import
-  - [ ] TakeLibrary
-  - [ ] TakeDetails
-  - [ ] Recording + LiveMonitor + `ILiveSession`
-  - [ ] Shell: `MainViewModel` becomes `ShellViewModel`; remove every `$parent[v:MainView]` binding and the ancestor lookup in `RecordingCardView`.
-- [ ] **P4. Import formats** (§4):
-  - [ ] Decoding ports + catalog + sniffer + `AnalysisWavSink`, with the managed and miniaudio providers, so behaviour is unchanged.
-  - [ ] Probed picker filters.
-  - [ ] Media Foundation.
-  - [ ] MediaCodec.
-  - [ ] FFmpeg provider.
-  - [ ] FFmpeg installer (Linux).
-- [ ] **P5. Analysis tracks** (§2.1): track providers and staging. `MeasureTracks` and `LiveAnalyzer.Update` are re-implemented on top, with the same signatures. Performance gates apply.
-- [ ] **P6. Metric modules** (§2.2), one per step:
-  - [ ] Loudness
-  - [ ] Clarity
-  - [ ] Steadiness
-  - [ ] Pitch
-  - [ ] Resonance
-  - [ ] Weight
-  - [ ] Phrasing
+  - *As built (HANDOFF §8k):*
+    - **Settings:** every setting is `Device`-scoped for now (the owner's answer to §12.5, 2026-10-15); scopes get decided per key with accounts. `ISettings` lives in Core (`Core/Storage/Settings`), beside the service that implements it, not in `Shared/State`. The two keys live in `ViewModels/AppSettings.cs` until their features exist (P3).
+    - **Recorders:** they still write their WAV to a temporary file, and Stop still trims, analyzes and copies by path. The seams a stream-based recorder needs are in place (`WavWriter(Stream)`, `WavWriter.Truncate(Stream)`, `AnalyzeAsync(Stream|Sound)`); switching the Stop flow is left to the browser phase, where `Audio.Web` needs it.
+    - **Storage outside `ITakeStorage`:** `DataPaths` (folder discovery, legacy moves), the old-layout conversion, and the importer's dropped-file scan and work folder stay on the file system: they only exist on native heads.
+- [x] **P3. UI features, one per step:**
+  - [x] CheatSheet + About
+  - [x] TakeActions
+  - [x] MetricCompare
+  - [x] Import
+  - [x] TakeLibrary
+  - [x] TakeDetails
+  - [x] Recording + LiveMonitor + `ILiveSession`
+  - [x] Shell: `MainViewModel` becomes `ShellViewModel`; remove every `$parent[v:MainView]` binding and the ancestor lookup in `RecordingCardView`.
+  - *As built (HANDOFF §8l):*
+    - **Order:** the page moved into the `Shell` namespace first, so the rule "only App and Shell see features" held at every step. TakeDetails, Recording/LiveMonitor and the Shell landed as one step, because the live take connects them.
+    - **Recording became `Features/Record`:** a namespace `Features.Recording` hides the `Recording` model type in every sibling feature.
+    - **Shared contracts:** `ITakeActionsLauncher` and `IMetricCompareLauncher` (`Shared/Navigation`); `ITakeCatalog`, `IActiveTakeService` and `ILiveSession` (`Shared/State`); the messages `TakeActionStatus`, `TakeTrendsOutdated` and `RecordingStarted`.
+    - **Record panel slots:** the Shell fills `IdleActions`, `WindowPicker` and `Footer` (the Import button, LiveMonitor's window choice, the import status).
+    - **Routers:** only the features that open overlays have one (TakeActions, MetricCompare).
+    - **Settings and layout:** the live-window setting moved with its feature (`liveMonitor.windowSeconds`, was `recording.liveWindowSeconds` in unreleased P2). The open-folder failure shows in the footer instead of the import line.
+- [x] **P4. Import formats** (§4):
+  - [x] Decoding ports + catalog + sniffer + `AnalysisWavSink`, with the managed and miniaudio providers, so behaviour is unchanged.
+  - [x] Probed picker filters.
+  - [x] Media Foundation.
+  - [x] MediaCodec.
+  - [x] FFmpeg provider.
+  - [x] FFmpeg installer (Linux).
+  - *As built (HANDOFF §8m):*
+    - **Unchanged imports:** MP3, FLAC and WAV imports give byte-identical `take.wav` files. A WAV the analysis reads is still stored as it is; anything decoded is kept beside its take as `source.<ext>` (picked and CLI imports too, not only dropped MP3/FLAC).
+    - **`AnalysisWavSink`:** audio already at 44.1 kHz streams through; other rates are collected as mono and resampled in one pass at the end with the Acoustics `Resampler` (there is no streaming resampler, and the analysis holds the whole take anyway).
+    - **Sniffing:** the format record has no `Signature` field; the signatures live in `FormatSniffer`. The extension only chooses within the MP4 family (`.m4a`/`.mp4`/`.3gp`), and names the kept original.
+    - **Registry:** a failure of every decoder that reads a format becomes one `InvalidDataException` ("its Matroska audio couldn't be decoded (…)"). Priorities aren't overridable in settings yet.
+    - **Media Foundation probe:** decodes an embedded 0.1 s clip per format (~0.5 s, in the background) instead of `MFTEnumEx`: Store codecs such as Web Media Extensions don't show in the registry. On the development machine they aren't usable from a desktop app, so Ogg/Opus/CAF come from FFmpeg there.
+    - **Picker:** the first group is "Audio and Timbratune takes" (so `.tmbr` files are selectable without switching), then one per format, then `.tmbr`. Picked files aren't filtered by extension any more; their content decides.
+    - **FFmpeg build (§12.2):** BtbN's LGPL static FFmpeg 9.0.2 builds, repacked by `scripts/mirror-ffmpeg.ps1` to just `ffmpeg` + licence + README as `.tar.gz` (36–57 MB instead of 117–171 MB; .NET unpacks them without the system `tar`/`xz`), hosted on Reyfen/github-releases-as-file-hosting. Pinned for linux-x64/arm64 and win-x64/arm64.
+    - **Offered where:** unasked only on Linux; on Windows (and later macOS) the installer is there but hidden, for the settings page to offer. "Remove FFmpeg" also waits for that page (`IDecoderInstaller.Remove` exists).
+    - **Ports:** `IProcessRunner` and `IHttpDownloader` live in Core (`Core/Platform`), where the decoder projects can reach them.
+- [x] **P5. Analysis tracks** (§2.1): track providers and staging. `MeasureTracks` and `LiveAnalyzer.Update` are re-implemented on top, with the same signatures. Performance gates apply.
+  - *As built (HANDOFF §8n):*
+    - **Where:** `Core/Analysis/Tracks/`: `TrackSet` (flags with `WithDependencies`), `TrackView` (one typed field per track), `DerivedTracks` (stages 2 and 3), `SavedTrackProvider`, `LiveTrackProvider` (owns the live trackers, the pulse tracker and the weight-row memo).
+    - **Bridge to today's pipeline:** `TrackView.ToFrameTracks()`; `FrameTracks` carries the derived tracks, so `RawAnalysisAssembler` and `FrameSeriesBuilder` stop re-deriving voiced frames, the gate, the vowel formant rows and the weight frames. Called without them (or with a gate made for another outlier share) they derive as before. The metric modules (P6) will read `TrackView` directly.
+    - **Live:** every update runs all stage-1 trackers (their state must keep up); the `TrackSet` decides stages 2–3 (quick: `TrackSet.Live`; full: the derived tracks; final: the LTAS).
+    - **Gates passed:** results identical (golden, parity, bench hashes); bench A/B against P4 −0.7 % time and fewer allocations; phone A/B against P0 on both phones within the baseline.
+- [x] **P6. Metric modules** (§2.2), one per step:
+  - [x] Loudness
+  - [x] Clarity
+  - [x] Steadiness
+  - [x] Pitch
+  - [x] Resonance
+  - [x] Weight
+  - [x] Phrasing
 
-  Each step deletes its lines from `RawAnalysisAssembler`, `AnalysisPostProcessor` and `FrameSeriesBuilder`, which end as pipeline glue or disappear. Performance gates apply.
-- [ ] **P7. Registry-driven UI** (§2.4). Delete `Metrics.cs` and the positional arrays. Proof: a throwaway dummy metric added in one folder plus one registration shows up in the cards, trends, live timeline and series, then is reverted.
-- [ ] **P8. Analytics** (§5): port, Mixpanel adapter, consent toggle, two call sites, tests. Verify against a Mixpanel test project, only with the owner's token and opt-in.
-- [ ] **P9. Final performance check** (§3, all gates, Release builds on both phones) and a Linux build in WSL `Ubuntu-24.04` (`~/tt` copy).
-- [ ] **P10. Documentation:**
-  - Update the CLAUDE.md "Layout" table and add a HANDOFF section.
-  - Add "How to add a feature" and "How to add a metric" checklists at the end of this file.
+  Each step deletes its lines from `RawAnalysisAssembler`, `AnalysisPostProcessor` and `FrameSeriesBuilder`, which end as pipeline glue or disappear. Performance gates apply (phones: the Pixel 4a only; the Pixel 9 is checked in P7, see §3).
+  - *As built (HANDOFF §8o):*
+    - **Step 0 first:** `FrameTracks` (P5's bridge) went; the pipeline takes `TrackView`. Everything not yet in a module sat in a temporary `LegacyMetrics` module, so the assembler, post-processor and series builder became glue over `MetricRegistry` at once, and each step was a pure move out of `LegacyMetrics` (golden-tested). Phrasing's step deleted it.
+    - **Interface, adapted:** `Measure(in TrackView, RawAnalysisBuilder)`, `Summarize(MetricContext)`, `DetailData(RawAnalysis)` + `FillPhrase` / `FillTrend`, `BuildSeries` / `WriteSeries`. `Summarize` and the detail columns read `RawAnalysis`, not `TrackView`: the Praat reference engine produces `RawAnalysis` from Praat's own numbers and has no tracks, so `RawAnalysis` is the compat layer the plan's `Compat/RawAnalysisAdapter` would have been.
+    - **Left for P7:** `MetricId`, `Presentation`, `TrendSlice`/`PhraseMetrics` as `double?[]`, a registry-shaped `LiveSeries`; and appending only new frames in the live series (they are rebuilt in full, as before).
+    - **Gates passed:** results identical; bench A/B against P5 (live updates −6.9 %, full analysis +1.1 %, allocations equal or lower); phone A/B against P0 on the Pixel 4a (better than the baseline); the Pixel 9 is checked in P7 as scheduled (§3; HANDOFF §8o).
+- [x] **P7. Registry-driven UI** (§2.4). Delete `Metrics.cs` and the positional arrays. Proof: a throwaway dummy metric added in one folder plus one registration shows up in the cards, trends, live timeline and series, then is reverted. Gates: bench A/B; a functional smoke test on the emulator; phone A/B on both phones against P0 (covers P6 on the Pixel 9, §3).
+  - *As built (HANDOFF §8p):*
+    - **`MetricInfo` per displayed quantity, not one `Presentation` per module:** modules show several quantities (Pitch: mean, range, variability; Resonance: F1–F3; Phrasing: melody, endings), so each module lists its `Metrics` (`MetricInfo`: name, title, unit, zones, scale, the take's value, saved columns, and optional `Card`, `Compare`, `Trend`, `Live` with its `SmoothingSpec`, `Chip`). `MetricRegistry` numbers them (`MetricId(Index, Name)`); its order is the display order of every surface.
+    - **Registry order** Pitch, Phrasing, Loudness, Resonance, Weight, Clarity, Steadiness: the trend charts keep their order; the cards, live timelines and chips change a little (pitch variability next to pitch; see HANDOFF §8p).
+    - **Columns:** `TrendSlice` / `PhraseMetrics` hold `double?[]` by `MetricId.Index`; modules write `columns[metric]` through `MetricValues` (offset + slot, no lookup). `Json/MetricColumnsJson` writes today's v2 names in today's order, then newer metrics by name; detail.json is unchanged (golden).
+    - **Live:** `LiveSeries` is one list per metric (the pooled buffers, `SeriesLines`); `LiveLine.From(registry)` builds the timelines and their smoothing from the same list.
+    - **Not done:** appending only new frames to the live series (§2.2's `UpdateLiveSeries(fromFrame)`): they are still refilled in full each update, and the bench shows no need yet.
+    - **Proof:** a throwaway `Dummy` module (one folder, one registration) appeared in the live timelines, stat cards, trend charts, chips, detail.json and series.json, then was removed; a test-registry version stays as `MetricRegistryUiTests`.
+    - **Gates:** results identical; bench A/B against P6 equal (full analysis +0.1 %, live updates −0.1 %, allocations equal or lower); emulator smoke test; Pixel 4a A/B against P0: analysis equal or faster, janky frames +1 point from the new first live timeline (Pitch variability), kept by the owner; Pixel 9 A/B against P0: P6 equal, P7 +0.2–0.3 points of janky frames with equal fps and Stop to saved, accepted by the owner and to be rechecked in P9 (HANDOFF §8p).
+- [x] **P8. Telemetry groundwork** (§5): ~~port, Mixpanel adapter, consent toggle, two call sites, tests. Verify against a Mixpanel test project, only with the owner's token and opt-in.~~ Rescoped by the owner (2026-10-16): analytics is a future concept, so P8 is documentation plus groundwork, with no packages or network code.
+  - *As built (HANDOFF §8q):* the log port in Core (`IAppLog`, zero-allocation when off) with log points in decoding, settings, recording and import; `Shared/Telemetry` with the analytics and crash-report ports, their do-nothing defaults, `AnalyticsPayload` (zone names only), `CrashReportLimiter` and `CrashHooks`; `IEntitlements.HasEverDonated`; consent (two device-scoped opt-ins and an install id); the rollout rule (donors always, a stable 25 % of the others by default). The adapters, the consent UI and the remote rates file come later (§5).
+- [x] **P9. Final performance check** (§3, all gates, Release builds on both phones) and a Linux build in WSL `Ubuntu-24.04` (`~/tt` copy).
+  - *As measured (HANDOFF §8r):* results identical; bench A/B against P0 within budget and a little faster (full analysis −1.7 %, live updates −7.4 %, live allocation −4 %); Linux tests, packages and a record/Stop check pass; Pixel 9 A/B against P0: the P7 cost confirmed (+0.3 points of janky frames, fps, frames over 50 ms and Stop to saved unchanged), accepted by the owner as a known cost of P7; Pixel 4a A/B against P0: the P7 live-order cost (+1 point of janky frames, −0.9 fps) as kept by the owner, Stop to saved and analysis within noise.
+- [x] **P10. Documentation:**
+  - Update the CLAUDE.md "Layout" table and add a HANDOFF section (§8s).
+  - Add "How to add a feature" and "How to add a metric" checklists at the end of this file (§13, §14).
   - Mark this plan done.
+  - Also: §10 lists the key files as built.
 
-Later versions: accounts and avatar (§6) and the browser head (§7).
+Later versions: accounts and avatar (§6) with cloud settings sync (§5a.3), and the browser head (§7).
 
 ---
 
-## 10. Key files today
+## 10. Key files (as built, v0.3.0)
 
-- **UI:**
-  - `src/Reyfen.Timbratune/App.axaml.cs`
-  - `src/Reyfen.Timbratune/Features.cs`
-  - `src/Reyfen.Timbratune/Services/IFileDialogs.cs` (`AppServices`)
-  - `src/Reyfen.Timbratune/ViewModels/{MainViewModel,RecordViewModel,TakeViewModel,LiveTimelinesViewModel,RecordingItemViewModel,MetricModalViewModel}.cs`
-  - `src/Reyfen.Timbratune/Views/MainView.axaml`
-  - `src/Reyfen.Timbratune/Analysis/{LiveWorker,RecentWindow}.cs`
-- **Analysis:**
-  - `src/Reyfen.Timbratune.Core/Analysis/{AcousticsAnalysisEngine,LiveAnalyzer,RawAnalysisAssembler,AnalysisPostProcessor,FrameSeriesBuilder,RawAnalysis}.cs`
-  - `src/Reyfen.Timbratune.Core/Domain/{Metrics,Zones}.cs`
-  - `src/Reyfen.Timbratune.Core/Models/{Recording,RecordingDetail,TakeSeries}.cs`
-  - `src/Reyfen.Timbratune.Acoustics/Streaming/LiveTrackers.cs`
-- **Storage and import:**
-  - `src/Reyfen.Timbratune.Core/Storage/{RecordingStore,DataPaths,TakeImporter,TakeArchive}.cs`
-  - `src/Reyfen.Timbratune.Core/Audio/IAudioDecoder.cs`
-  - `src/Reyfen.Timbratune.Audio.SoundFlow/SoundFlowAudio.cs`
-- **Heads:**
-  - `src/Reyfen.Timbratune.Desktop/Program.cs`
-  - `src/Reyfen.Timbratune.Android/MainActivity.cs`
-- **Tests:**
-  - `tests/Reyfen.Timbratune.Core.Tests/{ParityTests,LiveAnalysisTests,ExportTests,TrendTests,CoreTests,ImportTests}.cs`
-  - `.../PraatReference/PraatAnalysisEngine.cs`
-  - `tests/Reyfen.Timbratune.Acoustics.Tests/StreamingTests.cs`
-- **Kept as they are** (only moved or wrapped):
-  - the Acoustics kernels and live trackers
-  - `RecentWindow`
-  - `PlaybackService`
-  - `StorageProviderDialogs`
-  - `AndroidFileSharer`
-  - `TakeArchive`
+The files to read first when changing each part. Before the refactoring, these were `App.axaml.cs`, `Features.cs`, `ViewModels/*`, `Views/MainView.axaml` and `Domain/Metrics.cs`; all of them are gone.
+
+- **Composition and shell** (`src/Reyfen.Timbratune/`):
+  - `App/CompositionRoot.cs`: `AddTimbratune()`, every registration and the do-nothing defaults.
+  - `App/ViewLocator.cs`: the hand-written view-model → view map.
+  - `App/App.axaml.cs`: `TimbratuneApp`, built from the head's container.
+  - `Shell/ShellViewModel.cs`, `Shell/ShellView.axaml`: where the features are placed.
+- **Features** (`src/Reyfen.Timbratune/Features/<Name>/`): `Record/RecordingManager.cs` (the live session and Stop), `LiveMonitor/{LiveTimelinesViewModel,RecentWindow}.cs` (live charts and smoothing), `TakeDetails/{TakeViewModel,TakeDetailsViewModel}.cs`, `TakeLibrary/`, `TakeActions/`, `MetricCompare/`, `Import/ImportManager.cs`, `About/`, `CheatSheet/`.
+- **Shared** (`src/Reyfen.Timbratune/Shared/`): `State/` (catalog, active take, live session, entitlements), `Navigation/` (overlay stack, launchers), `Messaging/Messages.cs`, `Platform/` (ports), `Telemetry/` (analytics, crash reports, consent, rollout; off).
+- **Analysis** (`src/Reyfen.Timbratune.Core/Analysis/`):
+  - `AcousticsAnalysisEngine.cs` (full analysis), `LiveAnalyzer.cs` (live), `IAnalysisScheduler.cs` / `LiveWorker.cs` (where they run).
+  - `Tracks/{TrackSet,TrackView,SavedTrackProvider,LiveTrackProvider}.cs`: the shared measurements.
+  - `Metrics/{IMetricModule,MetricInfo,MetricRegistry}.cs` and one folder per module.
+  - `RawAnalysisAssembler.cs`, `AnalysisPostProcessor.cs` (phrases, trends), `FrameSeriesBuilder.cs`, `RawAnalysis.cs`.
+- **Domain, models and saved files** (`src/Reyfen.Timbratune.Core/`): `Domain/{Zones,SmoothingSpec,ChartPoints}.cs`, `Models/{Recording,RecordingDetail,TakeSeries}.cs`, `Json/MetricColumnsJson.cs` (the compatibility layer for the trend and phrase columns).
+- **Storage, settings, import:** `Storage/{RecordingStore,DataPaths,FileSystemTakeStorage,TakeImportService,TakeArchive}.cs`, `Storage/Settings/SettingsService.cs`, `Audio/Decoding/{DecoderRegistry,FormatSniffer,AnalysisWavSink}.cs`.
+- **Diagnostics:** `Core/Diagnostics/AppLog.cs`.
+- **Heads:** `src/Reyfen.Timbratune.Desktop/Program.cs`, `src/Reyfen.Timbratune.Android/{AndroidApp,MainActivity}.cs`.
+- **Tests:** `tests/Reyfen.Timbratune.Architecture.Tests/DependencyRuleTests.cs` (the rules of §1.1, §5, §5a, §4.1, §7), `tests/Reyfen.Timbratune.Core.Tests/{GoldenTests,ParityTests,LiveAnalysisTests}.cs`, `tests/Reyfen.Timbratune.Tests/{CompositionTests,MetricRegistryUiTests,TelemetryTests}.cs`.
+- **Kept as they were** (only moved or wrapped): the Acoustics kernels and live trackers, `RecentWindow`, `PlaybackService`, `StorageProviderDialogs`, `AndroidFileSharer`, `TakeArchive`.
 
 ## 11. Verification
 
@@ -598,7 +753,53 @@ Later versions: accounts and avatar (§6) and the browser head (§7).
 
 ## 12. Open decisions (ask the owner when the phase is reached)
 
-1. **P8 analytics:** the exact payload fields, zones vs raw values, and the EU or US Mixpanel endpoint.
-2. **P4:** the exact pinned FFmpeg build and its hosting source; whether the installer is also offered on Windows/macOS.
+1. ~~**P8 analytics:** the exact payload fields, zones vs raw values, and the EU or US Mixpanel endpoint.~~ Decided 2026-10-16: Mixpanel for analytics and Sentry for crash reports, zones not raw values, EU hosting recommended (confirmed when the projects are created); the user properties and the rollout are in §5. Still open for later: the consent wording, the age buckets and the default rates.
+2. ~~**P4:** the exact pinned FFmpeg build and its hosting source; whether the installer is also offered on Windows/macOS.~~ Decided 2026-10-15: BtbN's LGPL static builds, repacked and mirrored on the owner's hosting repo; offered on Linux, built in but hidden on other desktops until a setting offers it.
 3. **Later, accounts:** where the Patreon token-exchange backend is hosted.
 4. **Later, browser:** Web Worker vs multithreaded WASM, decided by the spike, and the hosting provider.
+5. ~~**P2 settings:** confirm the device/synced split in §5a.1.~~ Decided 2026-10-15: all device-only until accounts and sync exist.
+6. **Later, sync:** whether the avatar choice syncs (it is currently local only, §6), and whether takes ever sync (not planned).
+
+
+---
+
+## 13. How to add a feature
+
+A feature is a folder under `src/Reyfen.Timbratune/Features/<Name>/`, namespace `Reyfen.Timbratune.Features.<Name>`. Look at `TakeActions/` (manager, router, dialog) or `Import/` (manager, buttons, overlay) for a complete example.
+
+1. **The parts (§1.1), each only if needed:**
+   - `<Name>Manager`: the work (storage, analysis, platform ports). No Avalonia types (`ManagersNeverReferenceAvalonia`).
+   - `<Name>ViewModel`(s): what the view shows. No file I/O, no `RecordingStore` and no `Controls.*` types (`FeatureViewModelsDoNoFileIoAndDontUseTheStore`, `FeatureViewModelsDontDependOnControls`).
+   - `<Name>View.axaml`: binds only to its own view model, never `$parent[…].DataContext` (`FeatureViewsDontBindToAParentsViewModel`).
+   - `<Name>Router` (derives `RouterBase`) when it opens overlays, plus a launcher interface in `Shared/Navigation/Launchers.cs` if other features open it.
+2. **Never reference another feature** (`FeaturesNeverReferenceOtherFeatures`). Share through `Shared/`:
+   - state services in `Shared/State/` (`ITakeCatalog`, `IActiveTakeService`, `ILiveSession`, …);
+   - messages in `Shared/Messaging/Messages.cs` (`IMessenger`, e.g. `TakeSaved`, `ImportFinished`);
+   - launchers in `Shared/Navigation/` to open another feature's overlay;
+   - platform ports in `Shared/Platform/` (implemented by the heads).
+3. **Registration:** an `Add<Name>Feature(this IServiceCollection)` extension in the feature (managers, routers, view models, launchers as singletons; constructor injection only, no scanning). Call it from `App/CompositionRoot.AddTimbratune()`.
+4. **Views:** add each view-model → view pair to `App/ViewLocator.cs` (hand-written, trim/AOT safe), and place the feature in `Shell/ShellViewModel` / `ShellView.axaml` (only the composition root and the shell see features: `OnlyTheCompositionRootAndTheShellSeeFeatures`).
+5. **Settings:** declare `SettingKey<T>`s in the feature (ids `"<feature>.<name>"`, never reused, never secrets; scope `Device` until sync exists, §5a), register them with `services.AddSetting(...)`, and read them through `ISettings` only (`FeaturesUseSettingsOnlyThroughISettings`).
+6. **Decoding** only through `DecoderRegistry` / `IDecoderInstaller` (`FeaturesDecodeOnlyThroughTheRegistry`). **Telemetry:** optional `IAnalytics` / `ICrashReporter` / `IAppLog` constructor arguments; never from live code (`LiveAnalysisNeverReferencesTelemetry`).
+7. **Tests:** `CompositionTests` must still resolve everything; add the feature's own tests to `tests/Reyfen.Timbratune.Tests` (no UI needed for managers and view models). Then the desktop UI check of §11 and, for anything on the recording screen, a phone A/B (§3).
+
+## 14. How to add a metric
+
+A displayed quantity is a `MetricInfo`; a metric family is a module (`IMetricModule`, §2.2). Everything else (cards, trend charts, live timelines, chips, comparison, saved columns, analytics zones) follows the registry. `MetricRegistryUiTests` shows the minimum with a test module; `Clarity/ClarityModule.cs` is the smallest real one.
+
+1. **Where:** another quantity of an existing family goes into that module's list. A new family is a folder `src/Reyfen.Timbratune.Core/Analysis/Metrics/<Name>/<Name>Module.cs` with a stable `Name` (series keys, settings, analytics). Modules never call each other; they share only tracks and `RawAnalysis`, and hold no per-take state.
+2. **Tracks:** declare `RequiredTracks` (`TrackSet`). A measurement nobody has yet means a new `TrackSet` flag, the kernel in Acoustics (plus its streaming tracker for live), `SavedTrackProvider`, `LiveTrackProvider` and a `TrackView` field. Keep the hot-path rules of §3: pooled buffers, no LINQ, closures or allocations per tick, nothing per sample behind an interface.
+3. **The take's value:** `Measure` puts raw scalars or frames into `RawAnalysisBuilder`; `Summarize` writes the value into the take (`Models/Recording.cs`, saved in `take.json`; a new field is nullable so older takes still load).
+4. **The description** (`MetricInfo`, a `static readonly` in the module):
+   - `Name` (stable, never reused), `Title`, `Unit`, `Zones` (`Domain/Zones.cs`; named zones also become the analytics payload, §5), `Lo`/`Hi`, `Take` (the accessor).
+   - `Columns` (`Trend` / `Phrase`) when it has trend or phrase columns. `ColumnKey` only for names saved before P7; a new metric is saved under its `Name`, after the older columns (`Json/MetricColumnsJson.cs`).
+   - Optional presentations: `Card` (the line under the value), `Compare` (reference accessor, gendered, blurb), `Trend` (caption; `ColorKey` = a `Chart<N>Color` in `Themes/Palette.axaml`, light and dark; `MeasuredSinceVersion`), `Live` (caption and a `SmoothingSpec`: `LiveSmoothing.Frame`, `Vowel` or `Movement`, or its own measured one; or `Points` built from the contour), `Chip`.
+   - List them with `MetricInfo.Numbered(...)` and return the list from `Metrics`.
+5. **Columns and series:** `DetailData` + `FillTrend` / `FillPhrase` write `columns[metric]`; `BuildSeries` clears and refills `lines[metric]` (live hot path, no allocation); `WriteSeries` adds its saved series (key in `Models/TakeSeries.cs`).
+6. **Register** the module in `MetricRegistry.Default`. Its position is the display order of every surface (cards, trends, live timelines, chips). On the phones the first live timeline costs the most to draw (HANDOFF §8p), so measure if it changes.
+7. **Older takes:** a new trend column is empty for takes saved before it. Bump `TakeTrends.CurrentVersion` (`Models/RecordingDetail.cs`) and set the chart's `MeasuredSinceVersion`, so older takes are re-analyzed once (the trend backfill) and show "measuring…" until then.
+8. **Tests and gates:**
+   - The golden snapshots change on purpose (new columns, series): regenerate with `TIMBRATUNE_UPDATE_GOLDEN=1`, then review the diff: only the new metric may appear.
+   - `LiveAnalysisTests` (live ≈ saved), `RegistryNumbersEveryMetricOnce`, the architecture tests, and `ParityTests` if `analyze.py` has the measure.
+   - `tools/analysis-bench` A/B against the previous commit (≤ +3 % time, no more allocations), `tools/live-steadiness` for a new live line, and a phone A/B if it runs live (§3).
+9. **Words:** the cheat sheet (`Features/CheatSheet/`) and the README if users need it explained. No Praat code: implement from the papers (`src/Reyfen.Timbratune.Acoustics/REFERENCES.md`).

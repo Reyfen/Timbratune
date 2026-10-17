@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Dev tool, not part of the solution: analyses every WAV in a folder with the full analysis
+       and writes one CSV row of take metrics per file (input for score.py).
+       usage: dotnet run -c Release (then two dashes) folder out.csv -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Reyfen.Timbratune.Core\Reyfen.Timbratune.Core.csproj" />
+  </ItemGroup>
+</Project>

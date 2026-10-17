@@ -1,9 +1,6 @@
-using Reyfen.Timbratune.Acoustics.Numerics;
-using System.Collections.Concurrent;
-using Reyfen.Timbratune.Acoustics.Formants;
-using Reyfen.Timbratune.Acoustics.Spectral;
 using Reyfen.Timbratune.Acoustics.Streaming;
-using Reyfen.Timbratune.Acoustics.Voice;
+using Reyfen.Timbratune.Core.Analysis.Metrics;
+using Reyfen.Timbratune.Core.Analysis.Tracks;
 using Reyfen.Timbratune.Core.Diagnostics;
 using Reyfen.Timbratune.Core.Models;
 
@@ -12,22 +9,22 @@ namespace Reyfen.Timbratune.Core.Analysis;
 /// <summary>A (time, value) point of a live timeline.</summary>
 public readonly record struct TimedValue(double T, double Value);
 
-/// <summary>Per-frame series for the live timelines (values as the cards show them).</summary>
-public sealed record LiveSeries
+/// <summary>
+/// Per-frame series for the live timelines (values as the cards show them), one per metric of the
+/// registry that measured them (empty for metrics without a live series). The lists are the live
+/// analysis' pooled buffers: read them on the analysis thread, before the next update.
+/// </summary>
+public sealed class LiveSeries(MetricRegistry registry, IReadOnlyList<TimedValue>[] lines)
 {
-    public static readonly LiveSeries Empty = new();
+    public static readonly LiveSeries Empty = new(MetricRegistry.Default, []);
 
-    /// <summary>Intensity per frame (dB).</summary>
-    public IReadOnlyList<TimedValue> Loudness { get; init; } = [];
-    /// <summary>HNR per voiced frame (dB).</summary>
-    public IReadOnlyList<TimedValue> Hnr { get; init; } = [];
-    /// <summary>F2 / F3 on loud voiced frames with a plausible F1 (Hz).</summary>
-    public IReadOnlyList<TimedValue> F2 { get; init; } = [];
-    public IReadOnlyList<TimedValue> F3 { get; init; } = [];
-    /// <summary>Corrected H1*–A3* per measurable voiced frame (dB).</summary>
-    public IReadOnlyList<TimedValue> Weight { get; init; } = [];
-    /// <summary>Local jitter (%) per finished voiced stretch, at the stretch end.</summary>
-    public IReadOnlyList<TimedValue> Jitter { get; init; } = [];
+    public MetricRegistry Registry { get; } = registry;
+
+    /// <summary>The series of metric <paramref name="id"/> of <see cref="Registry"/>.</summary>
+    public IReadOnlyList<TimedValue> this[MetricId id] => id.Index < lines.Length ? lines[id.Index] : [];
+
+    /// <summary>The series of a registered metric (empty when it isn't registered).</summary>
+    public IReadOnlyList<TimedValue> this[MetricInfo metric] => Registry.TryGetId(metric, out var id) ? this[id] : [];
 }
 
 /// <summary>What the live analysis knows at one moment.</summary>
@@ -53,18 +50,10 @@ public sealed record LiveSnapshot(double Elapsed, AnalysisResult? Result, LiveSe
 /// </summary>
 public sealed class LiveAnalyzer
 {
-    /// <summary>Voiced stretches must have ended this long ago before their pulses are measured.</summary>
-    private const double PulseStability = 0.3;
-
     private readonly LiveSignal _signal;
-    private readonly LivePitchTracker _pitch;
-    private readonly LivePitchTracker _harmonicity;
-    private readonly LiveIntensityTracker _intensity;
-    private readonly LiveFormantTracker _formants5500;
-    private readonly LiveFormantTracker _formants5000;
-    private readonly LivePulseTracker _pulses = new();
-    private readonly ConcurrentDictionary<long, RawAnalysis.WeightRow?> _weightCache = new();
+    private readonly LiveTrackProvider _tracks;
     private readonly double _registerFloorHz;
+    private readonly MetricRegistry _registry;
     private readonly object _updateGate = new();
 
     /// <summary>
@@ -75,16 +64,15 @@ public sealed class LiveAnalyzer
     public const double DefaultFormantBlockSeconds = 0.5;
 
     public LiveAnalyzer(double samplingFrequency = 44100, double registerFloorHz = AnalysisPostProcessor.DefaultRegisterFloorHz,
-        double formantBlockSeconds = DefaultFormantBlockSeconds)
+        double formantBlockSeconds = DefaultFormantBlockSeconds, MetricRegistry? registry = null)
     {
         SamplingFrequency = samplingFrequency;
         _registerFloorHz = registerFloorHz;
+        _registry = registry ?? MetricRegistry.Default;
+        _series = [new(_registry.Count), new(_registry.Count)];
+        _liveSeries = [new(_registry, _series[0].Lines), new(_registry, _series[1].Lines)];
         _signal = new LiveSignal(samplingFrequency);
-        _pitch = LivePitchTracker.Autocorrelation(samplingFrequency, 0, AcousticsAnalysisEngine.PitchFloor, AcousticsAnalysisEngine.PitchCeiling);
-        _harmonicity = LivePitchTracker.Harmonicity(samplingFrequency, 0.01, AcousticsAnalysisEngine.PitchFloor, 0.1, 1.0);
-        _intensity = new LiveIntensityTracker(samplingFrequency, AcousticsAnalysisEngine.PitchFloor);
-        _formants5500 = new LiveFormantTracker(RawAnalysisAssembler.FormantCeiling, 5, 0.025, 50, formantBlockSeconds);
-        _formants5000 = new LiveFormantTracker(5000, 5, 0.025, 50, formantBlockSeconds);
+        _tracks = new LiveTrackProvider(samplingFrequency, formantBlockSeconds);
     }
 
     public double SamplingFrequency { get; }
@@ -112,7 +100,7 @@ public sealed class LiveAnalyzer
     /// live ones: then everything pitch-based (contour, statistics, register, jitter and
     /// shimmer) comes out identical live and saved.
     /// </summary>
-    public int AlignedLength(int available) => _pitch.AlignedLength(available, SamplingFrequency);
+    public int AlignedLength(int available) => _tracks.AlignedLength(available, SamplingFrequency);
 
     /// <summary>
     /// Analyzes everything received so far. <paramref name="final"/> = the recording has
@@ -133,73 +121,26 @@ public sealed class LiveAnalyzer
             var view = length is { } n ? _signal.View(n) : _signal.View();
             if (view.Duration < 0.1) return LiveSnapshot.Empty with { Elapsed = view.Duration, IsFinal = final };
 
-            Parallel.Invoke(Parallelism.Options,
-                () => { using (Timing.Measure("live.pitch")) _pitch.Update(view, final); },
-                () => { using (Timing.Measure("live.hnr")) _harmonicity.Update(view, final); },
-                () => { using (Timing.Measure("live.intensity")) _intensity.Update(view, final); },
-                // Both ceilings share each block's segment and resampling.
-                () => { using (Timing.Measure("live.formants")) LiveFormantTracker.UpdateAll([_formants5500, _formants5000], view, final); });
-            if (_pitch.FrameCount == 0 || _intensity.FrameCount == 0)
+            // A quick update needs the tracks of the graphs; a full one also the derived tracks, the last one the LTAS.
+            if (_tracks.Update(view, full || final ? TrackSet.All : TrackSet.Live, final) is not { } tracks)
                 return LiveSnapshot.Empty with { Elapsed = view.Duration, IsFinal = final };
-
-            Acoustics.Pitch.PitchContour pitch;
-            using (Timing.Measure("live.pitchpath")) pitch = _pitch.Contour(view);
-            var intensity = _intensity.Contour(view);
-            Acoustics.Pitch.HarmonicityContour harmonicity;
-            using (Timing.Measure("live.hnrpath")) harmonicity = _harmonicity.HarmonicityContour(view);
-            var sound = view.AsSound();
-            var lastFrame = pitch.FrameCount > 0 ? pitch.Grid.IndexToX(pitch.FrameCount - 1) : 0;
-            using (Timing.Measure("live.pulses")) _pulses.Update(view, pitch, lastFrame - PulseStability, final);
-            var pulses = _pulses.Pulses;
-
-            var track5500 = _formants5500.Track();
-            var covered5500 = _formants5500.CoveredUntil;
-            RawAnalysis.WeightRow? WeightRow(double t, double f0)
-            {
-                var key = BitConverter.DoubleToInt64Bits(t);
-                if (_weightCache.TryGetValue(key, out var cached)) return cached;
-                // Formants must already be known around t; otherwise try again on a later update.
-                if (t + 0.5 * Math.Max(0.025, 3.0 / f0) + 0.01 > covered5500 && !final) return null;
-                var row = RawAnalysisAssembler.MeasureWeightRow(sound, track5500, t, f0);
-                _weightCache[key] = row;
-                return row;
-            }
-
-            var tracks = new FrameTracks
-            {
-                Duration = view.Duration,
-                SamplingFrequency = view.Grid.Step > 0 ? 1.0 / view.Grid.Step : SamplingFrequency,
-                Pitch = pitch,
-                Intensity = intensity,
-                HnrMean = harmonicity.Mean(),
-                Jitter = VoiceReport.JitterLocal(pulses, 0.0001, 0.02, 1.3),
-                Shimmer = VoiceReport.ShimmerLocal(pulses, sound, 0.0001, 0.02, 1.3, 1.6),
-                Formants5500 = track5500,
-                Formants5000 = _formants5000.Track(),
-                WeightRow = WeightRow,
-                // The spectral tilt needs the whole-take spectrum: only at the end.
-                Ltas = final ? RawAnalysisAssembler.LtasPoints(Ltas.FromSound(sound, 100)) : [],
-                Sounding = RawAnalysisAssembler.SoundingIntervals(intensity),
-                Harmonicity = harmonicity,
-                Pulses = pulses,
-            };
             AnalysisResult? result = null;
             RecordingDetail contour;
             if (full || final)
             {
                 RawAnalysis raw;
-                using (Timing.Measure("live.assemble")) raw = RawAnalysisAssembler.Assemble(tracks);
-                using (Timing.Measure("live.postprocess")) result = AnalysisPostProcessor.Process(raw, _registerFloorHz);
+                using (Timing.Measure("live.assemble")) raw = RawAnalysisAssembler.Assemble(tracks, _registry);
+                using (Timing.Measure("live.postprocess")) result = AnalysisPostProcessor.Process(raw, _registerFloorHz, _registry);
                 contour = result.Detail;
             }
             else
             {
                 using (Timing.Measure("live.contour"))
-                    contour = AnalysisPostProcessor.AnalyzeRegister(RawAnalysisAssembler.Contour(pitch), tracks.Sounding, view.Duration,
+                    contour = Metrics.Phrasing.PhrasingModule.AnalyzeRegister(RawAnalysisAssembler.Contour(tracks.Pitch), tracks.Derived.Sounding, view.Duration,
                         _registerFloorHz).Detail;
             }
             LiveSeries series;
-            using (Timing.Measure("live.series")) series = BuildSeries(tracks, harmonicity, WeightRow);
+            using (Timing.Measure("live.series")) series = BuildSeries(tracks);
             return new LiveSnapshot(view.Duration, result, series, final) { Contour = contour };
         }
     }
@@ -209,14 +150,14 @@ public sealed class LiveAnalyzer
     /// snapshot's lists stay intact while the next is built, and no whole-take lists are
     /// allocated per update (they were a large share of the live analysis' garbage).
     /// </summary>
-    private readonly FrameSeriesBuffers[] _series = [new(), new()];
+    private readonly FrameSeriesBuffers[] _series;
+    private readonly LiveSeries[] _liveSeries;
     private int _seriesTurn;
 
-    private LiveSeries BuildSeries(FrameTracks t, Acoustics.Pitch.HarmonicityContour harmonicity,
-        Func<double, double, RawAnalysis.WeightRow?> weightRow)
+    private LiveSeries BuildSeries(in TrackView t)
     {
-        var b = _series[_seriesTurn ^= 1];
-        FrameSeriesBuilder.Build(t, harmonicity, weightRow, _pulses.StretchJitter, b);
-        return new LiveSeries { Loudness = b.Loudness, Hnr = b.Hnr, F2 = b.F2, F3 = b.F3, Weight = b.Weight, Jitter = b.Jitter };
+        var turn = _seriesTurn ^= 1;
+        FrameSeriesBuilder.Build(t, _series[turn], _registry);
+        return _liveSeries[turn];
     }
 }

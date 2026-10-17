@@ -1,0 +1,71 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:sh="using:Reyfen.Timbratune.Shell"
+             xmlns:ab="using:Reyfen.Timbratune.Features.About"
+             xmlns:cs="using:Reyfen.Timbratune.Features.CheatSheet"
+             xmlns:lm="using:Reyfen.Timbratune.Features.LiveMonitor"
+             xmlns:rc="using:Reyfen.Timbratune.Features.Record"
+             xmlns:td="using:Reyfen.Timbratune.Features.TakeDetails"
+             xmlns:tl="using:Reyfen.Timbratune.Features.TakeLibrary"
+             x:Class="Reyfen.Timbratune.Shell.ShellView"
+             x:DataType="sh:ShellViewModel"
+             Background="{DynamicResource PageBackgroundBrush}">
+  <!-- Port of dashboard-react/src/App.tsx: one scrolling page, top to bottom. Each part is a
+       feature's view; the Shell only places them. -->
+  <UserControl.KeyBindings>
+    <KeyBinding Gesture="Escape" Command="{Binding CloseOverlayCommand}" />
+  </UserControl.KeyBindings>
+
+  <Grid>
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+      <StackPanel MaxWidth="1140" Margin="24,20,24,40" Spacing="28">
+
+        <!-- ========== hero ========== -->
+        <Grid ColumnDefinitions="*,Auto">
+          <StackPanel Spacing="4">
+            <TextBlock Classes="h1" Text="Timbratune" />
+            <TextBlock Classes="cap" FontSize="14" Text="finding the sound that feels like you 💗✨" />
+          </StackPanel>
+          <Button Grid.Column="1" Classes="ghost" VerticalAlignment="Top" FontSize="18"
+                  Content="🌓" ToolTip.Tip="switch light / dark" Command="{Binding ToggleThemeCommand}" />
+        </Grid>
+
+        <!-- ========== record panel (RecordButton.tsx) ========== -->
+        <rc:RecordPanelView DataContext="{Binding Record}" />
+
+        <!-- ========== load error, take switcher ========== -->
+        <tl:TakeSwitcherView DataContext="{Binding Library}" />
+
+        <!-- ========== the take in focus (hidden while a live take is shown) ========== -->
+        <Panel IsVisible="{Binding !IsLive}">
+          <Panel IsVisible="{Binding Details.HasActive}">
+            <td:TakeView DataContext="{Binding Details.Active}" />
+          </Panel>
+        </Panel>
+
+        <!-- ========== live: while recording, and frozen while the take is analyzed ========== -->
+        <StackPanel Spacing="28" IsVisible="{Binding IsLive}">
+          <lm:LiveTimelinesView DataContext="{Binding LiveMonitor.Timelines}" />
+          <Panel IsVisible="{Binding Details.HasLiveTake}">
+            <td:TakeView DataContext="{Binding Details.LiveTake}" />
+          </Panel>
+        </StackPanel>
+
+        <!-- ========== 📖 all recordings ========== -->
+        <tl:TakeCardsView DataContext="{Binding Library}" />
+
+        <!-- ========== 💡 cheat sheet ========== -->
+        <StackPanel Spacing="8">
+          <TextBlock Classes="section" Text="💡 What do these mean?" />
+          <cs:CheatSheetView />
+        </StackPanel>
+
+        <!-- ========== footer: tagline, the takes folder, credits ========== -->
+        <ab:AboutView DataContext="{Binding About}" />
+      </StackPanel>
+    </ScrollViewer>
+
+    <!-- ========== what is open over the page (a metric's comparison, a take's dialog): the overlay stack's front ========== -->
+    <ContentControl Content="{Binding Overlays.Top}" IsVisible="{Binding Overlays.IsOpen}" />
+  </Grid>
+</UserControl>

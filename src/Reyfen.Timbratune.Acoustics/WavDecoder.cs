@@ -5,7 +5,8 @@ namespace Reyfen.Timbratune.Acoustics;
 
 /// <summary>
 /// Decodes RIFF/WAVE data (PCM 8/16/24/32-bit, IEEE float 32/64-bit, incl.
-/// WAVE_FORMAT_EXTENSIBLE) into a <see cref="Sound"/>. Integer samples are
+/// WAVE_FORMAT_EXTENSIBLE; also RF64/BW64 for files over 4 GB) into a <see cref="Sound"/>.
+/// Compressed WAVE data (ADPCM, µ-law, MP3 in WAV…) is refused with a <see cref="FormatException"/>. Integer samples are
 /// scaled to −1..1 by 2^(bits−1) (8-bit unsigned is re-centred first).
 /// Works on a stream, so callers decide where the bytes come from.
 /// </summary>
@@ -16,12 +17,14 @@ public static class WavDecoder
     public static Sound Decode(Stream stream)
     {
         using var reader = new BinaryReader(stream, Encoding.ASCII, leaveOpen: true);
-        if (Tag(reader) != "RIFF") throw new FormatException("Not a RIFF file.");
+        var riff = Tag(reader);
+        if (riff is not ("RIFF" or "RF64" or "BW64")) throw new FormatException("Not a RIFF file.");
         reader.ReadUInt32();
         if (Tag(reader) != "WAVE") throw new FormatException("Not a WAVE file.");
 
         ushort format = 0, channels = 0, bits = 0;
         uint rate = 0;
+        long? ds64DataSize = null; // RF64: the data chunk's real size, when its own field says 0xFFFFFFFF
         while (true)
         {
             string id;
@@ -46,11 +49,19 @@ public static class WavDecoder
                 if (format == Extensible && fmt.Length >= 26) format = BinaryPrimitives.ReadUInt16LittleEndian(fmt.AsSpan(24));
                 if ((size & 1) == 1) reader.ReadByte();
             }
+            else if (id == "ds64" && riff != "RIFF")
+            {
+                var ds64 = reader.ReadBytes((int)size);
+                if (ds64.Length >= 16) ds64DataSize = BinaryPrimitives.ReadInt64LittleEndian(ds64.AsSpan(8));
+                if ((size & 1) == 1) reader.ReadByte();
+            }
             else if (id == "data")
             {
                 if (channels == 0 || rate == 0) throw new FormatException("WAVE data before its format chunk.");
+                if (format is not (Pcm or IeeeFloat)) throw new FormatException($"Compressed WAVE data (format {format}) isn't read here.");
                 var bytesPerSample = (bits + 7) / 8;
-                var available = stream.CanSeek ? Math.Min(size, stream.Length - stream.Position) : size;
+                var length = size == uint.MaxValue && ds64DataSize is { } big ? big : size;
+                var available = stream.CanSeek ? Math.Min(length, stream.Length - stream.Position) : length;
                 var frames = (int)(available / (channels * (uint)bytesPerSample));
                 var data = reader.ReadBytes(frames * channels * bytesPerSample);
                 return new Sound(Deinterleave(data, frames, channels, bytesPerSample, format), rate);

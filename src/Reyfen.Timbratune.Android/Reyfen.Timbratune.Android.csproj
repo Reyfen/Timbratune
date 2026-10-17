@@ -31,6 +31,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia.Android" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
   </ItemGroup>
   <!-- Mono garbage collector: a 16 MB nursery (default 4 MB) and concurrent marking for full
        collections (Properties/GcEnvironment.txt). While recording, the live analysis and the
@@ -47,6 +48,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Reyfen.Timbratune\Reyfen.Timbratune.csproj" />
     <ProjectReference Include="..\Reyfen.Timbratune.Audio.SoundFlow\Reyfen.Timbratune.Audio.SoundFlow.csproj" />
+    <ProjectReference Include="..\Reyfen.Timbratune.Audio.Android\Reyfen.Timbratune.Audio.Android.csproj" />
   </ItemGroup>
   <!-- Publish output: just the signed APK, named Timbratune-v<Version>-android.apk. -->
   <Target Name="NameApkForRelease" AfterTargets="Publish">

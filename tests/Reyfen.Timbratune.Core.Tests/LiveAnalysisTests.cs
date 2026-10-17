@@ -1,3 +1,7 @@
+using Reyfen.Timbratune.Core.Analysis.Metrics;
+using Reyfen.Timbratune.Core.Analysis.Metrics.Loudness;
+using Reyfen.Timbratune.Core.Analysis.Metrics.Resonance;
+using Reyfen.Timbratune.Core.Analysis.Metrics.Weight;
 using System.Diagnostics;
 using System.Globalization;
 using System.Text;
@@ -140,7 +144,7 @@ public sealed class LiveAnalysisTests(ITestOutputHelper output)
             previous = snapshot;
         }
         Assert.NotNull(previous?.Result);
-        Assert.True(previous!.Series.Loudness.Count > 0 && previous.Series.F2.Count > 0 && previous.Series.Weight.Count > 0);
+        Assert.True(previous!.Series[LoudnessModule.Loudness].Count > 0 && previous.Series[ResonanceModule.F2].Count > 0 && previous.Series[WeightModule.Weight].Count > 0);
     }
 
     [Fact]

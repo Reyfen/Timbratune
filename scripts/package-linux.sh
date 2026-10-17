@@ -55,7 +55,7 @@ Architecture: amd64
 Maintainer: Reyfen
 Installed-Size: $(du -sk "$deb/opt" | cut -f1)
 Depends: libc6, libx11-6, libice6, libsm6, libfontconfig1
-Recommends: fonts-noto-color-emoji, pipewire-pulse | pulseaudio
+Recommends: fonts-noto-color-emoji, pipewire-pulse | pulseaudio, ffmpeg
 Section: sound
 Priority: optional
 Description: Voice training feedback: pitch, resonance, weight and phrasing

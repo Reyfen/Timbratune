@@ -2,7 +2,7 @@
 
 This file brings a new engineer or agent up to date on everything done so far: what the user asked for, what was decided and why, how the code is organised, what was measured, and what is still open.
 
-Last updated 2026-10-10. The newest work is §8d–§8h (v0.2.0: Android performance, export, one folder per take, import, `build.ps1`); §8 is the current state.
+Last updated 2026-10-16. The newest work is §8i–§8s (refactoring P0: golden, architecture, bench and phone baselines; P1: dependency injection and shared ports; P2: storage, settings and scheduling seams; P3: UI feature modules; P4: import formats; P5: analysis tracks; P6: metric modules; P7: registry-driven UI; P8: telemetry groundwork; P9: final performance check; P10: documentation, the refactoring is done); §8d–§8h cover v0.2.0 (Android performance, export, one folder per take, import, `build.ps1`); §8 is the current state.
 
 **Name:** the project is **Timbratune — Gender Voice Analysis Tool**, by **Reyfen**.
 - **Before 2026-10-02 it was called Euphonia**, and it is a fork of [Euphonia](https://github.com/Yuuzulight/Euphonia). Older parts of this file and of the transcript say "Euphonia" and "Euphonia-CSharp"; read those as Timbratune and the repo root (the code moved from `Timbratune/` to the root on 2026-10-06).
@@ -74,6 +74,8 @@ Each metric is placed in zones (masculine / neutral / feminine, and others).
 18. **One `build.ps1`** instead of `.bat` + `.sh`, a pre-emptive fix for "Android SDK directory could not be found", and finding why the user's builds didn't see the SDK (§8h).
 
 ## 4. Codebase map (repo root)
+
+> Since the refactoring (2026-10-15) the UI library is organised by feature: `Features/<Name>/`, `Shared/`, `Shell/`, `App/` (§8j–§8l, and the CLAUDE.md layout table). The `ViewModels/…` and `Views/…` paths below are from before that; the classes kept their names, except `MainViewModel`/`MainView` → `Shell/ShellViewModel`/`ShellView` and `RecordingItemViewModel` → `Features/TakeLibrary/TakeCardViewModel` (its dialog part is `Features/TakeActions/TakeDialogViewModel`). `Analysis/LiveWorker.cs` is in Core now; `Analysis/RecentWindow.cs` is in `Features/LiveMonitor/`.
 
 | Project | Role |
 |---|---|
@@ -219,6 +221,19 @@ These come from `tools/live-steadiness` on the 27.6 s take. Values are % of each
 
 The gains are real but small, about 5–10%.
 
+**Re-measured 2026-10-15** (`long.wav`, 27.6 s, after fixing the tool, §8i). Weight, HNR, loudness and pitch are unchanged. F2 and F3 moved because the formant loudness gate changed in v0.2.1 (§6a); with that gate set back to analyze.py's (`LoudOutlierFraction` 0) the tool gives exactly the F2 and F3 rows above. With the current gate:
+
+| Metric | Dot step, baseline → app | Tail change, baseline → app | Dot error, baseline → app |
+|---|---|---|---|
+| Pitch | 8.46 → 8.31 | 0.60 → 0.62 | 8.71 → 8.98 |
+| Loudness (holds) | 6.65 | 1.99 | 16.48 |
+| HNR | 4.00 → 3.83 | 1.48 → 1.53 | 8.90 → 9.54 |
+| F2 | 5.03 → 4.54 | 2.18 → 2.12 | 48.21 → 46.44 |
+| F3 | 0.69 → 0.73 | 0.34 → 0.35 | 4.48 → 4.26 |
+| Weight | 1.66 → 1.51 | 0.70 → 0.72 | 11.48 → 10.70 |
+
+With the new gate the trend no longer steadies F3's dot (0.69 → 0.73) but still makes it more accurate; for F2 it helps a little more than before.
+
 **Loudness.** Every prediction variant was worse on both measures; the first version made the dot step 6.65 → 9.29 and the error 16.5 → 25.8. Loudness follows syllables, so it holds instead.
 
 **Pitch:**
@@ -252,7 +267,7 @@ Two takes (voice-take-8/9, noisy: 6–12 kHz hiss about as loud as the voice) sh
 ```powershell
 cd C:\Projects\Reyfen\Timbratune
 dotnet build Timbratune.slnx
-dotnet test Timbratune.slnx                     # 121 tests; the Praat oracle tests skip without Praat
+dotnet test Timbratune.slnx                     # 243 tests; the Praat oracle tests skip without Praat
 dotnet run --project src/Reyfen.Timbratune.Desktop
 ./build.ps1 [win] [linux] [android]             # all published builds into publish/ (§8h)
 ```
@@ -272,6 +287,8 @@ UI check without a person:
 7. PrintWindow doesn't capture popups; select dropdown items with the keyboard (Down, Enter via SendKeys).
 
 Steadiness check: `cd tools/live-steadiness; dotnet run -c Release -- <tmp>\long.wav`
+
+Speed and allocation check (refactoring gate, §8i): `cd tools/analysis-bench; dotnet run -c Release -- -baseline baseline-p0.json`
 
 Shell gotchas on this machine:
 - Git Bash heredocs containing `'` inside a python `-c` can break. Write the script to a file and run it.
@@ -734,6 +751,514 @@ The user asked to drop `recordings.json`, so takes can be added and removed by h
   - WSL Ubuntu with PowerShell 7.6.6 in `~/.powershell` (tester, no sudo): win + linux built, android stopped with the workload message;
   - an unknown platform and a missing `dotnet` both give a message and exit 1.
 - **The take title's date and time** now has a dot between them: "08-Oct-26 · 14:03" (the device's short date and short time).
+
+## 8i. Refactoring P0: the safety net (2026-10-15)
+
+Branch `dev/v0.3.0`, phase P0 of `REFACTOR-PLAN.md` §9. No app code changed; this adds what the later phases are checked against. The base for every comparison is `4da741a` (the analysis code is unchanged since `07db82d`).
+
+- **Golden snapshots** (`tests/Reyfen.Timbratune.Core.Tests/GoldenTests.cs`, files in `Golden/`). For each VCTK fixture:
+  - the saved analysis as the store writes it: `<clip>.take.json` (the `Recording`), `.detail.json`, `.series.json`;
+  - the final live snapshot (`.live.json`: metrics, detail and the six live series), recorded the way the app does: irregular chunks, an update per 100 ms of audio, a full update every 10th, then the final update on the aligned length.
+  - Saved values must be identical; live values may move by at most 1e-7. Keys, their order and array lengths must match exactly.
+  - `TIMBRATUNE_UPDATE_GOLDEN=1` rewrites the files. Do that only on purpose, and say why in the commit.
+  - The files were made on Windows x64. Another OS's `libm` could change last digits; if the WSL run in P9 shows that, loosen the saved comparison for that case rather than regenerating.
+  - **Linux (2026-10-16): one live series has its own tolerance, `$.series.weight.v` at 1e-4 dB** (`LiveWeightTolerance`). WSL Ubuntu 24.04 failed `vctk_m311.live.json` at `weight.v[0]`, 12.7885677067799 expected, 12.788565828856093 got (1.9e-6), also on `c6a3160`, so not a refactoring regression. Measured:
+    - The cause is `libm`. Over 200,000 arguments, Windows' CRT and glibc give results 1 ulp apart for 3.1 % of `Math.Sin`, 3.1 % of `Cos`, 3.6 % of `Log10`, 0.5 % of `Exp` and 0.2 % of `Pow(x, 2)` calls (never more than 1 ulp). The decoded WAV and every other input are identical.
+    - Saved results are identical on Linux (all `take`/`detail`/`series.json` files), because the saved series are rounded. So are the live metrics and detail. The unrounded live series differ only in the last bits: loudness ≤ 3e-16 relative, HNR ≤ 8e-13, F2/F3 ≤ 9e-14, jitter ≤ 4e-13.
+    - Weight is amplified because it is the one live output that uses F0 unrounded. F0 comes from Brent's maximization of the sinc-interpolated autocorrelation (`PeakRefinement.SincMaximum`), which stops within about √ε·x of the peak. A 1-ulp change in the interpolant can move it inside that tolerance. Of 1,124 weight frames on the four clips, F0 is identical on 124, ≤ 1.2e-10 relative on 999, and 3.8e-8 on one (m311 at 0.83 s; formants, bandwidths, H1 and A3 match to ≤ 4e-13). The Iseli–Alwan corrections give |dW / d ln F0| up to 630 dB on these clips (median 50–90), so that frame's weight moves 1.9e-6 dB. Every other weight value is within 2.1e-8.
+    - The bound is 630 dB × 4e-8 ≈ 2.5e-5 dB, so the tolerance is 1e-4 dB, which is far below the 0.01 dB a saved take stores. Everything else keeps 1e-7 (live) and 0 (saved), including `weight.t`.
+    - I didn't make the computation platform-stable. That would need our own `Sin`/`Cos`/`Log10`/`Exp`/`Pow` throughout pitch, FFT, windows and formants (the sinc interpolant is a hot loop). It would also change saved results that Praat oracle tests check, and it would buy bit-identity for a value shown to 0.1 dB. Tightening Brent doesn't help: below √ε·x the interpolant is flat to the last bit.
+    - If a later platform (Android's bionic, ARM64, macOS) breaks a saved file, it would most likely be a 0.01-dB weight or 0.1-Hz F0 rounding flip near a half step. Check that before regenerating.
+- **Architecture tests** (`tests/Reyfen.Timbratune.Architecture.Tests`, in the solution). A small IL scanner (`TypeReferences.cs`, reflection only) collects every type a type uses, from its signatures and method bodies; lambdas and async methods are covered through their nested compiler-generated types. Rules:
+  - Acoustics references only the .NET runtime; Core only Acoustics and the runtime.
+  - Acoustics, Core and the UI library reference nothing native-only (SoundFlow, Avalonia.Desktop/Android/Native/Win32/X11, Mono.Android, the `Audio.*` adapters, the heads).
+  - Under `Reyfen.Timbratune.Features.<X>`: no references to another feature. Outside `Features`, only `Reyfen.Timbratune.App` and `.Shell` may use features. Feature `*Manager`s never use Avalonia. Feature `*ViewModel`s never use `RecordingStore`, `File`, `Directory`, `FileInfo`, `DirectoryInfo` or `FileStream`.
+  - No `$parent[…]…DataContext` bindings in `src/Reyfen.Timbratune/Features/**/*.axaml`.
+  - Live analysis (Acoustics, Core, `Reyfen.Timbratune.Analysis`, `Features.LiveMonitor`, types named `Live*`) never uses analytics.
+  - The feature rules have nothing to check until P3 adds `Features/`. Positive controls (the scanner sees `VoiceReport` inside `LiveAnalyzer.Update`, and `RecordingStore` in `MainViewModel`'s async methods) keep them from passing by seeing nothing.
+  - P1 must rename the `Features` class (`Features.cs`) and move `App` out of the namespace `Reyfen.Timbratune` before folders with those names exist; the tests refer to `Reyfen.Timbratune.App` by type.
+- **`tools/analysis-bench`** (dev tool, not in the solution; Stopwatch and `GC.GetTotalAllocatedBytes(precise)`, no package). Without a WAV it builds the 27.6 s `long.wav` of `make-long-wav.ps1` from the fixtures. It measures the full analysis (`AnalyzeAsync`, all cores), then replays the take through `LiveAnalyzer` the way the app does: 10 ms chunks, an update every 100 ms (a full one every 10th), on one thread limited to 2 cores like `LiveWorker`, plus `LiveTimelinesViewModel.Compute` on each snapshot. It also prints SHA-256 hashes of the saved and live results. `-types` lists live allocations by type (an `AllocationTick` listener); `-out` writes the numbers; `-baseline` checks the gate.
+  - **Allocations aren't exactly repeatable:** `ArrayPool.Shared` keeps per-thread caches, so a run's allocations depend on which pool threads the loops land on. The full analysis varies 109–185 MB between runs, and its median by about 4 % between sessions. Live allocation is steady (median 8.857–8.858 MB/s in three sessions). The gate therefore allows +5 % on the full analysis' allocations and +1 % on the live ones. Time medians also move by about ±4 % between sessions on this machine, so re-run once before calling a miss.
+  - Run: `cd tools/analysis-bench; dotnet run -c Release -- -baseline baseline-p0.json`.
+  - **A stored baseline drifts; gate with an A/B in one session.** At P1 (no analysis code changed) the same `86944bb` code measured 168 MB full-analysis allocation and 8.93–9.01 MB/s live, against 154 MB and 8.86 MB/s for the P0 baseline a few hours earlier, and `live.compute` 295–299 ms against 292 ms. Comparing with `baseline-p0.json` then shows false misses. For the gate: check out the base commit in a temporary worktree (`git worktree add --detach <tmp> <base>`), build its bench in Release, and run old and new alternately, at least twice each, with `-out`; compare those medians. `baseline-p0.json` stays as a rough reference only.
+
+**Baselines** (this machine: 24 cores, .NET 10.0.11, x64, Release; 27.6 s `long.wav`; medians of 10 runs; stored in `tools/analysis-bench/baseline-p0.json`):
+
+| Measure | Baseline |
+|---|---|
+| Full analysis | 356 ms; 154 MB allocated |
+| Live update, quick / full (per tick) | 9.6 / 9.7 ms |
+| Live updates, whole take (276 ticks + final) | 2,814 ms |
+| Live allocation (updates) | 8.86 MB per second of audio |
+| `LiveTimelinesViewModel.Compute`, whole take | 292 ms; 1.96 MB/s |
+| Result hashes | saved `504d74118fb5a222`, live `3d166b64c72ee99b` |
+
+Top live allocations by type (sampled): `double[]` 186 MB, `TimedValue[]` 36 MB, `(double, double)[]` 23 MB, `double?[]` 22 MB, `PitchCandidate[]` 17 MB per replay.
+
+**`tools/live-steadiness`** on `long.wav` (% of each graph's range: dot step / tail change / dot error, app settings): pitch 8.31 / 0.62 / 8.98, loudness 6.65 / 1.99 / 16.48, HNR 3.83 / 1.53 / 9.54, F2 4.54 / 2.12 / 46.44, F3 0.73 / 0.35 / 4.26, weight 1.51 / 0.72 / 10.70 (baseline variant in §5.6). The first P0 run gave loudness 24.44 and about 0 for HNR, F2, F3 and weight because the tool was broken, not the app: it kept every tick's snapshot and computed the lines after the last update, but since `b5d73f4` `LiveAnalyzer` refills two sets of series lists in turn, so all stored snapshots showed the last two updates' data. Pitch was unaffected (its frames are new on every update). The tool now computes each tick's lines right after its update, as the app does, and checks its "app" lines against `LiveTimelinesViewModel.Compute` on every tick (it prints a warning if they differ). It reproduces §5.6's numbers exactly when the formant gate is set back to the pre-§6a one. Checked tick by tick against the original tool on `82c5621` (the commit before the double buffering): with the old gate, the fixed tool on today's code and on `b5d73f4` gives the same 2,030 dots, bit-identical in time and value, in both variants.
+
+**Phone baselines** (2026-10-16), for both of the owner's phones:
+- **Setup:** Release profiling builds (LLVM AOT) of `a835972` (P0: the app before the refactoring) and `7810f0c` (after P4), installed in turn over the phone's own build (same signing key, versionCode 3): the 4a (Android 13) had 0.2.0, the Pixel 9 (Android 17, 60 Hz) a 0.2.1 debug build. Each run: a cold start with an empty takes list, a 28 s fake-mic recording of `long.wav`, then Stop. Probes on, `SurfaceFlinger --latency` sampled every 1.5 s while recording. Six runs per build, alternating; scripts `phone-run.sh` / `phone-analyze.py` in the session scratchpad (the method of §8d).
+- **Results** (medians of 6; janky = frame intervals over 25 ms):
+
+| Phone, build | fps | janky % (range) | > 50 ms | Stop to saved (analysis) | live updates | update median / full |
+|---|---|---|---|---|---|---|
+| 4a, P0 `a835972` (**baseline**) | 52.4 | 9.0 (6.8–10.8) | 17 | 4.58 s (3.88 s) | 222 | 46.6 / 59.2 ms |
+| 4a, P4 `7810f0c` | 52.2 | 9.9 (9.2–11.1) | 18 | 4.52 s (3.80 s) | 234 | 44.3 / 59.0 ms |
+| Pixel 9, P0 `a835972` (**baseline**) | 39.5 | 3.3 (2.7–4.0) | 20.5 | 2.02 s (1.62 s) | 261 | 42.0 / 49.6 ms |
+| Pixel 9, P4 `7810f0c` | 39.4 | 3.8 (3.3–4.2) | 21.5 | 2.01 s (1.67 s) | 262.5 | 42.7 / 49.3 ms |
+
+- **Reading:**
+  - The difference after P1–P4 is inside the baselines' run-to-run spread on both phones. Janky % is a little higher on both (+0.9 on the 4a, +0.6 on the Pixel 9), not significant with 6 runs each (Mann–Whitney p ≈ 0.2 on the Pixel 9); worth watching in P5–P7.
+  - **Pixel 9 fps is "over the window"** (about 39): the app only redraws on change, so idle gaps count, and every run has 16–17 gaps over 100 ms. The janky share includes them. The plan's earlier gate (≥ 57.5 fps, ≤ 3.1 %) was fps while drawing, measured under Avalonia 11.3 (§8d); the gate is now this baseline, as an A/B.
+  - On the Pixel 9 both builds run about the same number of live updates (261 vs 262); the 4a's P0 build skipped more early ticks.
+  - P3's loop keeps closer to one update per 100 ms (234 against 222 per take: P0's `DispatcherTimer` skipped early ticks, §8d), so a little more work per take, and has fewer UI-thread stalls (25 against 30.5 `ui.stall` > 32 ms), as the smoothing moved off the UI thread.
+  - The slow frames are mostly single missed vsyncs (2-frame gaps), spread over the whole take.
+  - For P5–P7, compare against the P0 rows with an A/B like this one, not against the numbers alone: single runs range by up to 4 points of janky % (4a) and 1.3 points (Pixel 9).
+  - **Android 17's layer list** reads `RequestedLayerState{<id> SurfaceView[…](BLAST)#n parentId=…}`; `--latency` needs the name with the leading id (`<id> SurfaceView[…](BLAST)#n`), and the newest such layer is the current launch's.
+  - **Run one driver at a time.** A first Pixel 9 attempt left earlier background drivers alive when the session ended; two of them drove the phone at once and their files mixed (two runs with the same logcat). Those runs were discarded and all twelve redone.
+- **The user's 0.2.0 takes** are in the app's private storage on this phone. A 0.3.0 build moves them to shared storage on its first normal start (`AndroidApp.DataFolder`). The profiling build used to do that before redirecting a fake-mic session to `profiling-data`; it now skips the lookup when the fake mic is there (`AndroidApp.OnCreate`, profiling builds only), and the same patch was applied to the P0 build measured. The 4a was left on the `7810f0c` profiling build with the fake mic and test takes removed, so its next normal start does the 0.3.0 move. The Pixel 9's takes were already in shared storage in the current layout (20 takes, untouched); it was also left on the `7810f0c` profiling build, cleaned up the same way.
+
+**Tests:** 148 pass with Praat (17 architecture, 57 acoustics, 74 core).
+
+## 8j. Refactoring P1: dependency injection and shared ports (2026-10-15)
+
+Phase P1 of `REFACTOR-PLAN.md`. No user-visible change.
+
+- **Composition** (`src/Reyfen.Timbratune/App/`):
+  - `CompositionRoot.AddTimbratune()` registers Core (`IAnalysisEngine`, `RecordingStore`, `TakeImporter`), Shared (`IMessenger` = a `WeakReferenceMessenger`, `IOverlayHost`, `IFeatureFlags`, defaults for `IPermissions`, `IThreadPriority` and `ReferenceVoiceFolder`, `StorageProviderDialogs` as `IFileDialogs`, `PlaybackService`) and the UI (`ViewLocator`, `MainViewModel`). All singletons, constructor injection, `TryAdd` so a head's own registration wins.
+  - A head must add `DataPaths`, `IAudioRecorder`, `IAudioPlayer` and `IPlatformInfo`; it may add `IAudioDecoder`, `IFileSharer` (an optional constructor parameter of `MainViewModel`) and its own `IPermissions`/`IThreadPriority`/`ReferenceVoiceFolder`. `CompositionTests` checks both cases with `ValidateOnBuild`.
+  - `App` is now `App/TimbratuneApp` (namespace `Reyfen.Timbratune.App`; a class can't share that name). It takes the container in its constructor; the parameterless one is for the XAML previewer. Services are resolved in `OnFrameworkInitializationCompleted`, after the UI thread exists (`PlaybackService` owns a `DispatcherTimer`), so nothing is created earlier than before.
+  - `ViewLocator`: a hand-written type → view map, added to the app's data templates; it also builds the root view on Android.
+  - Removed: `App.ServicesFactory`, the `AppServices` record, `Features.cs`.
+- **Heads:**
+  - **Desktop** (`Program.cs`): one `ServiceProvider` (validated on build) for the window and for `--import`, which now resolves `RecordingStore` and `TakeImporter` from it. It is disposed on exit, newest first: player and recorder before `SoundFlowAudio`, as the old `using`s did.
+  - **Android** (`AndroidApp`): the container is built in `OnCreate`, and `CreateAppBuilder` (a protected virtual of `AvaloniaAndroidApplication<T>`, checked in its metadata: it was `Configure<TApp>().UseAndroid()`) is overridden to construct `TimbratuneApp` with it. The old `_audio`/`_recorder` fields are singletons now. `AndroidPlatform.cs` holds `AndroidPermissions` (through `MainActivity.Current`) and `AndroidThreadPriority`. `MainActivity.Current` stays.
+- **`Features.cs` split:** `Shared/AppInfo` (version, credits, links, `CompareHint(bool)`), `Shared/FeatureFlags` (`IFeatureFlags`, `BuildFeatureFlags` with the build-time `ReferenceVoicesBuilt`), `Shared/Platform/IPlatformInfo` + the `PlatformInfo` record (`IsMobile`, `IsBrowser`, `SupportsThreads`, `CanOpenDataFolder`, `DataFolderHint`, `CanShare`, `CanRunProcesses`). The view models that `MainViewModel` still creates get the flag passed in (`TakeViewModel` and `RecordViewModel` take `IFeatureFlags`, `MetricModalViewModel` a bool); `TakeView` binds `CompareHint` instead of `x:Static`. `RecordViewModel` takes `IPermissions` and `IThreadPriority` instead of two optional delegates; the desktop defaults ask nothing and leave the priority alone, as the null delegates did.
+- **Shared ports:** `Platform/` (`IFileDialogs`, `PickedFile`, `IFileSharer`, `StorageProviderDialogs` moved from `Services/`; new `IPlatformInfo`, `IPermissions`, `IThreadPriority`, `ReferenceVoiceFolder`), `Navigation/` (`IOverlayHost` + `OverlayHost`, a stack with move-to-front, and `RouterBase`, which disposes what it closes), `Messaging/Messages.cs` (`TakeSaved`, `TakeRenamed`, `TakeDeleted`, `ImportFinished`, `TakeAnalysisUpdated`; ids and values only). Navigation and messages are first used in P3.
+- **Not done in P1, on purpose** (noted in the plan):
+  - `Shared/State` (`IActiveTakeService`, `ITakeCatalog`, `ILiveSession`) comes with the P3 steps that move that state out of `MainViewModel` and `RecordViewModel`, so the interfaces are shaped by their implementations. `ISettings` comes in P2.
+  - `ISecureStore`, `IExternalBrowser`, `IProcessRunner`, `IHttpDownloader` come with their first consumer (P4, later).
+  - `StorageProviderDialogs` still checks `OperatingSystem.IsAndroid()` for the Android picker's extension quirk; it's adapter code, so it stays.
+- **New test project** `tests/Reyfen.Timbratune.Tests` (UI library without a UI): `CompositionTests` (5) and `OverlayHostTests` (5). **Tests:** 158 pass with Praat (10 UI, 17 architecture, 57 acoustics, 74 core).
+- **Checked:**
+  - Desktop (Debug, fake mic, throwaway data folder): start, the `--import` CLI (same values as the golden file), record with live graphs, stop & analyze, the metric modal.
+  - Android (Debug APK on the `EuphoniaPixel` emulator, fake mic): start, recording with live graphs (permission and thread priority through DI), stop & analyze (take saved and shown).
+  - The Android profiling configuration (`-p:TimbratuneProfiling=true`) compiles.
+  - The bench: hashes identical, and an A/B against `86944bb` in the same session shows no difference (see the §8i note on drift).
+
+## 8k. Refactoring P2: storage, settings and scheduling seams (2026-10-15)
+
+Phase P2 of `REFACTOR-PLAN.md`. The only user-visible change: the theme toggle and the live-window choice are now remembered between sessions.
+
+- **`IAnalysisScheduler`** (`Core/Analysis/IAnalysisScheduler.cs`): where the analyses run. `NativeAnalysisScheduler(liveCores, lowerThreadPriority)` does exactly what the app did before:
+  - live updates on one `LiveWorker` (moved from the UI project into Core), made on first use, at the platform's lower priority, with loops limited to `LiveCores` (2); with 0 cores, on the thread pool;
+  - saved analyses on the thread pool.
+  - The profiling switches `fullcpu` and `lowprioN` now pick the cores in `CompositionRoot.LiveCores()`. `RecordViewModel` asks the scheduler instead of keeping its own worker, and skips the 90 ms throttle when `LiveCores` is 0, as before. `AcousticsAnalysisEngine` takes an optional scheduler; the parameterless constructor (tests, tools, the CLI) uses the thread pool.
+- **Stream entry points:**
+  - `AcousticsAnalysisEngine.AnalyzeAsync(Stream …)` and `AnalyzeAsync(Sound …)` next to the path one; all three run the same private `Analyze`, and `SeamTests` checks that they give identical JSON.
+  - `IAnalysisEngine` has a default `AnalyzeAsync(Stream …)` that copies to a temporary file, for path-only engines such as the Praat reference.
+  - `WavWriter(Stream, …, leaveOpen)` and `WavWriter.Truncate(Stream, n)` write the same bytes as the file versions (tested).
+  - The recorders and the Stop flow still use paths (see the plan's note).
+- **Storage ports** (`Core/Storage/ITakeStorage.cs`):
+  - `ITakeStorage`: named takes holding named files. It lists, creates (with "(2)" suffixes), renames, deletes, reads and writes atomically, copies or moves a local file in, gives a file's write time, and a local path where there is one. The file-system exceptions are the contract: locked means `IOException`.
+  - `IDataStore`: the app's own files (settings, later tools), with atomic writes.
+  - `FileSystemTakeStorage` and `FileSystemDataStore` implement them; names must be one path segment, so nothing can leave the folder.
+  - `RecordingStore` is now the repository over `ITakeStorage`. Its public API and behaviour are unchanged (`RecordingStore(DataPaths)` still works; `RecordingStore(ITakeStorage, DataPaths)` is new), and the store tests pass unmodified.
+  - A take is found from its paths (`takes/<take>/<file>`, anything else is refused). New `MoveIntoTake` is used for an import's original MP3/FLAC.
+  - `TakeArchive.Describe` can read the WAV format from a stream opener.
+  - **Byte check:** the old (`e110baf`) and new `--import` of the same two fixtures wrote identical `take.wav`, `detail.json` and `series.json`; `take.json` differs only in `exported_at`.
+- **Settings** (`Core/Storage/Settings/`, REFACTOR-PLAN §5a):
+  - `SettingKey<T>(Id, Default, Scope, JsonTypeInfo<T>)` and `SettingScope { Device, Synced }`; `SettingsJson` is the source-generated context for the plain value types. `ISettings` has `Get`, `Set` and `Changed`.
+  - `SettingsService` loads both documents once (`{ "schemaVersion": 1, "values": {…} }`, one per scope), keeps values in memory, and saves 0.5 s after the last change on a timer. It also saves on dispose: the container is disposed when the desktop app exits; Android relies on the timer.
+  - Unknown keys are written back unchanged. A damaged file becomes `.bak`, and the app starts from the defaults. A value of another shape reads as the default. Migrations run on load, and a newer app's document keeps its version.
+  - Ids that look like secrets (token, secret, password, apikey) and duplicate ids are refused.
+  - `DataStoreSettingsStore` writes indented JSON through `IDataStore`.
+  - **Where:** desktop, the data folder's root (`settings.device.json` next to `takes/`, so `TIMBRATUNE_DATA_DIR` moves it too); Android, the app's private `FilesDir` (not the USB-visible folder with the takes).
+  - **The owner's decision (2026-10-15): every setting is `Device` for now**; which ones sync is decided with accounts. `CompositionTests` checks that every registered key is `Device`.
+  - **Keys today** (in `ViewModels/AppSettings.cs` until the features exist):
+    - `shell.theme`: "system", "light" or "dark"; applied in `TimbratuneApp` before the window is made, set by the toggle.
+    - `recording.liveWindowSeconds`: 0 means the whole take; an unknown value means the whole take.
+  - Registered with `services.AddSetting(key)`. An architecture rule says features use `ISettings` only, never the settings store or `IDataStore`.
+- **Tests:** 184 pass with Praat (14 UI, 18 architecture, 57 acoustics, 95 core). New: `SeamTests` (11), `SettingsTests` (10), 4 composition tests and 1 architecture rule.
+- **Checked:**
+  - **A/B bench** against `e110baf` in one session, alternating, 2 runs each: same numbers within noise, identical saved and live hashes.
+  - **Desktop:** theme toggle → `settings.device.json` → restart in light; a stored 30 s window comes back as "last 30 s"; record (fake mic) and stop & analyze.
+  - **Android emulator (Debug):** the theme kept across a force-stop, the file in `files/`, record and stop & analyze (take saved).
+- **A slip during the checks:** one restarted desktop instance lacked `TIMBRATUNE_FAKE_MIC` (each tool call is a new shell), so Record captured ~26 s of the real microphone. It was killed before Stop, nothing was analyzed or saved, and the temporary WAV was deleted. CLAUDE.md now says to set the variable in the same command as every launch.
+
+## 8l. Refactoring P3: UI feature modules (2026-10-15)
+
+Phase P3 of `REFACTOR-PLAN.md`. No user-visible change except the two small ones listed at the end.
+
+**Layout** (`src/Reyfen.Timbratune`):
+- `Features/<Name>/`: each has its View(s), ViewModel(s), a Manager where there are use cases, a Router where it opens overlays, and `Add<Name>Feature()`:
+  - `CheatSheet`: the view only.
+  - `About`: the footer (takes folder, credits).
+  - `TakeActions`: the take dialog (`TakeDialogViewModel`), `TakeActionsManager` (save or share audio, .tmbr export with the series backfill, rename, delete), `TakeActionsRouter`.
+  - `MetricCompare`: `MetricModalViewModel`, `MetricCompareManager` (reference voices, audio paths), `MetricCompareRouter`.
+  - `Import`: `ImportViewModel` (button) with `ImportStatusViewModel` (line), and `ImportManager` (picked and dropped files, the trend backfill).
+  - `TakeLibrary`: switcher and cards, `TakeCardViewModel`, `TakeLibraryManager` (audio path, peaks).
+  - `TakeDetails`: `TakeDetailsViewModel` (the take in focus and the live take), `TakeViewModel`, `TakeDetailsManager`.
+  - `Record`: `RecordViewModel` (panel), `RecordingManager`, which is the `ILiveSession`.
+  - `LiveMonitor`: `LiveMonitorViewModel`, `LiveTimelinesViewModel`, `RecentWindow`, the window picker.
+- **`Shell/`:** `ShellViewModel` and `ShellView` (were `MainViewModel` and `MainView`) only place the features. The Shell fills the record panel's slots (`IdleActions` = Import button, `WindowPicker` = LiveMonitor, `Footer` = import status), holds the overlay stack, the theme toggle and start-up. `MainWindow` hosts `ShellView`.
+- **`Shared/`:**
+  - `State/`: `ITakeCatalog`/`TakeCatalog` (the takes; reloaded by whichever manager changed them), `IActiveTakeService`/`ActiveTakeService` (picked take, or the newest; a vanished pick falls back), `ILiveSession`.
+  - `Navigation/`: `IOverlayHost`/`OverlayHost` (now disposes what it closes, so Esc, back and routers all clean up), `RouterBase`, `ITakeActionsLauncher`, `IMetricCompareLauncher`.
+  - `Messaging/`: new `TakeActionStatus` (a card's export or rename status), `TakeTrendsOutdated`, `RecordingStarted`.
+  - `ThrottledProgress`.
+- **Deleted:** `ViewModels/`, `Views/` and `Analysis/`. `LiveWorker` moved to Core in P2. The bridge-gap constant moved to `ContourChart` (a shared control mustn't read a feature).
+- **Namespace clash:** the Recording feature is `Features/Record`: a namespace `Features.Recording` hides the `Recording` model type in every sibling feature (C# resolves enclosing namespaces before `using`s).
+
+**How the old couplings were cut:**
+- **Cross-feature openers:** the `$parent[v:MainView]` bindings (import button and status, switcher chips) and the card's ancestor lookup became slots, the card's own `SelectCommand`, and launchers. A card opens its dialog through `ITakeActionsLauncher`; a stat card opens the comparison through `IMetricCompareLauncher`.
+- **Status and backfill through messages:** a card's export and rename status arrives as `TakeActionStatus`. TakeDetails asks for a trend backfill with `TakeTrendsOutdated`, and Import answers with `TakeAnalysisUpdated`.
+- **Overlays:** `Modal`, `TakeDialog` and `CloseModalCommand` became one overlay stack shown through the `ViewLocator`. Esc and Android's back close its front. One dialog of a kind at a time; reloading the takes closes a take dialog, as before.
+
+**The live path, now in `RecordingManager`** (it was `RecordViewModel`'s timer):
+- **Loop:** one update starts at most per 100 ms tick on `IAnalysisScheduler.RunLiveAsync`. After a slow update the next waits for the next tick, as the `DispatcherTimer` did. The loop runs off the UI thread (`ConfigureAwait(false)`) instead of hopping through it each tick.
+- **Full updates:** about once a second, and every tick until the first result, as before.
+- **Snapshots:** `SnapshotReady` is raised inside the live work item, on the live thread. LiveMonitor smooths there (`live.compute`) and posts only `Apply` (`live.apply`); TakeDetails posts the live take's update (`live.takeview`). The final snapshot is published on a pool thread, inside the final update's work item, so its smoothing is now off the UI thread as well.
+- **Profiling switches:** `liveslow`, `slowcharts` and `nolivetake` keep working, in the manager, LiveMonitor and TakeDetails respectively.
+- **Stop:** trim, final update, analyze and save happen in the manager. The panel goes idle, then `FinishAsync` reloads the takes, selects the new one, sends `TakeSaved` and ends the live views, in the old order.
+
+**Tests:** 189 pass with Praat (19 UI, 18 architecture, 57 acoustics, 95 core).
+- `RecordingManagerTests` replays `vctk_f294` in real time through the real manager (about 10 s): 99–100 snapshots for 9.8 s, about 11 with a result, live ticks on the "Live analysis" thread and the final one on a pool thread, monotonic progress. The take is saved, announced and selected, and the final live contour equals the saved one frame for frame.
+- `TakeStateTests` covers the catalog and selection.
+- The architecture rules now have features to check; they skip Avalonia's generated `CompiledAvaloniaXaml` loaders, which reference every view.
+
+**Checked:**
+- **A/B bench** against `859e98f`, alternating, 2 runs each: same within noise, identical hashes. The bench drives `LiveAnalyzer` directly, so the new loop's real-world cost is for the phone gates (P9).
+- **Desktop** (fake mic, test data folder):
+  - the metric comparison through the overlay stack, closed with ✕;
+  - a card's delete dialog: cancel, then a real delete; the list reloads and the selection is kept;
+  - selecting a card;
+  - recording the whole 27.6 s `long.wav` with live graphs and the live take's cards, Stop with the progress bar over the frozen live view, the new take selected and shown.
+- **Android emulator (Debug):** start, the comparison opened by tapping a stat card and closed with the back key (the app stays), record with live graphs, Stop, take saved.
+
+**User-visible differences** (small, on purpose):
+- "couldn't open the folder here · it's …" now shows under the folder link in the footer, not in the import line (that line belongs to Import now).
+- The live-window choice is stored as `liveMonitor.windowSeconds`. The unreleased P2 id `recording.liveWindowSeconds` is not read; it stays in the file as an unknown key.
+
+## 8m. Refactoring P4: import formats (2026-10-16)
+
+Phase P4 of `REFACTOR-PLAN.md` (§4): import reads almost any audio format, on every platform, and the picker offers only what the device can read.
+
+**Decoding layer** (`Core/Audio/Decoding`):
+- `AudioFormatCatalog`: the known formats (wav, aiff, mp3, flac, ogg, opus, aac, m4a, mp4, 3gp, amr, caf, webm, mkv, wma) with extensions, MIME types and Apple type identifiers.
+- `FormatSniffer`: the format from the first 64 KB (after any ID3 tags, however large), never from the extension. MP3 and ADTS need two consecutive frame headers. The extension only picks within the MP4 family.
+- `IAudioDecoderProvider` (id, priority, `ProbeAsync`, `Create`) and `IAudioDecoder` (PCM at the file's own rate and channels into an `IPcmSink`).
+- `AnalysisWavSink`: mono at 44.1 kHz PCM16. Audio at 44.1 kHz streams through; other rates are collected and resampled once at the end (Acoustics `Resampler`).
+- `DecoderRegistry`: probes every provider once in the background (first asked at start-up by the dropped-file scan), sniffs, tries the providers that read the format by priority, and rewrites the target for each attempt. `RefreshAsync` re-probes and raises `CapabilitiesChanged`.
+- `IDecoderInstaller`, `UnsupportedAudioException` (unknown format, or none of this device's decoders reads it).
+
+**Providers:**
+
+| Priority | Provider | Where | Reads |
+|---|---|---|---|
+| 1 | `ManagedDecoderProvider` (Core) | everywhere | WAV (incl. RF64), AIFF/AIFC |
+| 2 | `MiniaudioDecoderProvider` (`Audio.SoundFlow`) | native heads | MP3, FLAC, WAV; still asks miniaudio for 44.1 kHz mono, so these imports are unchanged |
+| 3 | `MediaFoundationDecoderProvider` (`Audio.MediaFoundation`) | Windows | here: M4A, ALAC, AAC, 3GP, MP4, WMA, AMR, WebM, MKV (with AAC/Opus), MP3, FLAC |
+| 4 | `MediaCodecDecoderProvider` (`Audio.Android`) | Android | by `MediaCodecList`: M4A, MP4, AAC, 3GP, AMR, Ogg, Opus, WebM, MKV, MP3, FLAC |
+| 6 | `FfmpegDecoderProvider` (`Audio.Ffmpeg`) | desktop | by `ffmpeg -demuxers` / `-decoders`: everything in the catalog |
+
+- **Media Foundation:** source-generated COM interop (`[GeneratedComInterface]`), Source Reader to float at the native rate. A file whose extension doesn't match its content gets a temporary copy with the right one (the reader picks its parser by extension). The type change AAC decoders report on their first sample is accepted. The probe decodes an embedded 0.1 s sine clip per format (~0.5 s, background): Store codecs (Web Media Extensions is installed here) don't show in the registry and, here, aren't usable from a desktop app, so Ogg/Opus/CAF fall to FFmpeg.
+- **MediaCodec:** synchronous API, first audio track, 16-bit or float output.
+- **FFmpeg:** `ffmpeg -i <file> -map 0:a:0 -c:a pcm_f32le -f wav -`, the piped WAV read to its end (placeholder sizes). Found on the PATH, or the downloaded copy first. Its own error line comes through ("ffmpeg: …").
+
+**Import** (`Core/Storage/TakeImportService.cs`, was `TakeImporter`):
+- A RIFF WAV the analysis reads is stored as it is (unchanged).
+- Everything else is decoded to `take.wav`, and the original is kept as `source.<ext>`: moved for dropped and picked files, copied for the CLI. Before, only dropped MP3/FLAC kept theirs.
+- **Bug fixed:** `WavDecoder` read compressed WAVE data (ADPCM, µ-law…) as 8-bit PCM and analyzed noise. It now refuses it, so miniaudio decodes it (pitch 228 Hz instead of 485 on the test file). RF64/BW64 are read.
+- The desktop CLI reports an unreadable file and carries on (exit code 1) instead of crashing.
+
+**Picker and dropped files** (`Features/Import`):
+- `ImportFilters`: "Audio and Timbratune takes" first, then one group per decodable format, then `.tmbr`, never "All files". Picked files are no longer filtered by extension; their content decides, with a reason when it can't be read (some Android file managers ignore the types).
+- `IFileDialogs.OpenFilesAsync` takes `FileTypeFilter`s (extensions, MIME types, Apple type identifiers).
+- Dropped audio files nothing here decodes stay in the takes folder, mentioned once in the import line at start.
+
+**FFmpeg download** (§4.3; owner's decisions of 2026-10-15):
+- **Build:** BtbN FFmpeg-Builds `autobuild-2026-10-15-13-03`, FFmpeg n9.0.2-28-g669f5ab083, LGPL static, for linux-x64/arm64 and win-x64/arm64. `scripts/mirror-ffmpeg.ps1` checks BtbN's `checksums.sha256` and repacks each to `ffmpeg-9.0.2-<rid>.tar.gz` with only `ffmpeg`, `LICENSE.txt` and a README (36–57 MB instead of 117–171 MB). The owner hosts them on Reyfen/github-releases-as-file-hosting, release `ffmpeg-n9.0.2-28-g669f5ab083`. URL, size and SHA-256 are pinned in `FfmpegInstaller.Pinned`; the uploads were checked against them.
+- **Installer:** download over HTTPS (`IHttpDownloader`), hash and size checked before anything is unpacked (a mismatch deletes the file), only the program and licence/readme files unpacked by .NET's `TarReader`, flat, into `<LocalApplicationData>/Timbratune/tools/ffmpeg/<version>/` (`~/.local/share/…` on Linux), marked executable, older versions removed. No root, nothing system-wide. Flatpak: unavailable.
+- **Offer** (`FfmpegOfferViewModel`, an overlay through `ImportRouter`): shown on Linux when no ffmpeg is found, before the picker, and after a batch with a file in a known but undecodable format. Download (progress, cancel), use my package manager (the command for apt/dnf/pacman/zypper to copy; "done" re-probes), not now (remembered: `import.ffmpegOfferDeclined`). On Windows the installer is registered but `IsOffered` is false: hidden until the settings page offers it.
+- **Licence:** the offer names FFmpeg's LGPL with links to the licence and source; the About line says "some imports decoded by FFmpeg (LGPL)" whenever an ffmpeg is in use. `package-linux.sh` recommends `ffmpeg`.
+
+**Tests:** 239, on Windows and on Linux (19 UI, 19 architecture, 57 acoustics, 141 core).
+- New: `DecodingTests` (sniffer on 20 fixtures, renamed and non-seekable; big ID3 tags; AIFF and RF64 sample-exact; sink pass-through, downmix and resampling; registry priority, fallback and probing), `MediaFoundationTests` and `FfmpegTests` (pass with a note where unavailable; ALAC is sample-exact through both), `FfmpegInstallerTests` (offline: hash check before unpacking, nothing else unpacked, update, cancel), `ImportFiltersTests`, and new import tests.
+- New architecture rule: features reach decoders only through `DecoderRegistry` / `IDecoderInstaller`.
+- `RecordingManagerTests` (P3): the upper bound on snapshots now uses the measured recording time. The live loop ticks until Stop, 0.4 s past the clip, so 102 ticks plus the final snapshot is right; it failed on an idle Linux run with 103.
+- Fixtures: `Fixtures/formats/`, half a second of `vctk_f339` in each format (FFmpeg 9.0). The probe clips are synthetic sines.
+
+**Checked:**
+- **Byte identity:** the same MP3 (44.1 kHz mono and 48 kHz stereo), FLAC and WAV files imported with the P3 CLI and the P4 CLI give identical `take.wav` hashes. 16-bit AIFF, RF64 and ALAC (through Media Foundation and FFmpeg) give the same `take.wav` as the FLAC.
+- **Windows:** Media Foundation and FFmpeg imports through the CLI and the published single-file exe. In the app, dropped files (M4A/WMA imported, Opus left with the info line before FFmpeg was on the PATH) and the picker's type list.
+- **Android emulator (Debug):** dropped M4A, 3GP, AMR, Ogg, Opus, WebM and MP4 imported through MediaCodec (pitch within 0.6 Hz of the desktop's), WMA left with the info line, and the system picker greys out WMA.
+- **Linux (WSL):** the offer, the package-manager path, a failed download (404 before the upload: a clear message, nothing left), and the real download. It took ~2 s, unpacked only the three files and marked `ffmpeg` executable. Then the picker listed the new formats, dropped Ogg and M4A files imported, and the About line appeared. With the copy in place, nine formats import through the CLI.
+- **Bench:** not run, since P4 doesn't touch the analysis. The golden snapshots pass unchanged on Windows.
+
+**Linux golden test:** `GoldenTests.FinalLiveSnapshotMatchesTheGoldenFile(vctk_m311)` failed on Linux by 1.9e-6 in one live weight value, also on the P3 commit (not from P4); a separate session measured the cause and gave that one series its own tolerance (§8i).
+
+## 8n. Refactoring P5: analysis tracks (2026-10-16)
+
+Phase P5 of `REFACTOR-PLAN.md` (§2.1): the shared measurements of a take become tracks, computed once per update in fixed stages, for the saved and the live analysis alike. No user-visible change; every result is identical.
+
+**Layout** (`src/Reyfen.Timbratune.Core/Analysis/Tracks/`):
+- `TrackSet`: flags for pitch, intensity, harmonicity, formants (both ceilings), LTAS, pulses, voiced frames, sounding, the loud-vowel gate, and the derived vowel formant rows and weight frames. `WithDependencies()` adds what a track is computed from. Presets: `Live` (what a quick live update needs), `LiveFull` (plus the derived tracks), `All` (plus the LTAS).
+- `TrackView`: a `readonly struct` with one typed field per track, plus the samples, the weight-row function and the `DerivedTracks`. `ToFrameTracks()` gives today's `FrameTracks` (it measures the whole-take jitter and shimmer from the pulses, as before).
+- `DerivedTracks`: stage 2 (voiced frames, sounding stretches, the gate) and stage 3 (≤ 300 gated times with a plausible F1 at both ceilings; weight rows of ≤ 250 voiced frames). Live, one instance is refilled; the voiced frames, the gate and its sort buffer are reused lists.
+- `SavedTrackProvider.Measure(sound, set, loudOutlierFraction, progress)`: stage 1 is the former `MeasureTracks` `Parallel.Invoke`, same kernels, settings, `Timing` names and progress weights; stage 2 runs the pulses beside voiced frames, sounding and gate; stage 3 the derived tracks.
+- `LiveTrackProvider`: owns the live trackers (pitch, harmonicity, intensity, both formant ceilings), the pulse tracker and the weight-row memo that `LiveAnalyzer` held. Every update runs all four stage-1 trackers under `Parallelism.Options` (their state must keep up with the signal); the `TrackSet` decides stages 2–3. Same `live.*` probe names.
+
+**On top of it, same signatures:**
+- `AcousticsAnalysisEngine.MeasureTracks(sound, progress)` = `SavedTrackProvider.Measure(…).ToFrameTracks()`; a new overload takes the gate's outlier share, which the engine now passes in instead of `with { LoudOutlierFraction = … }` afterwards.
+- `LiveAnalyzer.Update(final, length, full)` asks the provider for `TrackSet.Live` (quick) or `TrackSet.All` (full and final).
+- `FrameTracks` gained `Derived` and `StretchJitter`. `RawAnalysisAssembler.Assemble` and `FrameSeriesBuilder.Build` use the derived tracks when present, and derive them as before when not, or when the gate was made with another outlier share (a `with { LoudOutlierFraction = … }` copy). So a live full update no longer computes the voiced frames and the gate twice (assembler and series), and the full analysis no longer twice either.
+
+**Tests:** 243 with Praat (19 UI, 19 architecture, 57 acoustics, 145 core). New `TrackTests`: dependency closure, a partial set measures only what's asked, the derived tracks equal what the assembler derives (and a copy with another gate doesn't reuse it), quick live updates leave out the derived tracks and only the final one has the LTAS. The architecture test's positive control now looks in `LiveTrackProvider` and `TrackView`.
+
+**Gates** (REFACTOR-PLAN §3):
+1. **Identical results:** the golden snapshots (saved identical, live within 1e-7) and the analyze.py parity tests pass unchanged; the bench's saved and live result hashes are the same as P4's in every run.
+2. **Bench, A/B against P4 (`dee1e42`)**, alternating, 3 runs of 10 each, the 27.6 s `long.wav`, medians:
+
+| Measure | P4 | P5 | Change |
+|---|---|---|---|
+| Full analysis | 362.3 ms | 359.8 ms | −0.7 % |
+| Full analysis allocation | 166.8 MB | 159.9 MB | −4.1 % |
+| Live update, quick / full (per tick) | 9.62 / 9.72 ms | 9.62 / 9.67 ms | 0 / −0.5 % |
+| Live updates, whole take | 2,825.5 ms | 2,825.3 ms | 0 % |
+| Live allocation | 8.886 MB/s | 8.825 MB/s | −0.7 % |
+
+   (`live.compute` 292.8 → 296.2 ms: not touched by P5, within run-to-run noise.)
+3. **Phones, A/B against the P0 baseline build** (Release profiling builds, 6 alternating fake-mic runs each, method of §8i), medians:
+
+| Phone | Build | fps | janky % (range) | > 50 ms | Stop to saved (analysis) |
+|---|---|---|---|---|---|
+| Pixel 9 | P0 `a835972` | 39.5 | 3.31 (3.00–3.62) | 20 | 2.08 s (1.67 s) |
+| Pixel 9 | P5 | 39.4 | 3.31 (2.74–3.64) | 18.5 | 1.99 s (1.64 s) |
+| Pixel 4a | P0 `a835972` | 51.9 | 9.63 (8.80–10.36) | 20.5 | 4.59 s (3.90 s) |
+| Pixel 4a | P5 | 52.0 | 9.71 (8.58–10.34) | 22 | 4.54 s (3.83 s) |
+
+   - Pixel 9: identical janky share, slightly fewer slow frames and a slightly faster Stop. It came up "offline" over USB until the adb server was restarted; the battery stayed at 21–22 % with Battery Saver off (it switches on at 20 % there; the driver now checks it before every run and stops if it is on).
+   - Pixel 4a: within the baseline's spread (+0.08 points janky, a slightly faster Stop); a few more live updates per take (228.5 against 223.5, P3's loop) and fewer UI stalls (25.5 against 32). Battery 64 %, Battery Saver off.
+   - Logged live-update counts vary between runs (194–271 on the Pixel 9) for both builds: logcat drops probe lines under load. The frame times come from SurfaceFlinger and aren't affected.
+   - The driver now takes a lock, so a second one can't run against the same phone (§8i).
+   - Both phones were left on the P5 profiling build, fake mic and test takes removed.
+
+## 8o. Refactoring P6: metric modules (2026-10-16)
+
+Phase P6 of `REFACTOR-PLAN.md` (§2.2): each metric family is one module, from the tracks to the saved take. No user-visible change; every result is identical.
+
+**Layout** (`src/Reyfen.Timbratune.Core/Analysis/Metrics/`):
+- `IMetricModule` (default methods, so a module implements only what it has), `MetricContext`, `DetailInputs`, `TrendWindow`, `RawAnalysisBuilder`; `MetricRegistry` (`Default`: Pitch, Resonance, Weight, Loudness, Clarity, Steadiness, Phrasing).
+- One folder per module:
+
+| Module | Raw values (`Measure`) | Take section (`Summarize`) | Phrase / trend columns | Series |
+|---|---|---|---|---|
+| `Pitch` | pitch mean, median, min, max, SD; the 10 ms contour | `Pitch` | mean Hz / mean Hz, pitch SD | pitch |
+| `Resonance` | vowel-core formant rows, frames tried | `Formants` (F2 gate, ceiling choice, medians, usable share) | F2 / F2, F3 | f1, f2, f3 |
+| `Weight` | weight frames, LTAS | `Weight` (Iseli–Alwan H1*–A3*, raw H1–A3, tilt) | corrected weight / weight | weight |
+| `Loudness` | intensity mean, min, max; intensity frames | `Intensity` | – / energy average | loudness |
+| `Clarity` | HNR mean; voiced harmonicity frames | `VoiceQuality.HnrDb` | – / mean HNR | hnr |
+| `Steadiness` | jitter, shimmer; pulses | `VoiceQuality.JitterPct/ShimmerPct` | – / jitter of the slice's pulses | jitter |
+| `Phrasing` | sounding stretches | `Register` and the detail (`AnalyzeRegister`: contour, phrases) | melody, ending / melody, endings | – |
+
+- The metric-specific helpers moved with their module (`VowelFormants`, `UsableFormantPct`, `UnreliableFormantsBelowPct` → Resonance; `SpectralWeight`, `CorrectedH1A3`, `IseliCorrection` → Weight; `AnalyzeRegister` → Phrasing). `AnalysisPostProcessor` keeps `Process` (glue), the trend and phrase loops, `TrendStep`, the app-wide constants (register floor, semitone reference) and the Python-semantics statistics helpers. `RawAnalysisAssembler` keeps `Assemble` (glue) and the track-stage helpers. `FrameSeriesBuilder` keeps `Build`/`ForTake` (glue; `series.json` keeps its key order whatever the module order) and the shared `Series` writer.
+
+**How it was done:** step 0 removed `FrameTracks` (the pipeline takes `TrackView`) and put everything into a temporary `LegacyMetrics` module, which made the three pipeline classes glue over the registry in one go. Each later step moved one metric out of `LegacyMetrics` into its folder, and the golden, parity and all other tests passed after every step. The Phrasing step deleted `LegacyMetrics`.
+
+**Interface, adapted from the plan:** `Summarize` and the phrase/trend columns read `RawAnalysis`, not `TrackView`. The Praat reference engine (tests) produces `RawAnalysis` from Praat's own numbers and has no tracks; `RawAnalysis` is thus the compatibility layer the plan's `Compat/RawAnalysisAdapter` would have been, and `AnalysisPostProcessor.Process(RawAnalysis)` still serves both engines. Modules hold no state (one instance serves the saved and live analysis at once). The public `TimeTrends(detail, …)` and `PhraseBreakdown(detail, …)` keep their signatures (older takes' trends are rebuilt through them): they hand each frame list to the module that owns it.
+
+**Side effect, measured:** the whole-take jitter, shimmer and HNR mean were computed on every live tick (in P5's `ToFrameTracks`) though only full updates use them; now `Measure` runs on full updates only.
+
+**Not done here, for P7:** `MetricId` ints and `Presentation`; `TrendSlice` and `PhraseMetrics` as `double?[]` by metric index (they stay typed; modules set their own properties); `LiveSeries` shaped by the registry (modules fill the same pooled lists); appending only new frames to the live series (rebuilt in full each update, as before).
+
+**Tests:** 243 with Praat. The architecture positive control looks for `VoiceReport` in the metric modules' namespace; two Core tests call `ResonanceModule.VowelFormants`/`UsableFormantPct`.
+
+**Gates:**
+1. **Identical results:** golden, parity and bench hashes unchanged after every step.
+2. **Bench, A/B against P5 (`d645b26`)**, alternating, 6 runs of 10 each (two rounds of 3, the second started with P6), medians:
+
+| Measure | P5 | P6 | Change |
+|---|---|---|---|
+| Full analysis | 348.2 ms | 352.0 ms | +1.1 % (ranges 334–357 / 341–364) |
+| Full analysis allocation | 168.0 MB | 168.0 MB | 0 % |
+| Live update, quick / full (per tick) | 9.58 / 9.55 ms | 8.88 / 9.60 ms | −7.4 / +0.5 % |
+| Live updates, whole take | 2,813.6 ms | 2,618.5 ms | −6.9 % |
+| Live allocation | 8.871 MB/s | 8.620 MB/s | −2.8 % |
+| `live.compute` (not touched) | 295.2 ms | 296.0 ms | +0.3 % |
+
+3. **Phones, A/B against the P0 baseline build:**
+
+| Phone | Build | fps | janky % (range) | > 50 ms | Stop to saved (analysis) | live updates | update median / full |
+|---|---|---|---|---|---|---|---|
+| Pixel 4a | P0 `a835972` | 51.95 | 10.23 (9.80–10.78) | 21.5 | 4.63 s (3.94 s) | 219.5 | 43.9 / 66.4 ms |
+| Pixel 4a | P6 | 52.47 | 9.12 (7.86–9.73) | 21 | 4.54 s (3.85 s) | 233.5 | 41.5 / 50.6 ms |
+
+   - Pixel 4a (Release profiling builds, 6 alternating fake-mic runs each, battery 64 %, Battery Saver off): better than the baseline, with janky ranges that don't overlap; more live updates per take, each faster, and full updates a quarter quicker (the whole-take jitter, shimmer and HNR mean no longer run on quick ticks).
+   - **Pixel 9: checked in P7,** as the phone schedule in REFACTOR-PLAN §3 sets (owner, 2026-10-16): its P7 A/B against the P0 build covers P6 and P7 together; on a miss, the P6 build is measured too.
+   - The 4a was left on the P6 profiling build, fake mic and test takes removed (its 0.2.0 takes still untouched in private storage).
+
+## 8p. Refactoring P7: registry-driven UI (2026-10-16)
+
+Phase P7 of `REFACTOR-PLAN.md` (§2.4): the UI is built from the metric registry. Saved files and results are unchanged; the order of some cards, live timelines and chips changed.
+
+**Metric descriptions** (`Core/Analysis/Metrics/MetricInfo.cs`):
+- A module lists what it shows as `MetricInfo`s (`IMetricModule.Metrics`, numbered with `MetricInfo.Numbered`): `Name` (stable), `Title`, `Unit`, `Zones`, `Lo`/`Hi`, `Take` (the take's value), `Columns` (trend / phrase) and `ColumnKey` (today's JSON name), and the optional presentations `Card` (the line under the value), `Compare` (reference accessor, gendered, blurb), `Trend` (caption, colour, floor-dependent caption or bands, a highlight band, `MeasuredSinceVersion` for "measuring…"), `Live` (caption, `SmoothingSpec`, hold, or `Points` built from the contour) and `Chip`.
+- The quantities: Pitch → mean, range, variability; Phrasing → melody, endings; Loudness; Resonance → F1, F2, F3; Weight; Clarity (HNR); Steadiness (jitter).
+- `MetricRegistry` numbers every module's metrics: `MetricId(Index, Name)`, `Metrics` (id, info, module), `Id(info)`, `Find(name)`, `this[id]`. Order: Pitch, Phrasing, Loudness, Resonance, Weight, Clarity, Steadiness. It is registered in DI (`AddTimbratune`).
+- `SmoothingSpec`/`WindowStatistic` moved to `Core/Domain` (modules carry their live smoothing; the shared ones are `LiveSmoothing.Frame/Vowel/Movement`); `TrendPoint`, `ScaleTick`, `TickKind` moved to `Core/Domain/ChartPoints.cs`. `Domain/Metrics.cs` (`MetricKey`, `MetricDef`) is deleted.
+
+**Columns and series by metric:**
+- `TrendSlice` and `PhraseMetrics` hold `double?[] Values` by `MetricId.Index` (`slice[id]`). Modules write `columns[metric]` (`MetricValues`: the module's offset in the registry plus the metric's slot, no lookup).
+- `Json/MetricColumnsJson.cs` (the compatibility layer): the trend and phrase columns are saved under `MetricInfo.Key`, today's v2 names first in today's order, then newer metrics; unknown names are skipped on read. detail.json is byte-identical (golden tests); a take saved by the dummy build loads in the normal build.
+- `FrameSeriesBuffers.Lines` is one pooled list per metric; modules fill `lines[metric]` (`SeriesLines`). F1 is collected only for a saved take (`ForSavedTake`). `LiveSeries` is a view of those lists by `MetricId` or `MetricInfo` (two instances, one per buffer set: no allocation per update). `LiveAnalyzer` takes an optional registry.
+
+**UI:**
+- `TakeViewModel`: stat cards = metrics with a `Card`, trend charts = metrics with a `Trend`, both in registry order; the F2/F3 gauges read the resonance metrics. Cards open the comparison by `MetricId` (`IMetricCompareLauncher.Open(MetricId)`).
+- `LiveTimelinesViewModel`: `LiveLine.From(registry)` gives the timelines; `Compute(snapshot, lines, window)` smooths each metric's points with its own spec, so a chart and its line can't get out of step (the positional `Lines` array is gone).
+- Chips (`TakeCardViewModel.Chips`) and `MetricModalViewModel` (`MetricInfo` + `Comparison`) read the same descriptions.
+- Architecture rule `FeatureViewModelsDontDependOnControls` (positive control: a `Controls.ZoneBar` field in a view model fails it).
+
+**Order on screen** (registry order; the trend charts are as before):
+
+| Surface | Before | Now |
+|---|---|---|
+| Stat cards | pitch, range, loudness, variability, HNR, jitter, weight | pitch, range, variability, loudness, weight, HNR, jitter |
+| Live timelines | loudness, variability, HNR, F2, F3, weight, melody, jitter | variability, melody, loudness, F2, F3, weight, HNR, jitter |
+| Chips | pitch, range, F2, loudness, variability, HNR | pitch, range, variability, loudness, F2, HNR |
+
+**Proof:** a throwaway `Metrics/Dummy/DummyModule.cs` (the loudest intensity frame) plus one registration showed up in the live timelines, the live and saved stat cards, the trend charts, the take card's chips, detail.json (`dummy_peak` after the v2 columns) and series.json (`dummy` after the known keys); then it was removed. `MetricRegistryUiTests` keeps the proof with a test registry (cards, trends, live timelines, saved series).
+
+**Not done:** appending only new frames to the live series (§2.2's `UpdateLiveSeries(fromFrame)`); they are refilled in full each update, as before.
+
+**Tests:** Core 145, architecture 20, UI library 23. `tools/live-steadiness` checks its lines against `Compute` by metric (no mismatch).
+
+**Gates:**
+1. **Identical results:** golden, parity and bench hashes unchanged (`428cdc1801047068` / `34e24c60fa4cab42`).
+2. **Bench, A/B against P6 (`1fb534d`)**, alternating, 6 runs of 10 each, medians:
+
+| Measure | P6 | P7 | Change |
+|---|---|---|---|
+| Full analysis | 328.0 ms | 328.5 ms | +0.1 % (ranges 318–337 / 322–339) |
+| Full analysis allocation | 146.5 MB | 144.7 MB | −1.2 % |
+| Live update, quick / full (per tick) | 8.84 / 9.52 ms | 8.79 / 9.42 ms | −0.6 / −1.0 % |
+| Live updates, whole take | 2,584.7 ms | 2,581.9 ms | −0.1 % |
+| Live allocation | 8.480 MB/s | 8.482 MB/s | 0 % |
+| `live.compute`, whole take | 294.5 ms | 293.8 ms | −0.2 % |
+| `live.compute` allocation | 1.961 MB/s | 1.958 MB/s | −0.2 % (after sizing the live melody list exactly; 1.971 before) |
+
+3. **Emulator smoke test** (Debug APK, fake mic): start with 17 earlier takes, record with the live timelines and live cards, Stop and save, an older take's cards, chips and trends.
+4. **Phones, A/B against the P0 baseline build:**
+
+| Phone | Build | fps | janky % (range) | > 50 ms | Stop to saved (analysis) | live updates | update median / full |
+|---|---|---|---|---|---|---|---|
+| Pixel 4a | P0 `a835972` | 52.08 | 9.79 (9.18–10.23) | 21 | 4.59 s (3.91 s) | 219 | 44.3 / 61.3 ms |
+| Pixel 4a | P7 | 51.64 | 10.88 (9.35–11.89) | 20 | 4.53 s (3.83 s) | 227 | 41.4 / 57.7 ms |
+| Pixel 4a | P7, second A/B | 51.39 | 10.90 (9.97–11.85) | 26.5 | 4.62 s (3.92 s) | 230.5 | 41.7 / 54.8 ms |
+| Pixel 4a | P7 with the P0 live order (test only) | 51.81 | 9.89 (8.04–12.74) | 24.5 | 4.61 s (3.91 s) | 230.5 | 41.9 / 56.2 ms |
+
+   - Pixel 4a (Release profiling builds, 6 alternating fake-mic runs per build in each A/B, battery 97–100 %, Battery Saver off): the analysis is as fast or faster (more live updates, each quicker; Stop to saved equal), but janky frames rose by about 1 point. A second A/B against a P7 build whose live timelines keep the P0 order (Loudness first; not committed) traced it to the screen, not the code: during the run the phone shows the pitch chart and the first live timeline, which was Loudness in P0 and is Pitch variability in P7's registry order, and that chart costs more to draw. With the P0 order P7 measured 9.89 %, like P0.
+   - **Owner's decision (2026-10-16): keep the registry order everywhere** (one order for every surface), accepting about 1 point of janky frames on the 4a while recording. Making the Pitch variability chart cheaper to draw is a possible later optimisation.
+   - **Pixel 9** (same method; three A/Bs, battery 52–53 % and charging, Battery Saver off). Its A/B against P0 covers P6 and P7 (REFACTOR-PLAN §3); P7 measured a little higher, so P6 was measured too, as the plan asks, and the P0-order build once more:
+
+| A/B | Build | fps | janky % (range) | > 50 ms | Stop to saved (analysis) | live updates | update median / full |
+|---|---|---|---|---|---|---|---|
+| 1 | P0 `a835972` | 39.58 | 3.27 (3.00–3.64) | 18.5 | 2.04 s (1.67 s) | 251.5 | 42.9 / 50.9 ms |
+| 1 | P7 | 39.39 | 3.59 (3.18–3.74) | 19 | 2.00 s (1.65 s) | 257 | 39.8 / 56.0 ms |
+| 2 | P7 | 39.55 | 3.50 (3.27–3.83) | 20 | 2.02 s (1.64 s) | 259.5 | 39.4 / 53.4 ms |
+| 2 | P7 with the P0 live order (test only) | 39.53 | 3.45 (2.99–3.97) | 19.5 | 2.05 s (1.68 s) | 259 | 40.7 / 48.2 ms |
+| 3 | P0 `a835972` | 39.59 | 3.31 (3.09–3.62) | 20.5 | 2.02 s (1.62 s) | 258.5 | 43.0 / 49.3 ms |
+| 3 | P6 `1fb534d` | 39.58 | 3.23 (2.99–3.55) | 20 | 2.06 s (1.68 s) | 257 | 41.0 / 50.4 ms |
+
+   - P6 matches P0 on the Pixel 9. P7 is about 0.2–0.3 points of janky frames above P0 in both of its A/Bs (about 3 more late frames in a 28 s take), with equal fps, Stop to saved well inside the 2.7 s limit, and faster live updates. Unlike on the 4a, the live order makes no difference here (the taller screen shows more charts at once), so this is P7's own cost, not yet located. Pooled (12 runs each): 3.27 % vs 3.54 % median, +8 % relative; a shuffle test puts the chance of a gap this size by luck at about 2 %.
+   - **Owner's decision (2026-10-16): accepted** (too small to notice; the analysis itself got faster); recheck it in P9.
+   - The 4a was left on the P7 profiling build (the last run), its 0.2.0 takes untouched in private storage; the fake mic and the runs' test takes stayed on it (it was unplugged before they could be removed) until P9 removed them (§8r).
+
+## 8q. Refactoring P8: telemetry groundwork (2026-10-16)
+
+Phase P8 of `REFACTOR-PLAN.md`, rescoped by the owner: analytics is a future concept, so this phase is the design (REFACTOR-PLAN §5, rewritten) plus groundwork. Nothing is sent: no Mixpanel or Sentry package, no network code, no UI. No user-visible change.
+
+**Decisions (owner, 2026-10-16):**
+- Mixpanel for usage analytics; Sentry for crash and error reports (suggested for its free plan: 5,000 errors, 5 GB logs a month, EU hosting; GlitchTip as a fallback with the same SDK).
+- Eventually: performance data, errors, and anonymous user data: age range, voice target (the perceived gender the user trains towards), country, supporter status.
+- Rollout: everyone who ever donated, plus a limited share of the others.
+- EU hosting recommended for both, to be confirmed when the projects are created.
+
+**Built:**
+- `Core/Diagnostics/AppLog.cs`: `IAppLog`, `NullAppLog`, and `Log(level, area, $"…")` through an interpolated-string handler (nothing formatted or allocated when the level is off; invariant culture).
+- Log points: `DecoderRegistry` (decoder chosen, failed, probe failed), `SettingsService` (save failed), `RecordingManager` (started, saved with analysis time and Stop to saved, Stop failed, live update failed), `ImportManager` (import done or failed, FFmpeg installed, backfill failed). Core services and the managers take the log, analytics and crash reporter as optional constructor arguments, so existing callers and tests are unchanged.
+- `Shared/Telemetry/`: `IAnalytics` + `TakeAnalyzedEvent` + `NullAnalytics`, `AnalyticsPayload` (rounded durations and zone names only), `ICrashReporter` + `NullCrashReporter`, `CrashReportLimiter` (each kind once, at most 5 per session), `CrashHooks` (installed at start; subscribes nothing while everything is off), `TelemetrySettings` (`telemetry.analytics`, `telemetry.crashReports`, `telemetry.installId`, all device-scoped), `TelemetryConsent`, `TelemetryRollout` (FNV-1a bucket of the install id, 0–9999) and `RolloutRates` (default 25 % for analytics and for crash reports).
+- `Shared/State/IEntitlements` (`HasEverDonated`) with `NoEntitlements`.
+- `AddTimbratune` registers the do-nothing defaults, `NoEntitlements`, `RolloutRates.Default`, `TelemetryConsent` and the three settings.
+- Architecture rule renamed and widened: `LiveAnalysisNeverReferencesTelemetry` (analytics, crash reports, Mixpanel, Sentry), with a positive control (`TheTelemetryRuleSeesTheCallSites`). Checked that it bites: a throwaway `ICrashReporter` reference in `LiveTimelinesViewModel` failed it, then was removed.
+
+**Tests:** Acoustics 57, Core 145, architecture 21, UI library 33 (`TelemetryTests`: defaults off; 0 bytes allocated by the call sites when off; log levels and invariant culture; stable bucket; the rollout's rate, monotonic and donors; no sending without consent; install id lifecycle; limiter; payload holds zone names only).
+
+**Gates:** build and all tests green; desktop start with a throwaway data folder. No performance gate: nothing on the analysis path changed (the live loop only logs in its error path, and the log is off).
+
+**Next, when the adapters are added (REFACTOR-PLAN §5 "Later"):** the Mixpanel and Sentry adapters (EU), the consent switches in About, the remote rates file, the user properties, README and privacy text.
+
+## 8r. Refactoring P9: final performance check (2026-10-16)
+
+Phase P9 of `REFACTOR-PLAN.md`: every gate of §3 for the whole refactoring, P8 (`4d67e23`) against P0 (`a835972`), plus the Linux build.
+
+**1. Identical results:** golden and parity tests pass; the bench's saved and live hashes are the same for both builds (`428cdc1801047068` / `34e24c60fa4cab42`).
+
+**2. Bench, A/B against P0**, alternating, 6 runs of 10 each, medians. A first set was disturbed by other load on the PC (full analysis 338–963 ms in both builds), so it was run again on a quiet machine:
+
+| Measure | P0 | P8 | Change |
+|---|---|---|---|
+| Full analysis | 341.8 ms | 335.9 ms | −1.7 % (ranges 331–369 / 330–353) |
+| Full analysis allocation | 152.5 MB | 152.4 MB | 0 % |
+| Live update, quick / full (per tick) | 9.85 / 10.16 ms | 8.88 / 9.45 ms | −9.8 / −7.0 % |
+| Live updates, whole take | 2,793.8 ms | 2,587.7 ms | −7.4 % |
+| Live allocation | 8.839 MB/s | 8.485 MB/s | −4.0 % |
+| `live.compute`, whole take | 297.0 ms | 295.6 ms | −0.5 % |
+| `live.compute` allocation | 1.961 MB/s | 1.958 MB/s | −0.2 % |
+
+Within budget (≤ +3 % time, no more allocations): the refactored analysis is a little faster, as §3 expected (weight computed once).
+
+**3. Phones** (Release profiling builds, LLVM AOT, A/B against the P0 build, method of §8i):
+- **Pixel 9** (battery 55–58 %, USB, Battery Saver off; 6 runs per build, one P8 run dropped because the phone disconnected from USB during it):
+
+| Build | fps | janky % (range) | > 50 ms | Stop to saved (analysis) | live updates | update median / full |
+|---|---|---|---|---|---|---|
+| P0 `a835972` | 39.54 | 3.23 (2.80–3.44) | 18.5 | 2.01 s (1.62 s) | 257 | 42.8 / 52.4 ms |
+| P8 `4d67e23` | 39.47 | 3.55 (3.35–3.74) | 19 | 2.03 s (1.61 s) | 231 | 40.2 / 52.5 ms |
+
+  - The P7 cost found in §8p is confirmed: +0.3 points of janky frames (shuffle test p ≈ 0.005), about 3 more late frames in a 28 s take. Frames per second, frames over 50 ms and Stop to saved (well inside the 2.7 s limit) are unchanged, and live updates are faster. Code review didn't locate it (the live cards update in place as before; the live order makes no difference on this phone, §8p).
+  - **Owner's decision (2026-10-16): accepted as a known cost of P7.**
+  - Cleaned up afterwards: the fake mic and the profiling takes removed, the owner's 20 takes untouched; the phone is left on the P0 profiling build.
+- **Pixel 4a** (battery 84–99 %, USB, Battery Saver off; 6 runs per build). The first P0 run is dropped: Google Play Protect asked on the phone whether to send the newly installed build for a check, and the prompt covered the app while that run recorded (6 frames). The owner answered it; later installs didn't ask again.
+
+| Build | fps | janky % (range) | > 50 ms | Stop to saved (analysis) | live updates | update median / full |
+|---|---|---|---|---|---|---|
+| P0 `a835972` (5 runs) | 51.90 | 9.83 (8.59–10.48) | 18 | 4.76 s (3.97 s) | 219 | 44.1 / 70.8 ms |
+| P8 `4d67e23` | 50.99 | 10.89 (9.98–11.99) | 25.5 | 4.96 s (4.25 s) | 221.5 | 42.3 / 58.8 ms |
+
+  - Janky frames +1.0 point (shuffle test p ≈ 0.02) and fps −0.9 (p ≈ 0.01): the live-order cost of P7 (§8p: +1.1 points, traced to the first live timeline the phone shows), which the owner kept.
+  - Stop to saved, the analysis time and frames over 50 ms differ within noise (p 0.17–0.35; the bench shows the analysis itself 1.7 % faster). Live updates are quicker, full ones markedly (58.8 against 70.8 ms).
+  - Cleaned up afterwards: the fake mic and the profiling takes removed (also P7's leftovers); the owner's 0.2.0 takes are untouched in private storage; the phone is left on the P0 profiling build.
+
+**Verdict:** every gate passes or is a known cost the owner accepted (Pixel 9 +0.3 points and Pixel 4a +1 point of janky frames, both from P7). The refactoring keeps the results identical and the analysis as fast or faster.
+
+**4. Linux** (WSL `Ubuntu-24.04`, `~/tt` copy): all tests pass (Acoustics 57, Core 145, architecture 21, UI 33). `build.ps1 linux` builds the `.deb` and the AppImage; the AppImage (run with `APPIMAGE_EXTRACT_AND_RUN=1`, no FUSE in WSL) starts, records with the fake mic with the live timelines, and Stop saves the take with its cards.
+
+## 8s. Refactoring P10: documentation; the refactoring is done (2026-10-16)
+
+Phase P10 of `REFACTOR-PLAN.md` closes the refactoring of v0.3.0 (P0–P10, §8i–§8s). Docs only:
+- `REFACTOR-PLAN.md`: marked done; §10 lists the key files as built; new §13 "How to add a feature" and §14 "How to add a metric", each step tied to the architecture test or gate that checks it.
+- `CLAUDE.md`: the layout table names Core's `Domain/`, `Models/` and `Json/` and the shared entitlements; the plan is described as the architecture and its record, with the checklists.
+
+**Where it ended up** (details in §8i–§8r):
+- Features are independent folders composed by DI (`AddTimbratune`), checked by architecture tests; the heads only add platform adapters.
+- The analysis is computed once per update as shared tracks, then one module per metric family; the metric registry drives every surface (cards, trend charts, live timelines, chips, comparison) and the saved columns.
+- Import reads almost any audio format through a decoder registry (managed, miniaudio, Media Foundation, Android MediaCodec, FFmpeg on demand).
+- Settings persist per device; telemetry is designed and off (§5).
+- Results are identical to v0.2.x; the analysis is a little faster (bench: full −1.7 %, live updates −7.4 %). Known costs accepted by the owner: janky frames while recording +0.3 points on the Pixel 9 and +1 point on the Pixel 4a, both from P7 (§8p, §8r).
+
+**Next (later versions):** the telemetry adapters (Mixpanel, Sentry; §5), accounts and the avatar (§6) with settings sync (§5a.3), the browser head (§7).
 
 ## 8. Current state, at the time of writing
 

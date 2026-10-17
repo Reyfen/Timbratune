@@ -1,6 +1,6 @@
 using Android.App;
 using Android.Content;
-using Reyfen.Timbratune.Services;
+using Reyfen.Timbratune.Shared.Platform;
 
 namespace Reyfen.Timbratune.Android;
 

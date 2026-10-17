@@ -13,6 +13,9 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Reyfen.Timbratune.Core\Reyfen.Timbratune.Core.csproj" />
+    <!-- The OS decoders' tests run where that OS is (and pass with a note elsewhere). -->
+    <ProjectReference Include="..\..\src\Reyfen.Timbratune.Audio.MediaFoundation\Reyfen.Timbratune.Audio.MediaFoundation.csproj" />
+    <ProjectReference Include="..\..\src\Reyfen.Timbratune.Audio.Ffmpeg\Reyfen.Timbratune.Audio.Ffmpeg.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!-- Reference clips (VCTK, CC BY 4.0) converted to WAV, plus the output of
