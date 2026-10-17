@@ -8,7 +8,7 @@
     .NET runs (Windows, macOS, Linux, Android, iOS, WebAssembly) and is trim/AOT
     safe. Algorithms follow the published literature listed in REFERENCES.md;
     parameter defaults follow the Praat manual so results line up with Praat.
-    Licensed like the rest of Timbratune (LICENSE at the repository root).
+    Licensed like the rest of Timbratune (LICENSE.md at the repository root).
   -->
   <PropertyGroup>
     <RootNamespace>Reyfen.Timbratune.Acoustics</RootNamespace>

@@ -308,7 +308,7 @@ using the microphone.
 
 Timbratune, including `Reyfen.Timbratune.Acoustics`, is **source-available** under the
 [PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0) with the Timbratune
-Additional Terms; the full text is in [`LICENSE`](LICENSE). In short:
+Additional Terms; the full text is in [`LICENSE.md`](LICENSE.md). In short:
 - you may use, study, change and share it for any **noncommercial** purpose;
 - it may not be used **commercially**, changed or not;
 - neither it nor any fork may be published in an **app store or software marketplace** (Google Play, App Store,
