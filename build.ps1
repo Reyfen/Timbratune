@@ -243,6 +243,15 @@ if ($doAndroid) {
     else {
         Write-Host "SDK: $sdk"
         Write-Host "JDK: $jdk"
+        # Signing key: the csproj signs with the Timbratune keystore when it exists (same lookup
+        # as here), else with this machine's debug key. See HANDOFF 10.
+        $keystore = $env:TIMBRATUNE_KEYSTORE
+        if (-not $keystore) { $keystore = Join-Path ([Environment]::GetFolderPath('UserProfile')) '.timbratune/android/timbratune.keystore' }
+        if (Test-Path -LiteralPath $keystore) { Write-Host "Key: Timbratune keystore ($keystore)" }
+        else {
+            Write-Host "Key: this machine's DEBUG key: no keystore at $keystore."
+            Write-Host '     This APK will not install over the app on the phones (signed with the Timbratune key).'
+        }
         # "The Android SDK directory could not be found" (XA5300) with a valid SDK comes from a
         # long-running MSBuild node that kept a failed SDK lookup (e.g. from another build that
         # didn't pass the SDK path). Stop those nodes first, tell every MSBuild process where the

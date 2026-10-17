@@ -23,6 +23,32 @@
     <AndroidEnableProfiledAot>false</AndroidEnableProfiledAot>
     <EnableLLVM>true</EnableLLVM>
   </PropertyGroup>
+  <!-- Signing: every build (Release, Debug, profiling) signs with one release keystore when it's
+       there, so any build installs over the app on a phone without an uninstall (which deletes
+       the takes). It lives outside the repo and outside AppData (Claude's shells see another
+       AppData): %USERPROFILE%/.timbratune/android/timbratune.keystore, or the path in
+       TIMBRATUNE_KEYSTORE. Password: TIMBRATUNE_KEYSTORE_PASS, else password.txt beside the
+       keystore (the password on two lines, see below). Without the keystore the local debug key signs, which differs per machine and
+       per shell (HANDOFF §10). -->
+  <PropertyGroup>
+    <TimbratuneKeystore Condition="'$(TimbratuneKeystore)' == ''">$(TIMBRATUNE_KEYSTORE)</TimbratuneKeystore>
+    <TimbratuneKeystore Condition="'$(TimbratuneKeystore)' == ''">$([System.Environment]::GetFolderPath(SpecialFolder.UserProfile))/.timbratune/android/timbratune.keystore</TimbratuneKeystore>
+  </PropertyGroup>
+  <PropertyGroup Condition="Exists('$(TimbratuneKeystore)')">
+    <AndroidKeyStore>true</AndroidKeyStore>
+    <AndroidSigningKeyStore>$(TimbratuneKeystore)</AndroidSigningKeyStore>
+    <AndroidSigningKeyAlias>timbratune</AndroidSigningKeyAlias>
+    <AndroidSigningStorePass Condition="'$(TIMBRATUNE_KEYSTORE_PASS)' != ''">env:TIMBRATUNE_KEYSTORE_PASS</AndroidSigningStorePass>
+    <AndroidSigningStorePass Condition="'$(TIMBRATUNE_KEYSTORE_PASS)' == ''">file:$([System.IO.Path]::GetDirectoryName('$(TimbratuneKeystore)'))/password.txt</AndroidSigningStorePass>
+    <!-- PKCS12: the key's password is the store's. Given the same file for both, apksigner
+         reads the store password from its first line and the key's from the second, so
+         password.txt holds the password twice, on two lines. -->
+    <AndroidSigningKeyPass>$(AndroidSigningStorePass)</AndroidSigningKeyPass>
+  </PropertyGroup>
+  <Target Name="ReportTimbratuneSigning" BeforeTargets="Build">
+    <Message Importance="high" Text="Signing with the Timbratune keystore: $(TimbratuneKeystore)" Condition="Exists('$(TimbratuneKeystore)')" />
+    <Warning Text="No Timbratune keystore at $(TimbratuneKeystore): signing with this machine's debug key. The APK won't install over a build signed with the Timbratune key (HANDOFF §10)." Condition="!Exists('$(TimbratuneKeystore)')" />
+  </Target>
   <!-- Profiling build: dotnet publish … -p:TimbratuneProfiling=true. Timing probes go to logcat
        (adb logcat -s Timbratune), the APK is profileable, and a fake mic file can be used. -->
   <PropertyGroup Condition="'$(TimbratuneProfiling)' == 'true'">

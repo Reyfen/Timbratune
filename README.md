@@ -81,7 +81,9 @@ dotnet build src/Reyfen.Timbratune.Android -t:InstallAndroidDependencies -f net1
 ```
 
 Build an APK with `./build.ps1 android`, which finds the SDK and JDK itself, or by hand. The Release build is
-sideloadable and signed with the local debug key; a store release needs its own keystore:
+sideloadable. It's signed with the keystore at `%USERPROFILE%\.timbratune\android\timbratune.keystore` (`~/.timbratune/android/`
+on Linux; password in `password.txt` beside it, written twice on two lines, or `TIMBRATUNE_KEYSTORE` for the path and `TIMBRATUNE_KEYSTORE_PASS` for the password),
+else with the local debug key. An app can only be updated by an APK signed with the same key:
 
 ```powershell
 dotnet publish src/Reyfen.Timbratune.Android -c Release -f net10.0-android -o publish/Timbratune-android `

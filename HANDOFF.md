@@ -2,7 +2,7 @@
 
 This file brings a new engineer or agent up to date on everything done so far: what the user asked for, what was decided and why, how the code is organised, what was measured, and what is still open.
 
-Last updated 2026-10-16. The newest work is §8i–§8s (refactoring P0: golden, architecture, bench and phone baselines; P1: dependency injection and shared ports; P2: storage, settings and scheduling seams; P3: UI feature modules; P4: import formats; P5: analysis tracks; P6: metric modules; P7: registry-driven UI; P8: telemetry groundwork; P9: final performance check; P10: documentation, the refactoring is done); §8d–§8h cover v0.2.0 (Android performance, export, one folder per take, import, `build.ps1`); §8 is the current state.
+Last updated 2026-10-18 (§10: Android signing and the Play Store). The newest work is §8i–§8s (refactoring P0: golden, architecture, bench and phone baselines; P1: dependency injection and shared ports; P2: storage, settings and scheduling seams; P3: UI feature modules; P4: import formats; P5: analysis tracks; P6: metric modules; P7: registry-driven UI; P8: telemetry groundwork; P9: final performance check; P10: documentation, the refactoring is done); §8d–§8h cover v0.2.0 (Android performance, export, one folder per take, import, `build.ps1`); §8 is the current state.
 
 **Name:** the project is **Timbratune — Gender Voice Analysis Tool**, by **Reyfen**.
 - **Before 2026-10-02 it was called Euphonia**, and it is a fork of [Euphonia](https://github.com/Yuuzulight/Euphonia). Older parts of this file and of the transcript say "Euphonia" and "Euphonia-CSharp"; read those as Timbratune and the repo root (the code moved from `Timbratune/` to the root on 2026-10-06).
@@ -1281,10 +1281,30 @@ Phase P10 of `REFACTOR-PLAN.md` closes the refactoring of v0.3.0 (P0–P10, §8i
 - Report `tools/live-steadiness` numbers in a test with bounds, so steadiness regressions get caught.
 - Finish the Mint desktop VM check (§8a).
 - Fix Android's 16 KB page alignment (§8a).
-- Use a release keystore and an AAB for the Play Store.
+- An AAB for the Play Store (the release keystore is done, §10), and move the phones to that key (one uninstall each after a takes backup, §10).
 - Re-measure the Pixel 4a with the jank fixes, and push the remaining 2–3 % janky frames on the Pixel 9 down (§8d).
 - Implement the PDF export (§8e), and use `TakeArchive.Read` for previews or a richer import.
 - Install a real Android SDK on the user's side, and optionally clear the hidden copy in Claude's AppData (§8h).
 - On a phone: the `.tmbr` export and import through Android's file pickers, the move to the USB-visible folder, and the series cost after Stop (§8e, §8f).
 - Live charts in the light theme have pale zone bands; their contrast could be improved.
 - Port to macOS and iOS: same pattern, SoundFlow has natives for both.
+
+## 10. Android signing and the Play Store (2026-10-18)
+
+**Why:** Android installs an update only when it's signed with the installed app's key, and the only way past a key change is an uninstall, which deletes the takes. The builds used the per-machine .NET debug key (`Xamarin\Mono for Android\debug.keystore` under `%LOCALAPPDATA%`), and Claude's shells have their own AppData (MSIX, §8h), so there were two keys: the owner's (cert SHA-256 `dfbe7de8…`) and Claude's (`908963dc…`). On 2026-10-18 the owner's release APK failed on the Pixel 9 with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`; the phones carry Claude's key.
+
+**Where the key is:**
+- **Keystore:** `%USERPROFILE%\.timbratune\android\timbratune.keystore` (`C:\Users\mihai\.timbratune\android\`), PKCS12, alias `timbratune`, RSA 4096, valid until 2056, `CN=Timbratune, O=Reyfen`. Cert SHA-256 `A7:9B:BD:B4:34:89:A1:2E:1F:2D:3E:A5:3F:80:AD:FF:C2:9F:5E:09:02:87:16:C2:90:0C:6A:56:3F:EA:D2:F5`.
+- **Password:** `password.txt` beside it, holding the password **twice, on two lines**: store and key share one password (PKCS12), and apksigner, given the same file for both, reads the store password from line 1 and the key password from line 2 (one line fails with "end of file reached"). Never in the repo, never printed in logs or chat.
+- Outside AppData so the owner's shells and Claude's see the same file, and outside the repo so it's never committed (and survives a fresh clone).
+- **GitHub Actions secrets** on `Reyfen/Timbratune`: `ANDROID_KEYSTORE_B64` (the keystore, base64) and `ANDROID_KEYSTORE_PASS`, for a future CI build (none exists yet). Secrets are write-only, so they are **not a backup**: the owner keeps a copy of the folder (password manager or offline). Losing the key means one more uninstall per phone, and for Play see below.
+
+**How builds use it:** `Reyfen.Timbratune.Android.csproj` signs every configuration (Release, Debug, profiling, the phone-bench builds) with it when the file exists: `AndroidKeyStore=true`, `AndroidSigningKeyStore`, alias `timbratune`, password `file:…/password.txt`. Overrides: `TIMBRATUNE_KEYSTORE` (path) and `TIMBRATUNE_KEYSTORE_PASS` (password, takes precedence over the file), or `-p:TimbratuneKeystore=…`. Without the file the build falls back to the machine's debug key with a warning, and `build.ps1` prints `Key: …` either way. On another machine or in WSL, copy the folder to that user's `~/.timbratune/android/`.
+
+**Verified (2026-10-18, `apksigner verify --print-certs`):** `./build.ps1 android debug` and `./build.ps1 android` from Claude's shell, and `./build.ps1 android debug` from the owner's own shell (the desktop app's Terminal panel, which sees the owner's AppData), all give `CN=Timbratune, O=Reyfen`, SHA-256 `a79bbdb4…d2f5`. A `.gitignore` guard (`*.keystore`, `*.jks`) keeps a stray copy out of git.
+
+**Checking an APK's key:** `<sdk>/build-tools/<ver>/apksigner verify --print-certs <apk>`; on a phone, `adb shell dumpsys package com.reyfen.timbratune | grep -A2 signatures` (or compare with the APK's cert).
+
+**Moving the phones over** (once per phone, not done yet; ask the owner first): the installed app has Claude's debug key, so the first Timbratune-key APK needs an uninstall. Back up the takes before that: the in-app `.tmbr` export of each take, or `adb pull /sdcard/Android/data/com.reyfen.timbratune/files/takes` (on Android 17 the shell can't read `take.wav` there, §8d/§8h, so use the export for those). Then uninstall, install the new APK, import the backup, and check the take count.
+
+**Google Play:** Play needs an AAB (`AndroidPackageFormat=aab`, not set yet) and uses Play App Signing: Google signs what users install with an *app signing key*, and the developer signs uploads with an *upload key*. This keystore can be either. As the upload key only, Play's installs carry Google's key, so a sideloaded APK and the Play app can't update each other (one uninstall to switch). To keep them interchangeable, give Play this key as the app signing key when enrolling ("use your own key", Google's PEPK tool) and optionally make a separate upload key. Its validity (2056) meets Play's requirement of beyond 2033-10-22.
