@@ -1413,6 +1413,41 @@ Against v0.3.0 the cost fell from −4.3 to −1.6 fps, from +2.2 to +1.0 points
 - **All other UI: about 5 s (10 %)** (`nocharts`: UI 4.0, render 0.5, other 0.5): the page, the clock, the live take cards (0.15 s), and the profiling build's own stall watch (it wakes the UI thread every 16 ms).
 - **Windows** has CPU to spare (24 cores): the analysis is 2,978 ms per 27.6 s take on 2 cores and the graphs' data 312 ms (`analysis-bench`); the desktop build has no probe sink for drawing, so drawing wasn't split out there.
 
+## 8u. v0.4.0: cutting the live cost, measured (2026-10-17)
+
+The owner asked for options 1–6 of §8t's list, then a check of the accuracy and how visible the change is, on the Pixel 4a first (the Pixel 9 later, before and after). What stays:
+
+- **Live analysis on one core** (`04d7f16`): `NativeAnalysisScheduler.DefaultLiveCores` = 1 (was 2, chosen on the Pixel 9 in §8d). The results are bit-identical: `analysis-bench` gives the same live and saved hashes on 1 and 2 cores.
+- **Charts in layers, a cheaper pitch contour** (`ef4e59e`): `Controls/ChartLayer.cs` (`ChartLayer`, `LayeredChart`). `TimelineChart` is a background layer (zone bands, axis labels) and a line layer; `ContourChart` is a background (bands, floor line, pitch axis), the contour (phrase dividers, runs, phrase dots, the current point) and a top layer (the floor label's plate, time axis, legend). `LineEasing` takes a `redraw` action, so a glide only redraws the line's layer and the compositor keeps the others. The contour layer allocates nothing per frame but the line's geometry (cached pens and brushes), and the phrase dots' tooltips are written on hover only. A saved take's chart is pixel-identical to `00ae467`'s (desktop screenshots of the same take: 0 of 1,141,824 pixels differ).
+
+What was tried and taken out again (`a3baf17`), because on the phone it saved nothing:
+
+- **Option 4, the glide at 30 fps** (`LineEasing` skipped every other frame on a clock shared by all lines). At a 30 ms minimum gap, frame-time jitter made 10 % of the frames come 50 ms apart; at 24 ms still 6.5 %. With the switch `ease60` (every frame) the same build used 34.5 s of CPU against 35.7 s paced, with 3.3 % of frames over 40 ms against 11.0 %. Requesting a frame and then not drawing seems to cost about as much as drawing, now that only the line layers redraw.
+- **Option 5, updates every 200 ms**: 35.5 s with `tick100` against 35.7 s at 200 ms. The analysis' work is per frame of audio, so fewer updates each do more (median update 43 → 64 ms), and the lines glide all the time either way. Its accuracy cost, measured with `tools/live-steadiness` (now `-tick MS`, and a **shown error**: every 50 ms of audio, the newest dot on screen against the final line at that moment) on 61 takes (60 of `mix_ears`, plus `long.wav`): each dot is exactly as accurate when it arrives (dot error unchanged), but between updates the screen is staler. Shown error (% of the graph's range, 100 → 200 ms, 95 % interval): pitch 16.21 → 17.57 (+1.35, [+0.77, +1.95]; about 3.5 Hz, 2.5 px of the 186 px plot), loudness +0.93, HNR +0.53, weight +1.12, F2 +0.12 and F3 +0.32 (both within noise). Each glide's step about doubles (pitch 7.8 → 12.6 % of the range per update). A single take is too noisy for the formant lines: on `long.wav` alone F2's shown error went 54.6 / 44.6 / 51.8 / 56.2 / 54.3 / 51.1 / 41.9 % at ticks of 50 / 100 / 150 / 200 / 250 / 300 / 500 ms.
+- **Option 6, live HNR every other update**: not built. HNR's frame work is incremental (each frame is measured once, whatever the update rate); only its per-update path is not, 216 ms per 27.6 s take on the desktop (`analysis-bench -probes`), so skipping every other update would save about 0.1 s per take on the desktop and well under 1 s on the 4a, and the HNR line would move at half the rate.
+
+**Pixel 4a, final A/B** (`a3baf17` against the §8t breakdown build `f69b3fd`, whose app code is `00ae467`'s; Release profiling builds, research app id, 6 alternating pairs, 28 s fake-mic recordings of `long.wav`, battery 62–65 %, `ab.sh`, `analyze.py`, `threads.py`):
+
+| Median of 6 | before | after |
+|---|---|---|
+| App CPU while recording | 50.6 s (1.8 cores) | **39.2 s** (−22 %) |
+| UI thread / render threads | 11.3 / 9.3 s | 8.4 / 7.6 s |
+| Live analysis thread / thread pool | 8.1 / 20.5 s | 17.7 / 3.8 s |
+| Device busy (8 cores) | 28.2 % | 23.5 % |
+| Frames over 25 ms ("janky") | 11.4 % | **7.4 %** (p 0.014) |
+| Frames over 40 ms | 3.6 % | **2.1 %** (p 0.014) |
+| fps over the recording | 50.3 | 47.6 (fewer updates, so fewer glides to draw) |
+| UI stalls | 25.5 | 11 |
+| Live updates / median update | 214 / 43 ms | 195 / 43 ms |
+| Full update (median) | 61 ms | 71 ms |
+| Stop to saved | 5.87 s | 5.85 s |
+
+Against §8t's switches: one core alone was 41.3 s, so the chart layers and the cheaper contour add about −2 s (UI 10.0 → 8.4 s, render 8.2 → 7.6 s). What the eye sees: the same charts (pixel-identical when still); the dots are about 9 % fewer per second (195 against 214 updates, a slow update on one core makes the next tick wait), which by the 100 → 200 ms numbers above is worth about +0.1–0.2 % of a graph's range, not visible.
+
+**Tools:** `analysis-bench -cores N -tick MS` and the live replay's process CPU; `live-steadiness -tick MS` and the shown error; `phone-bench` `'>40ms%'` (the late frames of content drawn at 30 fps, where every frame is over the 25 ms "janky" line). In the earlier runs of this round `janky%` read 72–75 % for the paced build for that reason.
+
+**Next:** the same A/B on the Pixel 9 (Android 17, 60 Hz; coordinates in `tools/phone-bench/README.md`). §8d chose two cores there, so check that one core doesn't drop frames on it before keeping 1 for every head.
+
 ## 8. Current state, at the time of writing
 
 **Branches (2026-10-10):** the user renamed them on GitHub: `dev` became `main` (everything up to `bc1ce48`, tagged `v0.1.0`), and `v0.2.0` became `dev/v0.2.0` (§8d–§8h, up to `8e88ea6`; not merged into `main` yet). The local branches were renamed to match and track `origin/main` and `origin/dev/v0.2.0`. The old `v0.2.0` branch name clashed with a `v0.2.0` tag; `dev/…` names can't coexist with a branch called `dev`. Commit `9c752e6`'s subject starts with a stray UTF-8 BOM from PowerShell 5.1's `Out-File`; write commit messages without a BOM.

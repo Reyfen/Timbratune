@@ -6,7 +6,7 @@
 
 `REFACTOR-PLAN.md` is the architecture (feature modules, per-metric analysis, import formats, telemetry, future accounts and browser build) and the record of the refactoring that built it (done in v0.3.0). Read it before structural changes; to add a feature or a metric, follow its checklists (§13, §14).
 
-`RESONANCE-PLAN.md` is the v0.4.0 port of the research formant ceiling that follows the voice and of perceived size (research clone `C:\Projects\Reyfen\Timbratune-research`, `HANDOFF-RESEARCH.md`), phase by phase; HANDOFF §8t records what was built and measured. Read both before changing formants, resonance or size.
+`RESONANCE-PLAN.md` is the v0.4.0 port of the research formant ceiling that follows the voice and of perceived size (research clone `C:\Projects\Reyfen\Timbratune-research`, `HANDOFF-RESEARCH.md`), phase by phase; HANDOFF §8t records what was built and measured, §8u the cut in its live cost. Read both before changing formants, resonance or size.
 
 `NOISE-PLAN.md` is the measured plan for noise and microphone robustness (high-pass, noise reduction, stray voicing, recording-quality notes), with the bench in `tools/noise-bench`. Read it before changing the analysis input or pitch post-processing.
 
