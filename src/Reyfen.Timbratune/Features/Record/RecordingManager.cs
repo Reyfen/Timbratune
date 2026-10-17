@@ -27,6 +27,9 @@ public sealed class RecordingManager : ILiveSession
     private static readonly TimeSpan FullInterval = TimeSpan.FromSeconds(1);
 
     private readonly IAudioRecorder _recorder;
+
+    /// <summary>The recorder's microphone choice; null when it can't choose (the fake-mic replay).</summary>
+    public IInputDeviceSelection? InputDevices => _recorder as IInputDeviceSelection;
     private readonly IAnalysisEngine _engine;
     private readonly RecordingStore _store;
     private readonly IAnalysisScheduler _scheduler;

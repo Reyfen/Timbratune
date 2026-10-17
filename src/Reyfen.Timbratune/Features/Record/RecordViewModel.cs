@@ -3,6 +3,7 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.DependencyInjection;
+using Reyfen.Timbratune.Core.Storage.Settings;
 using Reyfen.Timbratune.Shared;
 using Reyfen.Timbratune.Shared.State;
 
@@ -22,9 +23,10 @@ public sealed partial class RecordViewModel : ObservableObject
     private readonly Stopwatch _elapsed = new();
     private readonly Stopwatch _analysisClock = new();
 
-    public RecordViewModel(RecordingManager manager)
+    public RecordViewModel(RecordingManager manager, MicrophonePickerViewModel microphone)
     {
         _manager = manager;
+        Microphone = microphone;
         _clock = new DispatcherTimer(TimeSpan.FromMilliseconds(250), DispatcherPriority.Background,
             (_, _) => OnPropertyChanged(nameof(ElapsedText)));
     }
@@ -60,6 +62,9 @@ public sealed partial class RecordViewModel : ObservableObject
     }
 
     [ObservableProperty] private string? _errorDetail;
+
+    /// <summary>The microphone picker (while idle).</summary>
+    public MicrophonePickerViewModel Microphone { get; }
 
     /// <summary>
     /// What the Shell puts in the panel: next to the record button while idle (the Import button),
@@ -148,6 +153,8 @@ public static class RecordingFeature
     {
         services.AddSingleton<RecordingManager>();
         services.AddSingleton<ILiveSession>(sp => sp.GetRequiredService<RecordingManager>());
+        services.AddSingleton<ISettingKey>(RecordSettings.Microphone);
+        services.AddSingleton<MicrophonePickerViewModel>();
         services.AddSingleton<RecordViewModel>();
         return services;
     }

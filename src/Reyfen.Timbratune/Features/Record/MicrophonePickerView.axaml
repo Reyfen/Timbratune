@@ -1,0 +1,16 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:rc="using:Reyfen.Timbratune.Features.Record"
+             x:Class="Reyfen.Timbratune.Features.Record.MicrophonePickerView"
+             x:DataType="rc:MicrophonePickerViewModel">
+  <!-- The microphone picker (record panel, while idle); the list is asked for again each time it opens. -->
+  <StackPanel Spacing="4" IsVisible="{Binding IsVisible}">
+    <StackPanel Orientation="Horizontal" Spacing="8">
+      <TextBlock Classes="cap" VerticalAlignment="Center" Text="microphone:" />
+      <ComboBox x:Name="Picker" Classes="pill" ItemsSource="{Binding Options}" SelectedItem="{Binding Selected}" MinWidth="150"
+                MaxWidth="320" DropDownOpened="OnDropDownOpened" />
+    </StackPanel>
+    <TextBlock Classes="sub" TextWrapping="Wrap" Text="{Binding Note}"
+               IsVisible="{Binding Note, Converter={x:Static ObjectConverters.IsNotNull}}" />
+  </StackPanel>
+</UserControl>

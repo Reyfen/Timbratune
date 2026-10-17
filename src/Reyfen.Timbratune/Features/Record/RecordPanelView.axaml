@@ -16,6 +16,7 @@
           <TextBlock Classes="cap" VerticalAlignment="Center" Text="live graphs show:" />
           <ContentControl Content="{Binding WindowPicker}" />
         </StackPanel>
+        <ContentControl Content="{Binding Microphone}" Margin="0,0,0,6" VerticalAlignment="Center" />
       </WrapPanel>
       <WrapPanel IsVisible="{Binding IsRecording}">
         <Button Classes="live" Margin="0,0,12,6" Content="⏹️ stop &amp; analyze" Command="{Binding StopCommand}" />

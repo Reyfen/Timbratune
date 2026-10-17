@@ -3,6 +3,7 @@ using Avalonia.Controls.Templates;
 using Reyfen.Timbratune.Features.Import;
 using Reyfen.Timbratune.Features.LiveMonitor;
 using Reyfen.Timbratune.Features.MetricCompare;
+using Reyfen.Timbratune.Features.Record;
 using Reyfen.Timbratune.Features.TakeActions;
 using Reyfen.Timbratune.Features.TakeDetails;
 using Reyfen.Timbratune.Shell;
@@ -23,6 +24,7 @@ public sealed class ViewLocator : IDataTemplate
         [typeof(TakeViewModel)] = () => new TakeView(),
         [typeof(LiveTimelinesViewModel)] = () => new LiveTimelinesView(),
         [typeof(LiveMonitorViewModel)] = () => new LiveWindowPickerView(),
+        [typeof(MicrophonePickerViewModel)] = () => new MicrophonePickerView(),
         [typeof(MetricModalViewModel)] = () => new MetricModalView(),
         [typeof(TakeDialogViewModel)] = () => new TakeDialogView(),
         [typeof(ImportViewModel)] = () => new ImportButtonView(),

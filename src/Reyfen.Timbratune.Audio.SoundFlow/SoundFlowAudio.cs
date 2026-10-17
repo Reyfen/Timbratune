@@ -45,8 +45,40 @@ public sealed class SoundFlowAudio : IDisposable
 /// miniaudio's start/stop waits for the audio thread (on Android/AAudio it would otherwise
 /// deadlock with a callback waiting for the same lock, freezing the UI thread).
 /// </summary>
-internal sealed class SoundFlowRecorder(MiniAudioEngine engine) : IAudioRecorder
+internal sealed class SoundFlowRecorder(MiniAudioEngine engine) : IAudioRecorder, IInputDeviceSelection
 {
+    public string? InputDeviceName { get; set; }
+
+    public string? ActiveInputDevice { get; private set; }
+
+    public IReadOnlyList<AudioInputDevice> InputDevices()
+    {
+        lock (_gate)
+        {
+            engine.UpdateAudioDevicesInfo();
+            var devices = new List<AudioInputDevice>();
+            foreach (var d in engine.CaptureDevices) devices.Add(new AudioInputDevice(d.Name, d.IsDefault));
+            return devices;
+        }
+    }
+
+    /// <summary>The chosen device if it is connected now, else null (the default). The caller holds <c>_gate</c>.</summary>
+    private DeviceInfo? ChosenDevice()
+    {
+        if (string.IsNullOrEmpty(InputDeviceName)) return null;
+        engine.UpdateAudioDevicesInfo();
+        foreach (var d in engine.CaptureDevices)
+            if (d.Name == InputDeviceName) return d;
+        return null;
+    }
+
+    private string? DefaultDeviceName()
+    {
+        foreach (var d in engine.CaptureDevices)
+            if (d.IsDefault) return d.Name;
+        return null;
+    }
+
     private readonly object _gate = new();
     private readonly object _write = new();
     private AudioCaptureDevice? _device;
@@ -68,7 +100,9 @@ internal sealed class SoundFlowRecorder(MiniAudioEngine engine) : IAudioRecorder
             lock (_write) _writer = writer;
             try
             {
-                _device = engine.InitializeCaptureDevice(null, SoundFlowAudio.Format(1));
+                var chosen = ChosenDevice();
+                _device = engine.InitializeCaptureDevice(chosen, SoundFlowAudio.Format(1));
+                ActiveInputDevice = chosen?.Name ?? DefaultDeviceName();
                 _device.OnAudioProcessed += OnSamples;
                 _device.Start();
             }
