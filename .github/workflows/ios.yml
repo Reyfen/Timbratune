@@ -1,0 +1,103 @@
+# iOS: builds the signed App Store .ipa on a macOS runner and uploads it to TestFlight.
+# Secrets (Settings › Secrets and variables › Actions), see IOS.md:
+#   IOS_CERTIFICATE_P12        base64 of the Apple Distribution certificate (.p12)
+#   IOS_CERTIFICATE_PASSWORD   its password
+#   IOS_PROVISIONING_PROFILE   base64 of "Timbratune AppStore" (.mobileprovision)
+#   ASC_KEY_ID, ASC_ISSUER_ID  App Store Connect API key (Users and Access › Integrations)
+#   ASC_PRIVATE_KEY            the key's .p8 file, as text
+name: iOS
+
+on:
+  push:
+    branches: [feature/ios]
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      upload:
+        description: Upload to TestFlight
+        type: boolean
+        default: true
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          xcode="$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
+          sudo xcode-select -s "$xcode/Contents/Developer"
+          xcodebuild -version
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install the ios workload
+        run: dotnet workload install ios
+
+      - name: Install the certificate and profile
+        env:
+          P12: ${{ secrets.IOS_CERTIFICATE_P12 }}
+          P12_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          PROFILE: ${{ secrets.IOS_PROVISIONING_PROFILE }}
+        run: |
+          if [ -z "$P12" ] || [ -z "$PROFILE" ]; then
+            echo "::error::IOS_CERTIFICATE_P12 and IOS_PROVISIONING_PROFILE secrets are needed (see IOS.md)"; exit 1
+          fi
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          keychain_password="$(uuidgen)"
+          echo "$P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$RUNNER_TEMP/cert.p12" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
+          security set-key-partition-list -S apple-tool:,apple: -k "$keychain_password" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/cert.p12"
+
+          echo "$PROFILE" | base64 --decode > "$RUNNER_TEMP/profile.mobileprovision"
+          uuid="$(security cms -D -i "$RUNNER_TEMP/profile.mobileprovision" | plutil -extract UUID raw -)"
+          for dir in "$HOME/Library/MobileDevice/Provisioning Profiles" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
+            mkdir -p "$dir"
+            cp "$RUNNER_TEMP/profile.mobileprovision" "$dir/$uuid.mobileprovision"
+          done
+          security find-identity -v -p codesigning "$keychain"
+
+      - name: Install the App Store Connect key
+        if: github.event_name != 'workflow_dispatch' || inputs.upload
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.appstoreconnect/private_keys
+          printf '%s\n' "$ASC_PRIVATE_KEY" > ~/.appstoreconnect/private_keys/AuthKey_$ASC_KEY_ID.p8
+
+      - name: Build and upload
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          UPLOAD: ${{ github.event_name != 'workflow_dispatch' || inputs.upload }}
+        run: |
+          args=(--build-number "${{ github.run_number }}")
+          if [ "$UPLOAD" = true ]; then args+=(--upload); fi
+          scripts/build-ios.sh "${args[@]}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Timbratune-ios-${{ github.run_number }}
+          path: publish/Timbratune-ios/*.ipa
+          if-no-files-found: error
+
+      - name: Remove the signing keychain
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true
