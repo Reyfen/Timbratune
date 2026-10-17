@@ -4,13 +4,15 @@
 //                post-process, series), all cores, as after Stop
 //   live         the take replayed through LiveAnalyzer as the app records it: 10 ms chunks, an
 //                update every 100 ms (a full one every 10th, quick ones between), on one thread
-//                with its loops limited to 2 cores (LiveWorker), then the final update
+//                with its loops limited like LiveWorker's (-cores), then the final update
 //   live.compute LiveTimelinesViewModel.Compute on each snapshot (the smoothing, same thread)
 // Allocations are GC.GetTotalAllocatedBytes(precise) around the measured work: the loops run on
 // pool threads too, which a per-thread count would miss. Results are hashed (SHA-256 of the
 // JSON the store would write) so a run on other code also shows whether the numbers moved.
 // Without a WAV it builds the ~27.6 s take of scripts/make-long-wav.ps1 from the fixtures.
 // -probes: also the time of each Timing probe (analysis.*, live.*) per run, summed over its calls.
+// -cores N: the live loops' core limit (default: the app's, NativeAnalysisScheduler.DefaultLiveCores).
+// -tick MS: the live update interval (default 100); a full update about once a second.
 using Reyfen.Timbratune.Core.Analysis.Metrics;
 using Reyfen.Timbratune.Core.Analysis.Metrics.Clarity;
 using Reyfen.Timbratune.Core.Analysis.Metrics.Loudness;
@@ -39,6 +41,8 @@ string? wavArg = null, outPath = null, baselinePath = null;
 var runs = 10;
 var types = false;
 var probes = false;
+var liveCores = NativeAnalysisScheduler.DefaultLiveCores;
+var tickMs = 100;
 for (var i = 0; i < args.Length; i++)
 {
     switch (args[i])
@@ -48,6 +52,8 @@ for (var i = 0; i < args.Length; i++)
         case "-baseline": baselinePath = args[++i]; break;
         case "-types": types = true; break;
         case "-probes": probes = true; break;
+        case "-cores": liveCores = int.Parse(args[++i]); break;
+        case "-tick": tickMs = int.Parse(args[++i]); break;
         default: wavArg = args[i]; break;
     }
 }
@@ -73,6 +79,7 @@ var fullAlloc = new List<double>();
 var lightTicks = new List<double>();
 var fullTicks = new List<double>();
 var liveTotal = new List<double>();
+var liveCpu = new List<double>();
 var liveAlloc = new List<double>();
 var computeTotal = new List<double>();
 var computeAlloc = new List<double>();
@@ -95,7 +102,9 @@ for (var run = 0; run <= runs; run++)
     savedHash ??= Hash(TimbratuneJson.WriteRecordings([result.Metrics]), TimbratuneJson.WriteDetail(result.Detail), SeriesJson(result));
 
     // Live, on its own thread like LiveWorker.
-    var live = RunLive(mono, fs);
+    var cpu0 = Process.GetCurrentProcess().TotalProcessorTime;
+    var live = RunLive(mono, fs, liveCores, tickMs);
+    var cpu1 = Process.GetCurrentProcess().TotalProcessorTime;
     if (warmUp)
     {
         probeTotals.Clear();
@@ -106,6 +115,7 @@ for (var run = 0; run <= runs; run++)
     lightTicks.AddRange(live.Light);
     fullTicks.AddRange(live.Full);
     liveTotal.Add(live.UpdateMs);
+    liveCpu.Add((cpu1 - cpu0).TotalMilliseconds);
     liveAlloc.Add(live.UpdateBytes / 1e6 / seconds);
     computeTotal.Add(live.ComputeMs);
     computeAlloc.Add(live.ComputeBytes / 1e6 / seconds);
@@ -122,6 +132,7 @@ var report = new JsonObject
     ["live_update_light_ms"] = Median(lightTicks),
     ["live_update_full_ms"] = Median(fullTicks),
     ["live_update_total_ms"] = Median(liveTotal),
+    ["live_cpu_ms"] = Median(liveCpu),
     ["live_alloc_mb_per_s"] = Median(liveAlloc),
     ["live_compute_total_ms"] = Median(computeTotal),
     ["live_compute_alloc_mb_per_s"] = Median(computeAlloc),
@@ -137,6 +148,7 @@ Row("live update, quick (ms/tick)", lightTicks);
 Row("live update, full (ms/tick)", fullTicks);
 Console.WriteLine($"{"live update, p95 (ms/tick)",-30} {Percentile([.. lightTicks, .. fullTicks], 0.95),10:0.###}");
 Row("live updates, whole take (ms)", liveTotal);
+Row("live CPU, whole take (ms)", liveCpu);
 Row("live alloc (MB/s of audio)", liveAlloc);
 Row("live.compute, whole take (ms)", computeTotal);
 Row("live.compute alloc (MB/s)", computeAlloc);
@@ -195,17 +207,18 @@ if (baselinePath is not null)
 if (wavArg is null) File.Delete(wav);
 return exit;
 
-static LiveRun RunLive(double[] mono, double fs)
+static LiveRun RunLive(double[] mono, double fs, int cores, int tickMs)
 {
     LiveRun? run = null;
     var thread = new Thread(() =>
     {
-        using var limit = Parallelism.Limit(2); // as LiveWorker in the app
+        using var limit = Parallelism.Limit(cores); // as LiveWorker in the app
         var window = LiveWindowOption.All[0].Seconds;
         var lines = LiveLine.From(MetricRegistry.Default);
         var live = new LiveAnalyzer(fs);
         var chunk = (int)Math.Round(fs / 100);
-        var tick = (int)Math.Round(fs / 10);
+        var tick = (int)Math.Round(fs * tickMs / 1000);
+        var fullEvery = Math.Max(1, (int)Math.Round(1000.0 / tickMs));
         var light = new List<double>();
         var fullTicks = new List<double>();
         double updateMs = 0, computeMs = 0;
@@ -219,7 +232,7 @@ static LiveRun RunLive(double[] mono, double fs)
             i += count;
             if (i < next) continue;
             next += tick;
-            var isFull = n++ % 10 == 0;
+            var isFull = n++ % fullEvery == 0;
             var (snapshot, ms, bytes) = Measure(() => live.Update(full: isFull));
             (isFull ? fullTicks : light).Add(ms);
             updateMs += ms;
@@ -321,7 +334,7 @@ static string LongWav()
 static void AllocationsByType(double[] mono, double fs)
 {
     using var listener = new AllocationListener();
-    RunLive(mono, fs);
+    RunLive(mono, fs, NativeAnalysisScheduler.DefaultLiveCores, 100);
     Console.WriteLine();
     Console.WriteLine("live allocations by type (AllocationTick samples, live updates + compute):");
     foreach (var (type, bytes) in listener.ByType.OrderByDescending(kv => kv.Value).Take(15))

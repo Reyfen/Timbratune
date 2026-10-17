@@ -28,8 +28,12 @@ public interface IAnalysisScheduler
 /// </summary>
 public sealed class NativeAnalysisScheduler(int liveCores, Action? lowerThreadPriority) : IAnalysisScheduler, IDisposable
 {
-    /// <summary>The live analysis' cores on the native heads (measured on a Pixel 9, HANDOFF §8d).</summary>
-    public const int DefaultLiveCores = 2;
+    /// <summary>
+    /// The live analysis' cores on the native heads. Two were chosen on a Pixel 9 (HANDOFF §8d);
+    /// on a Pixel 4a one core does the same work with 18 % less CPU (the split's joins and hand-offs
+    /// cost more than they gain) and halves the dropped frames (HANDOFF §8t, §8u).
+    /// </summary>
+    public const int DefaultLiveCores = 1;
 
     /// <summary>The thread pool only: what tests, tools and the CLI use.</summary>
     public static NativeAnalysisScheduler Default { get; } = new(0, null);
