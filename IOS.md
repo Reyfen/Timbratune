@@ -20,7 +20,7 @@ it to App Store Connect, and keeps it as a run artifact. After Apple processes i
 shows in TestFlight. Once the workflow is on `main`, it can also be started by hand (Actions › iOS ›
 Run workflow), with or without the upload.
 
-On a Mac: install Xcode 26 (the newest 26.x; the project targets the iOS 26.0 SDK), the .NET 10 SDK and `dotnet workload install ios`, put the certificate
+On a Mac: install Xcode 26.5 (the project targets the iOS 26.0 SDK), the .NET 10 SDK and `dotnet workload install ios`, put the certificate
 in the keychain and the profile in Xcode, then run `scripts/build-ios.sh [--build-number N] [--upload]`.
 
 ## Secrets (one-time setup)

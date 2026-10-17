@@ -34,13 +34,12 @@ jobs:
 
       - name: Select Xcode
         run: |
-          # The newest Xcode of the iOS SDK's major version the project targets (net10.0-ios26.0 ->
-          # the newest Xcode 26.x; 26.0 itself can't compile asset catalogs on these runners, which
-          # lack its simulator runtime).
-          sdk="$(sed -n 's:.*<TargetFramework>net[0-9.]*-ios\([0-9.]*\)</TargetFramework>.*:\1:p' src/Reyfen.Timbratune.iOS/Reyfen.Timbratune.iOS.csproj)"
+          # Pinned. The project targets the iOS 26.0 SDK (net10.0-ios26.0, see its csproj); on the
+          # macos-26 image Xcode 26.0 can't compile asset catalogs (no 26.0 simulator runtime) and
+          # 26.6 lacks its macOS SDK, which actool needs. 26.5 works.
           ls -d /Applications/Xcode_*.app
-          xcode="$(ls -d /Applications/Xcode_"${sdk%%.*}".*.app | grep -viE 'beta|rc' | sort -V | tail -1)"
-          if [ -z "$xcode" ]; then echo "::error::No Xcode $sdk on this runner"; exit 1; fi
+          xcode="$(ls -d /Applications/Xcode_26.5*.app | sort -V | tail -1)"
+          if [ -z "$xcode" ]; then echo "::error::No Xcode 26.5 on this runner"; exit 1; fi
           sudo xcode-select -s "$xcode/Contents/Developer"
           xcodebuild -version
 
