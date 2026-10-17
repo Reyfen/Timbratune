@@ -37,6 +37,10 @@ public static class FormantCeilings
     /// </summary>
     public static double? GridOrigin(FormantCeilingMethod method) => method == FormantCeilingMethod.Legacy ? null : 0;
 
+    /// <summary>How a saved take's formants were measured (takes from before v0.4.0: Legacy).</summary>
+    public static FormantCeilingMethod MethodOf(Models.Recording take) =>
+        take.Formants.Method == Models.Formants.PathMethod ? FormantCeilingMethod.Path : FormantCeilingMethod.Legacy;
+
     /// <summary>The index of <see cref="FallbackHz"/> among <paramref name="candidates"/> (0 if absent).</summary>
     public static int FallbackIndex(IReadOnlyList<double> candidates)
     {

@@ -1,4 +1,5 @@
 using System.Text;
+using Reyfen.Timbratune.Core.Analysis;
 using Reyfen.Timbratune.Core.Json;
 using Reyfen.Timbratune.Core.Models;
 
@@ -14,6 +15,13 @@ namespace Reyfen.Timbratune.Core.Storage;
 public sealed class RecordingStore
 {
     public const string AudioName = "take.wav", TakeJson = "take.json", DetailJson = "detail.json", SeriesJson = "series.json";
+
+    /// <summary>
+    /// A take analysed by an older version keeps its numbers; analysed again with today's engine, the
+    /// new numbers are kept beside them in these files (RESONANCE-PLAN F7), never over them.
+    /// </summary>
+    public const string ReanalysedTakeJson = "take.reanalysed.json", ReanalysedDetailJson = "detail.reanalysed.json",
+        ReanalysedSeriesJson = "series.reanalysed.json";
 
     /// <summary>The folder of the data folder that holds the takes; <see cref="Recording.Audio"/> paths start with it.</summary>
     public const string TakesFolder = "takes";
@@ -144,6 +152,56 @@ public sealed class RecordingStore
             WriteText(take, DetailJson, TimbratuneJson.WriteDetail(detail));
             // take.json carries the analysis settings that come from the detail (e.g. the trend step).
             WriteTakeJsonUnlocked(take, recording, detail);
+        }
+    }
+
+    /// <summary>
+    /// Keeps <paramref name="reanalysed"/> (the take's audio analysed again, e.g. with a newer formant method)
+    /// beside the take's own files, replacing an earlier re-analysis; take.json, detail.json and series.json
+    /// are not touched. Its metrics carry the take's id, label, note and dates.
+    /// </summary>
+    public void SaveReanalysis(Recording recording, AnalysisResult reanalysed)
+    {
+        var metrics = reanalysed.Metrics;
+        (metrics.Id, metrics.Label, metrics.Note, metrics.Date, metrics.RecordedAt, metrics.SourceFile) =
+            (recording.Id, recording.Label, recording.Note, recording.Date, recording.RecordedAt, recording.SourceFile);
+        lock (_gate)
+        {
+            var take = TakeOf(recording);
+            if (reanalysed.Series is { } series)
+                _storage.Write(take, ReanalysedSeriesJson, stream => TimbratuneJson.WriteSeries(stream, series));
+            WriteText(take, ReanalysedDetailJson, TimbratuneJson.WriteDetail(reanalysed.Detail));
+            // Written last: its presence says the re-analysis is complete.
+            WriteText(take, ReanalysedTakeJson, TimbratuneJson.WriteRecordings([metrics]));
+        }
+    }
+
+    /// <summary>Whether the take has a complete re-analysis beside its own numbers.</summary>
+    public bool HasReanalysis(Recording recording) => SeriesTakeOf(recording) is { } take && _storage.Exists(take, ReanalysedTakeJson);
+
+    /// <summary>The take's re-analysis (<see cref="SaveReanalysis"/>); null if there is none or it can't be read.</summary>
+    public AnalysisResult? LoadReanalysis(Recording recording)
+    {
+        if (SeriesTakeOf(recording) is not { } take || !_storage.Exists(take, ReanalysedTakeJson)) return null;
+        try
+        {
+            string Text(string file)
+            {
+                using var reader = new StreamReader(_storage.OpenRead(take, file));
+                return reader.ReadToEnd();
+            }
+            if (TimbratuneJson.ReadRecordings(Text(ReanalysedTakeJson)) is not [var metrics]) return null;
+            var detail = _storage.Exists(take, ReanalysedDetailJson) ? TimbratuneJson.ReadDetail(Text(ReanalysedDetailJson)) : null;
+            if (detail is null) return null;
+            TakeSeries? series = null;
+            if (_storage.Exists(take, ReanalysedSeriesJson))
+                using (var stream = _storage.OpenRead(take, ReanalysedSeriesJson))
+                    series = TimbratuneJson.ReadSeries(stream);
+            return new AnalysisResult(metrics, detail, series);
+        }
+        catch (Exception)
+        {
+            return null;
         }
     }
 

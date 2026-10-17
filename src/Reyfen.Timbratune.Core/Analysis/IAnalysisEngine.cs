@@ -13,6 +13,13 @@ public interface IAnalysisEngine
     /// <summary>Human-readable reason when <see cref="IsAvailable"/> is false.</summary>
     string? UnavailableReason { get; }
 
+    /// <summary>
+    /// This engine measuring formants with <paramref name="method"/>: a take re-analysed for a
+    /// missing part (e.g. the trend backfill) must keep the method its numbers were made with.
+    /// Engines with one method (the Praat reference: Legacy) return themselves.
+    /// </summary>
+    IAnalysisEngine WithFormantMethod(Ceilings.FormantCeilingMethod method) => this;
+
     /// <param name="progress">Receives the fraction done (0–1) while the analysis runs, when the engine can tell.</param>
     Task<AnalysisResult> AnalyzeAsync(string wavPath, double registerFloorHz = AnalysisPostProcessor.DefaultRegisterFloorHz,
         CancellationToken cancellationToken = default, IProgress<double>? progress = null);

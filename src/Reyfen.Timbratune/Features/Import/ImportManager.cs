@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using CommunityToolkit.Mvvm.Messaging;
 using Reyfen.Timbratune.Core.Analysis;
+using Reyfen.Timbratune.Core.Analysis.Ceilings;
 using Reyfen.Timbratune.Core.Audio.Decoding;
 using Reyfen.Timbratune.Core.Diagnostics;
 using Reyfen.Timbratune.Core.Models;
@@ -160,7 +161,8 @@ public sealed class ImportManager
     /// <summary>
     /// Takes analyzed before the time trends existed have only the pitch-based trends (rebuilt
     /// from the contour). Re-run the analysis on the stored WAV once and save the fuller detail
-    /// file; whoever shows the take reloads it.
+    /// file; whoever shows the take reloads it. The formants are measured as the take's own were
+    /// (older takes: 5500/5000 Hz), so its trends and series match its cards.
     /// </summary>
     private async Task BackfillTrendsAsync(int takeId)
     {
@@ -170,7 +172,8 @@ public sealed class ImportManager
         try
         {
             var floor = take.Register?.FloorHz ?? AnalysisPostProcessor.DefaultRegisterFloorHz;
-            var result = await _engine.AnalyzeAsync(audio, floor);
+            var engine = _engine.WithFormantMethod(FormantCeilings.MethodOf(take));
+            var result = await engine.AnalyzeAsync(audio, floor);
             await Task.Run(() =>
             {
                 _store.SaveDetail(take, result.Detail);

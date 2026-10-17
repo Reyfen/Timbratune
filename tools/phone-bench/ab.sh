@@ -18,7 +18,8 @@ trap 'rmdir "$lock"' EXIT
 mkdir -p "$out"
 
 install() {
-  a install -r "$1" | grep -v -e Success -e Streamed
+  # -g: the runtime permissions (the microphone) granted at install, so no prompt covers the app.
+  a install -r -g "$1" | grep -v -e Success -e Streamed
 }
 
 # The app's external files folder exists once it has run: install A, start it once, push the take.

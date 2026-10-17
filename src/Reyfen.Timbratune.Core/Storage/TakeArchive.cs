@@ -110,8 +110,8 @@ public static class TakeArchive
         HnrStepS = AcousticsAnalysisEngine.HnrStep,
         // A take with a ceiling path records its main ceiling; older takes used 5500 Hz (and 5000 Hz).
         FormantCeilingHz = recording.Formants.CeilingHz ?? RawAnalysisAssembler.FormantCeiling,
-        FormantMethod = recording.Formants.CeilingHz is null ? "legacy" : "path",
-        FormantCeilingsHz = recording.Formants.CeilingHz is null ? null : [.. Analysis.Ceilings.FormantCeilings.PathCandidates],
+        FormantMethod = recording.Formants.Method ?? "legacy",
+        FormantCeilingsHz = recording.Formants.Method is null ? null : [.. Analysis.Ceilings.FormantCeilings.PathCandidates],
         FormantCount = AcousticsAnalysisEngine.FormantCount,
         FormantWindowS = AcousticsAnalysisEngine.FormantWindow,
         FormantStepS = AcousticsAnalysisEngine.FormantWindow / 4,

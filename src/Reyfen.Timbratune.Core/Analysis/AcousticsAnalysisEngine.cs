@@ -38,6 +38,9 @@ public sealed class AcousticsAnalysisEngine : IAnalysisEngine
     /// <summary>How the formant ceiling is chosen: the ceiling path, or analyze.py's 5500/5000 Hz (the parity tests, older takes).</summary>
     public FormantCeilingMethod FormantMethod { get; init; } = FormantCeilingMethod.Path;
 
+    public IAnalysisEngine WithFormantMethod(FormantCeilingMethod method) => method == FormantMethod ? this
+        : new AcousticsAnalysisEngine(_scheduler) { LoudOutlierFraction = LoudOutlierFraction, FormantMethod = method };
+
     public bool IsAvailable => true;
     public string? UnavailableReason => null;
 

@@ -47,6 +47,16 @@ public sealed class Pitch
 
 public sealed class Formants
 {
+    /// <summary>
+    /// How the formants were measured: "path" (the ceiling followed the voice, v0.4.0 and later);
+    /// null for takes measured at the fixed 5500/5000 Hz of older versions (<see cref="PathMethod"/>).
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? Method { get; set; }
+
+    /// <summary>The value of <see cref="Method"/> for the ceiling path.</summary>
+    public const string PathMethod = "path";
+
     public double? F1Hz { get; set; }
     public double? F2Hz { get; set; }
     public double? F3Hz { get; set; }

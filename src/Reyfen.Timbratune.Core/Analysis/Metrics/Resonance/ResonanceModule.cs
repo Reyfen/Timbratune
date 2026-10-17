@@ -84,6 +84,7 @@ public sealed class ResonanceModule : IMetricModule
         var switches = raw.Get(CeilingSwitchesKey);
         context.Metrics.Formants = new Formants
         {
+            Method = raw.FormantMethod == FormantCeilingMethod.Path ? Formants.PathMethod : null,
             F1Hz = Clean(formants.F1),
             F2Hz = Clean(formants.F2),
             F3Hz = Clean(formants.F3),
