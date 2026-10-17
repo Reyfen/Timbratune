@@ -25,7 +25,7 @@ internal sealed class AndroidFileSharer(Func<Activity?> currentActivity) : IFile
         await using (var target = File.Create(path))
             await write(target);
 
-        var uri = AndroidX.Core.Content.FileProvider.GetUriForFile(activity, ShareFileProvider.Authority, new Java.IO.File(path))!;
+        var uri = AndroidX.Core.Content.FileProvider.GetUriForFile(activity, ShareFileProvider.AuthorityOf(activity), new Java.IO.File(path))!;
         var send = new Intent(Intent.ActionSend);
         send.SetType(mimeType);
         send.PutExtra(Intent.ExtraStream, uri);
@@ -39,10 +39,12 @@ internal sealed class AndroidFileSharer(Func<Activity?> currentActivity) : IFile
 /// <summary>
 /// Serves cache/share/ (Resources/xml/share_paths.xml) to the app a file is shared with.
 /// Declared here rather than in the manifests, so the normal and the profiling manifest both get it.
+/// The authority follows the app id (the build fills in ${applicationId}), so a build with another
+/// id (e.g. the research and profiling builds, tools/phone-bench) installs next to the app.
 /// </summary>
-[ContentProvider([Authority], Exported = false, GrantUriPermissions = true)]
+[ContentProvider(["${applicationId}.fileprovider"], Exported = false, GrantUriPermissions = true)]
 [MetaData("android.support.FILE_PROVIDER_PATHS", Resource = "@xml/share_paths")]
 internal sealed class ShareFileProvider : AndroidX.Core.Content.FileProvider
 {
-    public const string Authority = "com.reyfen.timbratune.fileprovider";
+    public static string AuthorityOf(Context context) => context.PackageName + ".fileprovider";
 }
