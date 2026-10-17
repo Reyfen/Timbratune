@@ -34,9 +34,11 @@ jobs:
 
       - name: Select Xcode
         run: |
-          # The newest release: the ios workload follows Xcode (workload 27.x needs Xcode 27).
+          # The Xcode for the iOS SDK the project targets (net10.0-ios26.5 -> the newest Xcode 26.5.x).
+          sdk="$(sed -n 's:.*<TargetFramework>net[0-9.]*-ios\([0-9.]*\)</TargetFramework>.*:\1:p' src/Reyfen.Timbratune.iOS/Reyfen.Timbratune.iOS.csproj)"
           ls -d /Applications/Xcode_*.app
-          xcode="$(ls -d /Applications/Xcode_*.app | grep -viE 'beta|rc' | sort -V | tail -1)"
+          xcode="$(ls -d /Applications/Xcode_"$sdk"*.app | grep -viE 'beta|rc' | sort -V | tail -1)"
+          if [ -z "$xcode" ]; then echo "::error::No Xcode $sdk on this runner"; exit 1; fi
           sudo xcode-select -s "$xcode/Contents/Developer"
           xcodebuild -version
 
