@@ -129,7 +129,7 @@ public sealed class WeightModule : IMetricModule
     }
 
     /// <summary>H1* − A3* for one frame: both harmonics formant-corrected against F1–F3.</summary>
-    internal static double CorrectedH1A3(RawAnalysis.WeightRow w, double fs)
+    public static double CorrectedH1A3(RawAnalysis.WeightRow w, double fs)
     {
         var h1Corr = w.H1;
         var a3Corr = w.A3;
