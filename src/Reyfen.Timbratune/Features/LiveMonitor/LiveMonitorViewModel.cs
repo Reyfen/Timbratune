@@ -75,6 +75,9 @@ public sealed partial class LiveMonitorViewModel : ObservableObject
         if (Timelines is not { } timelines) return; // ended meanwhile
         // Experiment (profiling builds): "slowcharts" moves the graphs at most every 200 ms.
         if (Perf.Flags.Contains("slowcharts") && !snapshot.IsFinal && Stopwatch.GetElapsedTime(_chartsApplied).TotalMilliseconds < 200) return;
+        // "nocharts": the graphs don't move while recording (the analysis and their data still run), to
+        // measure what drawing them costs.
+        if (Perf.Flags.Contains("nocharts") && !snapshot.IsFinal) return;
         _chartsApplied = Stopwatch.GetTimestamp();
         using (Perf.Measure("live.apply")) timelines.Apply(frame);
     }
