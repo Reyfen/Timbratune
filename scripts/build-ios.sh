@@ -51,6 +51,15 @@ mv "$ipa" "$final"
 find "$out" -mindepth 1 -not -name "$(basename "$final")" -exec rm -rf {} + 2>/dev/null || true
 echo "Built $final"
 
+# The native libraries the app loads at start: a missing one only shows on a device, as a crash
+# (libSkiaSharp was missing in builds 9 and 10).
+for framework in libSkiaSharp libHarfBuzzSharp miniaudio; do
+  if ! unzip -l "$final" | grep -q "Frameworks/$framework.framework/$framework\$"; then
+    echo "$framework.framework is missing from the .ipa" >&2
+    exit 1
+  fi
+done
+
 if [ "$upload" = true ]; then
   : "${ASC_KEY_ID:?ASC_KEY_ID is needed for --upload}" "${ASC_ISSUER_ID:?ASC_ISSUER_ID is needed for --upload}"
   # With the app's Apple ID (App Store Connect › the app › App Information › Apple ID, a number)
