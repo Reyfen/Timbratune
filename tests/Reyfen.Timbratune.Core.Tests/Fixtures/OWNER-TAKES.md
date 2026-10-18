@@ -143,6 +143,102 @@ should read like each other (0–3, 12–15 and 24–30 s: 13.5–15.4 cm on bot
 3–9 s (16–17 cm) the new chooser's error, and the masculine stretch is the owner's call. No test pins this take yet
 (`owner_take25.praat.tsv` holds the per-moment references); the pin is the owner's decision.
 
+## The rainbow set (2026-10-18 evening): eight performances, four microphones each
+
+`Fixtures/rainbow/<performance>_<device>.wav`, 32 files, 124 MB, brought in through the app's own import conversion
+(`AnalysisWavSink`: 44.1 kHz mono 16-bit; the relay's two identical channels downmixed, the headset's 16 kHz
+upsampled). The text is the Rainbow passage (below; the passage the EARS bench reads too). The owner asked for all of
+it to be tests, now and in the repo; `RainbowTests` are those tests. No file clips. The cis woman and the cis man agreed
+to their recordings being in this public repository (the owner, 2026-10-19).
+
+The owner recorded each performance on four devices at once, so the four files of one performance are **one voice at
+one moment**, and any difference between their readings is the microphone's:
+
+| Device | File suffix | What it is | Signal |
+|---|---|---|---|
+| USB audio device | `_usb` | a USB microphone on the PC; **the reference** | 48 kHz; loud spectrum to 8 kHz; noise about 30 dB under the voice |
+| AudioRelay virtual mic | `_relay` | a phone's microphone relayed to the PC over the network | 48 kHz stereo, both channels identical; agrees with the reference within 0.7 cm of size on every performance |
+| Sony WH-1000XM5, hands-free | `_headset` | a Bluetooth headset in its call profile | **16 kHz** (the hands-free codec); noise 32–45 dB under |
+| Venus USB2.0 camera | `_cam` | a webcam's microphone | 48 kHz but quiet (−33 dB RMS) with the noise only 22–27 dB under the voice; the spectrum falls off early (99.9 % of the loud energy below about 3 kHz on most files) |
+
+The performances, with the owner's stated intent in the file name (the owner: "labeling can be a bit off"; the cis
+woman "a bit more awkward with tiny errors, as a speaker was reading text for the second time"):
+
+| Performance | Who / intent | Praat pitch, reference mic (p10–p90) | Praat HNR (cc, mean) | Length |
+|---|---|---|---|---|
+| `owner_extrahigh_small_light` | the owner: extra-high pitch, small, light | 314 Hz (294–341) | 21.7 dB | 45 s |
+| `owner_high_small_light` | the owner: high, small, light | 224 Hz (201–253) | 13.6 dB | 46 s |
+| `owner_high_small_light_breathy` | the same, breathy | 237 Hz (216–262) | 10.2 dB | 49 s |
+| `owner_high_large_light` | the owner: high, large, light | 201 Hz (182–235) | 12.3 dB | 44 s |
+| `owner_high_large_heavy` | the owner: high, large, heavy | 177 Hz (160–194) | 13.2 dB | 46 s |
+| `owner_low_small_heavy` | the owner: low, small, heavy | 99 Hz (84–120) | 11.6 dB | 41 s |
+| `cisfem` | a cis woman (another speaker) | 189 Hz (154–259) | 11.7 dB | 58 s |
+| `cismale` | a cis man (another speaker) | 95 Hz (80–120) | 8.9 dB | 39 s |
+
+The app's pitch medians agree with Praat's to the Hz on all 32 files. Note what the intents did to the pitch: the
+owner's "high" spans 177–238 Hz, lower the "larger" or "heavier" the intent (large light 201, large heavy 177): making
+the voice bigger or heavier lowered it, which is the confusion between the three the app is meant to untangle.
+
+**What the app reads (`CeilingScoring.Steady`, 2026-10-19), size in cm by microphone, and Praat's sweep on the
+reference microphone** (median F2 / F3 / F4 over the app's vowel rows at each fixed ceiling, with the size the F3–F4
+formula gives; the right ceiling for a voice is where these stop moving, and on these recordings they never do):
+
+| Performance | usb | relay | headset | cam | Praat 4500 | 5000 | 5500 | 6000 | 6500 |
+|---|---|---|---|---|---|---|---|---|---|
+| owner extra-high small light | 16.4 | 16.2 | 16.6 | 16.9 | 1191/2224/3219 → 19.4 | 1276/2451/3729 → 16.9 | 1345/2721/4033 → 15.5 | 1633/3125/4332 → 14.2 | 1884/3476/4828 → 12.8 |
+| owner high small light | 17.0 | 17.5 | 15.6 | 17.2 | 1498/2646/3405 → 17.5 | 1515/2641/3456 → 17.5 | 1819/2918/4105 → 14.9 | 2078/3123/4533 → 13.8 | 2431/3474/5013 → 12.5 |
+| owner high small light breathy | 17.1 | 16.8 | 16.1 | 17.3 | 1577/2621/3449 → 17.3 | 1581/2633/3516 → 17.1 | 1851/2925/3990 → 15.4 | 2192/3172/4507 → 13.8 | 2365/3509/5024 → 12.5 |
+| owner high large light | 17.2 | 17.0 | 15.8 | 17.3 | 1535/2623/3487 → 17.2 | 1459/2599/3455 → 17.5 | 1908/3021/4210 → 14.6 | 2233/3246/4469 → 13.8 | 2513/3889/5338 → 11.5 |
+| owner high large heavy | 15.3 | 15.2 | 18.7 | 17.7 | 1106/2358/3107 → 19.4 | 1574/2859/3594 → 16.5 | 2047/3062/3919 → 15.2 | 2532/3350/5157 → 12.3 | 2698/3610/5475 → 11.4 |
+| owner low small heavy | 16.9 | 16.3 | 19.9 | 18.1 | 1228/2240/2909 → 20.5 | 1415/2505/3194 → 18.6 | 1653/2736/3741 → 16.3 | 1860/2939/4531 → 13.9 | 2076/3153/4921 → 13.0 |
+| cis woman | 15.5 | 15.0 | 15.2 | 16.0 | 1435/2478/3485 → 17.6 | 1561/2757/3924 → 15.7 | 1590/2810/4024 → 15.4 | 1647/2937/4275 → 14.5 | 1785/3208/4521 → 13.6 |
+| cis man | 19.0 | 18.4 | 19.6 | 18.1 | 1283/2218/3118 → 19.8 | 1400/2339/3279 → 18.5 | 1568/2683/3960 → 15.7 | 1794/2975/4327 → 14.6 | 1883/3084/4558 → 13.9 |
+
+What the set shows (HANDOFF §8z has the per-piece tables):
+
+- **The microphone changes the formants, and so the size, by up to 3.6 cm.** The reference and the relay agree
+  (0.1–0.7 cm); the headset reads the owner's heavy and low voices 3–3.5 cm bigger, the camera 1–2 cm bigger, and
+  the camera's F2 card is about 1100 Hz on every file whatever the voice. Piece by piece, the F2 and F3 lines of one
+  performance differ between microphones by 300–1300 Hz. Praat at a fixed ceiling shows the same microphone effect
+  (its F2 at 5500 Hz on the camera is 1100–1300 Hz against 1600–2100 on the reference), so this is the LPC analysis
+  itself following the microphone's spectrum, not the chooser. v0.3.0's fixed choice is as microphone-dependent
+  (reference against relay up to 2.9 cm). An app whose users record on phones and headsets cannot leave this as it is:
+  `RainbowTests` pin it (size within 1 cm, F3 within 250 Hz, pieces within 300 Hz, weight within 3 dB across the
+  four microphones), red until met.
+- **Pitch is microphone-independent** within 1–5 Hz, except the camera on the two cis speakers (+5 %: the noisy
+  signal voices other frames, and Praat reads the same), which the test records as red.
+- **Weight (corrected H1*–A3*) follows the microphone by up to 12 dB** (the owner's heavy voice: 4.4 dB on the camera,
+  16.3 on the reference): a spectral tilt read without any microphone correction measures the microphone's tilt as
+  much as the voice's. On the two agreeing microphones the owner's heavy intents do read heavier (by 5–10 dB).
+- **The owner's rules hold on the agreeing microphones:** the three "small" performances at 314, 224 and 99 Hz read
+  within 1.3 cm of each other (16.2–17.5 cm), the breathy take reads a lower HNR (13.6 → 10.2 dB) and the same size,
+  the cis man reads 2–4 cm larger than the cis woman on every microphone.
+- **The "large" intent is not acoustically larger.** On the reference, Praat at 5500 Hz reads the large-light take's
+  F3/F4 at 3021/4210 Hz against the small-light take's 2918/4105: slightly higher, not lower. What changed was the
+  pitch (224 → 201 Hz) and F1. Not asserted.
+- **No plateau anywhere** in Praat's sweep on these PC recordings (F3 climbs 200–300 Hz per 500 Hz of ceiling on
+  every file, as on take 25), and the choice of ceiling alone moves the size by 2–3 cm. The chooser sits at 5000 Hz
+  for most of the owner's feminine takes on the reference (60–83 % of the vowel rows), where v0.3.0's 5500 Hz read
+  the same takes 2 cm smaller (high small light: 14.8 against 17.0 cm), in line with the owner's phone takes 22/23
+  (13.5–14.4 cm).
+- **Against the owner's earlier takes:** the same voice read 13.5–14.4 cm from the phone (takes 22/23) and
+  16–17.5 cm here from the PC microphones; which is the owner's size is not decidable from LPC at a chosen ceiling.
+  A reference that does not depend on the ceiling is needed (sustained vowels, hand-read harmonics).
+
+The passage (`text.txt` as recorded):
+
+> When the sunlight strikes raindrops in the air, they act as a prism and form a rainbow. The rainbow is a division of
+> white light into many beautiful colors. These take the shape of a long round arch, with its path high above, and its
+> two ends apparently beyond the horizon. There is, according to legend, a boiling pot of gold at one end. People look,
+> but no one ever finds it. When a person looks for something beyond their reach, their friends say they are looking for
+> the pot of gold at the end of the rainbow. Throughout the centuries people have explained the rainbow in various
+> ways. Some have accepted it as a miracle without physical explanation
+
+References were measured 2026-10-19 with Praat 7.0.02: pitch `To Pitch (ac)` 60–600 Hz (median, p10, p90), HNR
+`To Harmonicity (cc)` mean, formants `To Formant (burg)` 5 formants, 25 ms, 50 Hz pre-emphasis at 4500–6500 Hz on the
+app's vowel rows. Per-moment Praat tracks (`praat-tracks.praat`) are not kept in the repo for this set (8 MB more);
+regenerate them when a per-point test needs them.
+
 **Adding a take:** copy the WAV here as `owner_<n>.wav` (mono 44.1 kHz 16-bit, what the app records), add a row with
 the owner's stated intent, measure the references with Praat at 5500–6500 Hz and the cepstral pitch check
 (`tools/ceiling-bench`), write its per-moment Praat rows with `praat-tracks.praat`, and pin the expected ranges and

@@ -227,10 +227,10 @@ public sealed class HighPitchTests(ITestOutputHelper output)
     /// <param name="Checked">False: listed for the record, not asserted (an ambiguous start, or a stretch the owner hasn't ruled on).</param>
     public sealed record PieceReference(int Piece, double F2Lower, double F3Lower, double F2Upper, double F3Upper, bool Checked = true);
 
-    private const double PieceSeconds = 3;
+    internal const double PieceSeconds = 3;
 
     /// <summary>Pieces with fewer graph points are skipped (the take's last, partial piece).</summary>
-    private const int MinPiecePoints = 50;
+    internal const int MinPiecePoints = 50;
 
     private static readonly Dictionary<string, PieceReference[]> PraatPieces = new()
     {
@@ -319,7 +319,7 @@ public sealed class HighPitchTests(ITestOutputHelper output)
     private const double MaxStrayF3Share = 0.15, StrayF3Hz = 300;
 
     /// <summary>One point of the F2 and F3 lines: its 10 ms row (time × 100) and values.</summary>
-    private readonly record struct GraphPoint(int Row, double F2, double F3, double Size = double.NaN);
+    internal readonly record struct GraphPoint(int Row, double F2, double F3, double Size = double.NaN);
 
     /// <summary>
     /// The take's saved F2 and F3 series with the given scoring: what <c>new AcousticsAnalysisEngine().AnalyzeAsync</c>
@@ -329,7 +329,7 @@ public sealed class HighPitchTests(ITestOutputHelper output)
     private static List<GraphPoint> GraphLines(Sound sound, CeilingScoring scoring) =>
         GraphLines(FrameSeriesBuilder.ForTake(AcousticsAnalysisEngine.MeasureTracks(sound, RawAnalysisAssembler.LoudOutlierFraction, null, FormantCeilingMethod.Path, scoring)));
 
-    private static List<GraphPoint> GraphLines(TakeSeries series)
+    internal static List<GraphPoint> GraphLines(TakeSeries series)
     {
         var f2 = series.Series[TakeSeries.F2];
         var f3 = series.Series[TakeSeries.F3];
@@ -350,13 +350,13 @@ public sealed class HighPitchTests(ITestOutputHelper output)
     }
 
     /// <summary>The take's full pieces: piece number and its points.</summary>
-    private static IEnumerable<(int Piece, List<GraphPoint> Points)> Pieces(List<GraphPoint> points) =>
+    internal static IEnumerable<(int Piece, List<GraphPoint> Points)> Pieces(List<GraphPoint> points) =>
         points.GroupBy(p => (int)(p.Row / (PieceSeconds * 100)))
             .Where(g => g.Count() >= MinPiecePoints)
             .OrderBy(g => g.Key)
             .Select(g => (g.Key, g.ToList()));
 
-    private static double Median(IEnumerable<double> values)
+    internal static double Median(IEnumerable<double> values)
     {
         var v = values.Order().ToArray();
         return v.Length % 2 == 1 ? v[v.Length / 2] : (v[v.Length / 2 - 1] + v[v.Length / 2]) / 2;

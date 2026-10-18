@@ -1,2 +1,5 @@
 # Shell scripts run inside Linux/WSL straight from the Windows checkout: keep them LF.
 *.sh text eol=lf
+
+# WAV fixtures (the owner's takes, the rainbow set, VCTK clips) live in Git LFS: run `git lfs install` once per machine.
+*.wav filter=lfs diff=lfs merge=lfs -text
