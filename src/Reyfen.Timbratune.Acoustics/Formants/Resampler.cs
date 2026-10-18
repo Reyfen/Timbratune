@@ -38,9 +38,36 @@ public static class Resampler
     /// and the new samples are interpolated from that. The low-pass is the same; the interpolation reads a
     /// signal sampled less densely, so the result differs very slightly from the full-length one.
     /// </param>
+    /// <param name="gridOrigin">
+    /// Null: the new samples are centred in the sound's time domain (Praat's layout), so where they fall
+    /// depends on where the sound starts and ends. A time: the new samples are at gridOrigin + k / rate, the
+    /// same instants for any part of a recording, so a block resampled while recording and the whole take
+    /// resampled afterwards have the same samples (up to the low-pass's edge effects, which a margin keeps
+    /// away), and frames read from them see the same signal.
+    /// </param>
+    /// <param name="transitionHz">
+    /// 0: the brick-wall low-pass (Praat's). Above 0: the gain falls as a raised cosine over this many Hz below the
+    /// new Nyquist frequency instead. Its impulse response dies away far faster than the brick wall's 1/t, so a
+    /// block resampled while recording sees almost nothing of its own edges and matches the whole take.
+    /// </param>
     public static Sound[] ResampleAll(Sound sound, IReadOnlyList<double> newSamplingFrequencies, int sincDepth = 50,
-        Action<double>? progress = null, (double From, double To)? outputRange = null, bool halfLength = false)
+        Action<double>? progress = null, (double From, double To)? outputRange = null, bool halfLength = false, double? gridOrigin = null,
+        double transitionHz = 0)
     {
+        // The new samples' time domain is the sound's; the samples read may start one earlier (below).
+        var domain = sound.Grid;
+        if (halfLength && gridOrigin is { } origin && ((long)Math.Round((domain.First - origin) / domain.Step) & 1) != 0)
+        {
+            // At half the rate the kept samples are every second one from the first: on an origin, keep the ones
+            // an even number of steps from it, as for any other part of the recording, by reading one zero first.
+            var shifted = new double[sound.ChannelCount][];
+            for (var ch = 0; ch < shifted.Length; ch++)
+            {
+                shifted[ch] = new double[domain.Count + 1];
+                sound.Channel(ch).CopyTo(shifted[ch].AsSpan(1));
+            }
+            sound = new Sound(shifted, domain with { Count = domain.Count + 1, First = domain.First - domain.Step });
+        }
         var grid = sound.Grid;
         var rates = newSamplingFrequencies.Count;
         var results = new double[rates][][];
@@ -75,27 +102,40 @@ public static class Resampler
                 {
                     // The filtered signal is only needed for the interpolation: a pooled buffer.
                     var half = halfLength && ratio < 0.5;
-                    var (buffer, start, length) = half ? spectrum!.LowPassedHalf(ratio, RatePart(0, 0.9)) : spectrum!.LowPassed(ratio, RatePart(0, 0.9));
+                    var transition = transitionHz * grid.Step;
+                    var (buffer, start, length) = half ? spectrum!.LowPassedHalf(ratio, RatePart(0, 0.9), transition) : spectrum!.LowPassed(ratio, RatePart(0, 0.9), transition);
                     try
                     {
                         // At half the rate the samples are the even ones: from the first, every 2 × the step.
                         var source = half ? grid with { Count = length, Step = 2 * grid.Step } : grid;
                         results[r][ch] = Interpolate(buffer, start, length, source, newSamplingFrequencies[r], sincDepth, RatePart(0.9, 0.1),
-                            outputRange, grid);
+                            outputRange, domain, gridOrigin);
                     }
                     finally
                     {
                         Release(buffer);
                     }
                 }
-                else results[r][ch] = Interpolate(channel!, 0, channel!.Length, grid, newSamplingFrequencies[r], sincDepth, RatePart(0.9, 0.1), outputRange, grid);
+                else results[r][ch] = Interpolate(channel!, 0, channel!.Length, grid, newSamplingFrequencies[r], sincDepth, RatePart(0.9, 0.1), outputRange, domain,
+                    gridOrigin);
             });
         }
-        return results.Select((channels, r) => new Sound(channels, NewGrid(grid, newSamplingFrequencies[r]))).ToArray();
+        return results.Select((channels, r) => new Sound(channels, NewGrid(domain, newSamplingFrequencies[r], gridOrigin))).ToArray();
     }
 
-    private static TimeGrid NewGrid(TimeGrid grid, double newSamplingFrequency)
+    private static TimeGrid NewGrid(TimeGrid grid, double newSamplingFrequency, double? origin = null)
     {
+        if (origin is { } o)
+        {
+            // Every sample whose cell [t - step/2, t + step/2] lies in the time domain, on o + k * step; a small
+            // tolerance keeps grid times that land on a bound (a block and the whole take must agree on them).
+            const double tolerance = 1e-9;
+            var step = 1.0 / newSamplingFrequency;
+            var firstIndex = Math.Ceiling((grid.XMin + 0.5 * step - o) / step - tolerance);
+            var lastIndex = Math.Floor((grid.XMax - 0.5 * step - o) / step + tolerance);
+            var count = (int)Math.Max(0, lastIndex - firstIndex + 1);
+            return new TimeGrid(grid.XMin, grid.XMax, count, step, o + firstIndex * step);
+        }
         var n = Stats.RoundHalfUp((grid.XMax - grid.XMin) * newSamplingFrequency);
         var newStep = 1.0 / newSamplingFrequency;
         // New samples are centred in the (unchanged) time domain.
@@ -106,9 +146,9 @@ public static class Resampler
     /// <param name="source">The signal: <paramref name="length"/> samples from <paramref name="start"/>, on <paramref name="grid"/>.</param>
     /// <param name="original">The sound's own grid, which the new grid is made from.</param>
     private static double[] Interpolate(double[] source, int start, int length, TimeGrid grid, double newSamplingFrequency, int sincDepth,
-        Action<double>? progress, (double From, double To)? outputRange, TimeGrid original)
+        Action<double>? progress, (double From, double To)? outputRange, TimeGrid original, double? gridOrigin)
     {
-        var newGrid = NewGrid(original, newSamplingFrequency);
+        var newGrid = NewGrid(original, newSamplingFrequency, gridOrigin);
         var n = newGrid.Count;
         var (first, last) = (0, n);
         if (outputRange is { } range)
@@ -177,7 +217,7 @@ public static class Resampler
         /// low-pass): <c>Length</c> samples from <c>Start</c> in a pooled <c>Buffer</c>, which the
         /// caller gives back with <see cref="Release"/>.
         /// </summary>
-        public (double[] Buffer, int Start, int Length) LowPassed(double ratio, Action<double>? progress)
+        public (double[] Buffer, int Start, int Length) LowPassed(double ratio, Action<double>? progress, double transition = 0)
         {
             var nfft = _nfft;
             var bins = nfft / 2 + 1;
@@ -196,6 +236,7 @@ public static class Resampler
                     if (2 * k + 1 >= cut) re[k] = 0;
                     if (2 * k + 2 >= cut) im[k] = 0;
                 }
+                Taper(re, im, ratio, transition, nfft, nfft / 2);
                 re[nfft / 2] = 0;
                 im[nfft / 2] = 0;
                 im[0] = 0;
@@ -222,7 +263,7 @@ public static class Resampler
         /// (halved, for the transform's 1/n). Needs <paramref name="ratio"/> &lt; 0.5. <c>Length</c> samples
         /// from <c>Start</c> (the even samples of the signal, the first being its first) in a pooled <c>Buffer</c>.
         /// </summary>
-        public (double[] Buffer, int Start, int Length) LowPassedHalf(double ratio, Action<double>? progress)
+        public (double[] Buffer, int Start, int Length) LowPassedHalf(double ratio, Action<double>? progress, double transition = 0)
         {
             var nfft = _nfft;
             var half = nfft / 2;
@@ -244,6 +285,7 @@ public static class Resampler
                     if (2 * k + 1 >= cut) re[k] = 0;
                     if (2 * k + 2 >= cut) im[k] = 0;
                 }
+                Taper(re, im, ratio, transition, nfft, bins - 1);
                 re[bins - 1] = 0;
                 im[bins - 1] = 0;
                 im[0] = 0;
@@ -262,6 +304,25 @@ public static class Resampler
             {
                 System.Buffers.ArrayPool<double>.Shared.Return(re);
                 System.Buffers.ArrayPool<double>.Shared.Return(im);
+            }
+        }
+
+        /// <summary>
+        /// The raised-cosine fall of the gain over <paramref name="transition"/> (a fraction of the old sampling rate)
+        /// below the cut-off at <paramref name="ratio"/> × the old Nyquist frequency: bin k of an <paramref name="nfft"/>
+        /// transform is at k / nfft of the old rate. Bins from <paramref name="kept"/> on are not touched.
+        /// </summary>
+        private static void Taper(double[] re, double[] im, double ratio, double transition, int nfft, int kept)
+        {
+            if (!(transition > 0)) return;
+            var cutBin = 0.5 * ratio * nfft;
+            var width = transition * nfft;
+            var from = Math.Max(1, (int)Math.Ceiling(cutBin - width));
+            for (var k = from; k < Math.Min(kept, (int)Math.Ceiling(cutBin)); k++)
+            {
+                var gain = 0.5 * (1 + Math.Cos(Math.PI * (k - (cutBin - width)) / width));
+                re[k] *= gain;
+                im[k] *= gain;
             }
         }
 

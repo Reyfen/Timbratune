@@ -2143,8 +2143,8 @@
       "mean_hz": 101.8,
       "melody_st": 0.39,
       "offset_hz": 85,
-      "f2_hz": 1049.77,
-      "weight_db": 2.48
+      "f2_hz": 1054.63,
+      "weight_db": 4.02
     },
     {
       "start": 3.941,
@@ -2152,8 +2152,8 @@
       "mean_hz": 121.1,
       "melody_st": 0.37,
       "offset_hz": 134.2,
-      "f2_hz": 1667.87,
-      "weight_db": 9.61
+      "f2_hz": 1893.41,
+      "weight_db": 8.63
     },
     {
       "start": 4.4,
@@ -2161,8 +2161,8 @@
       "mean_hz": 94.5,
       "melody_st": null,
       "offset_hz": 88.3,
-      "f2_hz": 958.73,
-      "weight_db": 10.21
+      "f2_hz": 969.25,
+      "weight_db": 12.14
     },
     {
       "start": 4.826,
@@ -2170,8 +2170,8 @@
       "mean_hz": 89,
       "melody_st": null,
       "offset_hz": 85.4,
-      "f2_hz": 1237.31,
-      "weight_db": 13.66
+      "f2_hz": 1230.68,
+      "weight_db": 11.85
     },
     {
       "start": 7.258,
@@ -2179,8 +2179,8 @@
       "mean_hz": 100.2,
       "melody_st": 0.81,
       "offset_hz": 87.8,
-      "f2_hz": 1438.33,
-      "weight_db": 12.11
+      "f2_hz": 1430.15,
+      "weight_db": 12.01
     }
   ],
   "trends": {
@@ -2196,12 +2196,12 @@
         "melody_st": 0.39,
         "loudness_db": 65.62,
         "offset_hz": null,
-        "f2_hz": 1322.98,
-        "f3_hz": 2487.27,
-        "weight_db": 0.95,
+        "f2_hz": 1343.5,
+        "f3_hz": 2608.84,
+        "weight_db": 3.04,
         "hnr_db": 10.01,
         "jitter_pct": 2,
-        "size": 19.26
+        "size": 18.3
       },
       {
         "t": 2,
@@ -2212,12 +2212,12 @@
         "melody_st": 0.46,
         "loudness_db": 61.83,
         "offset_hz": 85,
-        "f2_hz": 1048.48,
-        "f3_hz": 2740.59,
-        "weight_db": 4.13,
+        "f2_hz": 1046.25,
+        "f3_hz": 2772.66,
+        "weight_db": 4.98,
         "hnr_db": 5.6,
         "jitter_pct": 3.99,
-        "size": 17.5
+        "size": 17.29
       },
       {
         "t": 3,
@@ -2244,12 +2244,12 @@
         "melody_st": 0.37,
         "loudness_db": 62.5,
         "offset_hz": 134.2,
-        "f2_hz": 1499.48,
-        "f3_hz": 2172.68,
-        "weight_db": 9.22,
+        "f2_hz": 1631.63,
+        "f3_hz": 2736.45,
+        "weight_db": 8.64,
         "hnr_db": 12.63,
         "jitter_pct": 2.85,
-        "size": 20.03
+        "size": 16.53
       },
       {
         "t": 5,
@@ -2260,12 +2260,12 @@
         "melody_st": null,
         "loudness_db": 58.81,
         "offset_hz": 86.8,
-        "f2_hz": 1010.85,
-        "f3_hz": 2334.2,
-        "weight_db": 12.79,
+        "f2_hz": 1008.29,
+        "f3_hz": 2727.92,
+        "weight_db": 12.7,
         "hnr_db": 10.25,
         "jitter_pct": 2.96,
-        "size": 19.79
+        "size": 16.83
       },
       {
         "t": 6,
@@ -2292,12 +2292,12 @@
         "melody_st": null,
         "loudness_db": 63.15,
         "offset_hz": null,
-        "f2_hz": 1365.53,
-        "f3_hz": 2510.43,
-        "weight_db": 3.11,
+        "f2_hz": 1358.38,
+        "f3_hz": 2492.21,
+        "weight_db": 0.42,
         "hnr_db": 5.28,
         "jitter_pct": 2.71,
-        "size": 18.87
+        "size": 19.73
       },
       {
         "t": 8,
@@ -2308,12 +2308,12 @@
         "melody_st": 0.81,
         "loudness_db": 69.46,
         "offset_hz": null,
-        "f2_hz": 1696.7,
-        "f3_hz": 2254.14,
-        "weight_db": 11.45,
+        "f2_hz": 1696.55,
+        "f3_hz": 2243.83,
+        "weight_db": 11.65,
         "hnr_db": 11.04,
         "jitter_pct": 2.3,
-        "size": 19.77
+        "size": 19.84
       },
       {
         "t": 9,
@@ -2324,12 +2324,12 @@
         "melody_st": null,
         "loudness_db": 64.55,
         "offset_hz": null,
-        "f2_hz": 1398.9,
-        "f3_hz": 2360.94,
-        "weight_db": 15.19,
+        "f2_hz": 1392.27,
+        "f3_hz": 2369.63,
+        "weight_db": 15.13,
         "hnr_db": 8.09,
         "jitter_pct": 2.75,
-        "size": 18.22
+        "size": 18.24
       },
       {
         "t": 10,
@@ -2340,12 +2340,12 @@
         "melody_st": null,
         "loudness_db": 58.02,
         "offset_hz": 87.8,
-        "f2_hz": 1058.95,
-        "f3_hz": 2043.83,
+        "f2_hz": 1058.75,
+        "f3_hz": 2043.07,
         "weight_db": 10.39,
         "hnr_db": 7.75,
         "jitter_pct": 1.73,
-        "size": 20.21
+        "size": 20.23
       }
     ]
   }

@@ -102,6 +102,15 @@ public static class FormantAnalyzer
     private const double SafetyMarginHz = 50;
 
     /// <summary>
+    /// On a grid origin (blocks and the whole take on one grid), the resampling's low-pass falls over this many Hz
+    /// below the new Nyquist frequency instead of at once (<see cref="Resampler.ResampleAll"/>'s transitionHz): a block
+    /// of the live tracker then resamples to the whole take's samples within about 120 dB (the brick wall: 64 dB), and
+    /// live and saved frames agree (HANDOFF §8w: the same ceiling path on 66 of 66 files, 46 before). 20 Hz changes the
+    /// spectrum least of the widths that do this (200 Hz moved the formants enough to change the path's choices).
+    /// </summary>
+    public const double AnchoredTransitionHz = 20;
+
+    /// <summary>
     /// <see cref="Burg"/> at several formant ceilings at once (e.g. 5500 and 5000 Hz): the
     /// resampling they all start with shares its forward transform (<see cref="Resampler.ResampleAll"/>),
     /// then each ceiling's frames run in parallel. Each contour is identical to <see cref="Burg"/>'s.
@@ -115,21 +124,25 @@ public static class FormantAnalyzer
         // each window for the pre-emphasis); a few samples to spare.
         (double, double)? samples = frameRange is { } fr && gridOrigin is not null
             ? (fr.From - windowLength - 0.002, fr.To + windowLength + 0.002) : null;
-        var resampled = ResampleForCeilings(sound, formantCeilings, progress is null ? null : f => progress(resampleShare * f), samples, halfRateLowPass);
+        var resampled = ResampleForCeilings(sound, formantCeilings, progress is null ? null : f => progress(resampleShare * f), samples, halfRateLowPass,
+            gridOrigin);
         return BurgResampled(resampled, formantCeilings, timeStep, maxFormants, windowLength, preEmphasisFrom,
             progress is null ? null : f => progress(resampleShare + (1 - resampleShare) * f), gridOrigin, frameRange);
     }
 
     /// <summary>The channel average at 2 × each ceiling (the first half of <see cref="BurgAll"/>; shared forward transform).</summary>
     /// <param name="halfRateLowPass">See <see cref="Resampler.ResampleAll"/>'s halfLength: about half the work, very slightly different samples.</param>
+    /// <param name="gridOrigin">See <see cref="Resampler.ResampleAll"/>: the new samples at gridOrigin + k / rate (null: centred).
+    /// Give the frames' grid origin, so the frames of a block and of the whole take read the same samples.</param>
     public static Sound[] ResampleForCeilings(Sound sound, IReadOnlyList<double> formantCeilings, Action<double>? progress = null,
-        (double From, double To)? outputRange = null, bool halfRateLowPass = false)
+        (double From, double To)? outputRange = null, bool halfRateLowPass = false, double? gridOrigin = null)
     {
         // As in Burg: the channel average first, then each ceiling's 2 × ceiling sampling rate.
         var mono = new Sound([sound.ToMono()], sound.Grid);
         var nyquist = 0.5 * sound.SamplingFrequency;
         var needed = formantCeilings.Select((c, i) => (c, i)).Where(x => Math.Abs(x.c / nyquist - 1) >= 1e-12).ToList();
-        var resampled = Resampler.ResampleAll(mono, needed.Select(x => 2 * x.c).ToList(), 50, progress, outputRange, halfRateLowPass);
+        var resampled = Resampler.ResampleAll(mono, needed.Select(x => 2 * x.c).ToList(), 50, progress, outputRange, halfRateLowPass, gridOrigin,
+            gridOrigin is null ? 0 : AnchoredTransitionHz);
         var result = new Sound[formantCeilings.Count];
         for (var i = 0; i < result.Length; i++) result[i] = mono;
         for (var k = 0; k < needed.Count; k++) result[needed[k].i] = resampled[k];
@@ -191,7 +204,8 @@ public static class FormantAnalyzer
         // Resampling is most of the work (~85% on a 27.6 s take at 44.1 kHz), the frames the rest.
         const double resampleShare = 0.85;
         var resampled = Math.Abs(formantCeiling / nyquist - 1) < 1e-12 ? mono
-            : Resampler.Resample(mono, 2 * formantCeiling, 50, progress is null ? null : f => progress(resampleShare * f));
+            : Resampler.ResampleAll(mono, [2 * formantCeiling], 50, progress is null ? null : f => progress(resampleShare * f), gridOrigin: gridOrigin,
+                transitionHz: gridOrigin is null ? 0 : AnchoredTransitionHz)[0];
         var frameProgress = progress is null ? null : (Action<double>)(f => progress(resampleShare + (1 - resampleShare) * f));
         var grid = resampled.Grid;
         var dx = grid.Step;
@@ -245,7 +259,9 @@ public static class FormantAnalyzer
         Parallel.For(0, frameCount, Parallelism.Options, () => new FrameScratch(maxLength, poles), (f, _, scratch) =>
         {
             var t = first + (f + skip) * dt;
-            var leftSample = (int)Math.Floor((t - grid.First) / dx + 1); // 1-based
+            // 1-based. On a grid origin a frame time can fall exactly on a sample: the tolerance makes a block and the
+            // whole take (whose times differ in the last bits) pick the same one.
+            var leftSample = (int)Math.Floor((t - grid.First) / dx + 1 + (gridOrigin is null ? 0 : 1e-7));
             var start = Math.Max(1, leftSample + 1 - halfWindowSamples);
             var end = Math.Min(grid.Count, leftSample + halfWindowSamples);
             var length = end - start + 1;

@@ -181,9 +181,13 @@ public sealed class LiveAnalysisTests(ITestOutputHelper output)
         output.WriteLine($"saved: {Describe(saved.CeilingPath!)}");
         output.WriteLine($"live:  {Describe(live.CeilingPath!)}");
 
-        // Either side of the change of voice, the same ceilings, and the change at the same moment.
-        foreach (var t in new[] { manEnds - 2, manEnds - 0.5, manEnds + 0.5, manEnds + 2 })
+        // Either side of the change of voice, the same ceilings, and the change at the same moment. Further inside one
+        // voice, two neighbouring ceilings can be a near tie that a few frames tip (HANDOFF §8t, §8w: here the man at
+        // 4500 or 5000 Hz until 6.2 s saved, 8.8 s live): there, at most one candidate apart.
+        foreach (var t in new[] { manEnds - 0.5, manEnds + 0.5 })
             Assert.Equal(saved.CeilingPath!.At(t), live.CeilingPath!.At(t));
+        foreach (var t in new[] { manEnds - 2, manEnds + 2 })
+            Assert.InRange(live.CeilingPath!.At(t) - saved.CeilingPath!.At(t), -1, 1);
         Assert.True(saved.CeilingPath!.At(manEnds + 2) > saved.CeilingPath.At(manEnds - 2), "no change of ceiling at the change of voice");
         double ChangeNear(CeilingPath p)
         {

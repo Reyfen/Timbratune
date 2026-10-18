@@ -100,6 +100,6 @@ public sealed class AcousticsAnalysisEngine : IAnalysisEngine
 
     /// <summary>The same with another loud-vowel gate (0 = analyze.py's).</summary>
     public static TrackView MeasureTracks(Sound sound, double loudOutlierFraction, Action<double>? progress = null,
-        FormantCeilingMethod formantMethod = FormantCeilingMethod.Path) =>
-        SavedTrackProvider.Measure(sound, TrackSet.All, loudOutlierFraction, progress, formantMethod);
+        FormantCeilingMethod formantMethod = FormantCeilingMethod.Path, CeilingScoring? ceilingScoring = null) =>
+        SavedTrackProvider.Measure(sound, TrackSet.All, loudOutlierFraction, progress, formantMethod, ceilingScoring);
 }

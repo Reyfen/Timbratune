@@ -66,7 +66,7 @@ public sealed class LiveAnalyzer
     /// <param name="formantMethod">How the formant ceiling is chosen; as the saved analysis it is compared with.</param>
     public LiveAnalyzer(double samplingFrequency = 44100, double registerFloorHz = AnalysisPostProcessor.DefaultRegisterFloorHz,
         double formantBlockSeconds = DefaultFormantBlockSeconds, MetricRegistry? registry = null,
-        Ceilings.FormantCeilingMethod formantMethod = Ceilings.FormantCeilingMethod.Path)
+        Ceilings.FormantCeilingMethod formantMethod = Ceilings.FormantCeilingMethod.Path, Ceilings.CeilingScoring? ceilingScoring = null)
     {
         SamplingFrequency = samplingFrequency;
         _registerFloorHz = registerFloorHz;
@@ -74,7 +74,7 @@ public sealed class LiveAnalyzer
         _series = [new(_registry.Count), new(_registry.Count)];
         _liveSeries = [new(_registry, _series[0].Lines), new(_registry, _series[1].Lines)];
         _signal = new LiveSignal(samplingFrequency);
-        _tracks = new LiveTrackProvider(samplingFrequency, formantBlockSeconds, formantMethod: formantMethod);
+        _tracks = new LiveTrackProvider(samplingFrequency, formantBlockSeconds, formantMethod: formantMethod, ceilingScoring: ceilingScoring);
     }
 
     public double SamplingFrequency { get; }

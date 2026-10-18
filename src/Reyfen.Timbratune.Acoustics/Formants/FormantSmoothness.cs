@@ -34,7 +34,14 @@ public static class FormantSmoothness
     /// W for frames [<paramref name="from"/>, <paramref name="to"/>) of one analysis; +∞ when the
     /// piece is too short, a modelled formant is missing in too many frames, or the fit is singular.
     /// </summary>
-    public static double Criterion(IFormantFrames frames, int from, int to)
+    public static double Criterion(IFormantFrames frames, int from, int to) => Criterion(frames, from, to, 0);
+
+    /// <summary>
+    /// The same with every bandwidth taken as at least <paramref name="bandwidthFloor"/> Hz in the weights 1/B² and the
+    /// residuals: a pole locked on one harmonic of a low, pressed voice reports a bandwidth of 30–50 Hz, narrower than any
+    /// vocal-tract resonance, and would otherwise earn a certainty it hasn't got (HANDOFF §8y). 0 = off.
+    /// </summary>
+    public static double Criterion(IFormantFrames frames, int from, int to, double bandwidthFloor)
     {
         var n = to - from;
         if (n < Terms + 3) return double.PositiveInfinity;
@@ -57,6 +64,7 @@ public static class FormantSmoothness
             for (var i = from; i < to; i++)
             {
                 if (!TryFormant(frames.FrameAt(i), formant, out var f, out var b)) continue;
+                b = Math.Max(b, bandwidthFloor);
                 Legendre((frames.FrameTime(i) - t0) / halfSpan - 1, basis);
                 var w = 1 / (b * b);
                 for (var p = 0; p < Terms; p++)
@@ -72,6 +80,7 @@ public static class FormantSmoothness
             for (var i = from; i < to; i++)
             {
                 if (!TryFormant(frames.FrameAt(i), formant, out var f, out var b)) continue;
+                b = Math.Max(b, bandwidthFloor);
                 Legendre((frames.FrameTime(i) - t0) / halfSpan - 1, basis);
                 var model = 0.0;
                 for (var p = 0; p < Terms; p++) model += coefficients[p] * basis[p];

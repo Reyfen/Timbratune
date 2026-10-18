@@ -13,6 +13,7 @@
 // -probes: also the time of each Timing probe (analysis.*, live.*) per run, summed over its calls.
 // -cores N: the live loops' core limit (default: the app's, NativeAnalysisScheduler.DefaultLiveCores).
 // -tick MS: the live update interval (default 100); a full update about once a second.
+// -scoring Smoothness|Plateau: the formant ceiling scoring (default the app's, Plateau; Smoothness = v0.4.0's).
 using Reyfen.Timbratune.Core.Analysis.Metrics;
 using Reyfen.Timbratune.Core.Analysis.Metrics.Clarity;
 using Reyfen.Timbratune.Core.Analysis.Metrics.Loudness;
@@ -54,6 +55,9 @@ for (var i = 0; i < args.Length; i++)
         case "-probes": probes = true; break;
         case "-cores": liveCores = int.Parse(args[++i]); break;
         case "-tick": tickMs = int.Parse(args[++i]); break;
+        // HIGH-PITCH-PLAN: v0.4.0's ceiling scoring, to time the stability term against it.
+        case "-scoring": Reyfen.Timbratune.Core.Analysis.Ceilings.CeilingScoring.Default = args[++i].ToLowerInvariant() == "smoothness"
+            ? Reyfen.Timbratune.Core.Analysis.Ceilings.CeilingScoring.Smoothness : Reyfen.Timbratune.Core.Analysis.Ceilings.CeilingScoring.Plateau; break;
         default: wavArg = args[i]; break;
     }
 }

@@ -18,16 +18,16 @@
     },
     "formants": {
       "method": "path",
-      "f1_hz": 592.09,
-      "f2_hz": 1312.37,
-      "f3_hz": 3024.77,
+      "f1_hz": 595.37,
+      "f2_hz": 1361.83,
+      "f3_hz": 3035.26,
       "usable_pct": 97.8,
-      "ceiling_hz": 5000,
+      "ceiling_hz": 5500,
       "ceiling_lowest_hz": 5000,
-      "ceiling_highest_hz": 6000,
+      "ceiling_highest_hz": 5500,
       "ceiling_switches": 1,
-      "delta_f_hz": 1167.49,
-      "vtl_cm": 14.99
+      "delta_f_hz": 1185.32,
+      "vtl_cm": 14.76
     },
     "voice_quality": {
       "hnr_db": 13.74,
@@ -40,8 +40,8 @@
       "max_db": 79.81
     },
     "weight": {
-      "h1a3c_db": 5.82,
-      "h1a3_db": 23.53,
+      "h1a3c_db": 6.81,
+      "h1a3_db": 23.71,
       "tilt_db_khz": -5.89
     },
     "register": {

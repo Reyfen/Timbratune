@@ -42,7 +42,7 @@ public sealed class LiveTrackProvider
     private readonly double _loudOutlierFraction;
 
     // The ceiling path, refilled by every update (Path only).
-    private readonly CeilingPathFinder _finder = new();
+    private readonly CeilingPathFinder _finder;
     private readonly CeilingPath _path = new();
     private readonly IFormantFrames[] _frames;
     private readonly IFormantTrack?[] _smoothed;
@@ -50,9 +50,12 @@ public sealed class LiveTrackProvider
     private readonly SwitchedFormantTrack _alongPath;
     private int? _pathEnd;
 
+    /// <param name="ceilingScoring">How the ceiling path scores the candidates (null: <see cref="CeilingScoring.Default"/>), as the saved analysis it is compared with.</param>
     public LiveTrackProvider(double samplingFrequency, double formantBlockSeconds = LiveAnalyzer.DefaultFormantBlockSeconds,
-        double loudOutlierFraction = RawAnalysisAssembler.LoudOutlierFraction, FormantCeilingMethod formantMethod = FormantCeilingMethod.Path)
+        double loudOutlierFraction = RawAnalysisAssembler.LoudOutlierFraction, FormantCeilingMethod formantMethod = FormantCeilingMethod.Path,
+        CeilingScoring? ceilingScoring = null)
     {
+        _finder = new CeilingPathFinder(ceilingScoring);
         _pitch = LivePitchTracker.Autocorrelation(samplingFrequency, 0, AcousticsAnalysisEngine.PitchFloor, AcousticsAnalysisEngine.PitchCeiling);
         _harmonicity = LivePitchTracker.Harmonicity(samplingFrequency, 0.01, AcousticsAnalysisEngine.PitchFloor, 0.1, 1.0);
         _intensity = new LiveIntensityTracker(samplingFrequency, AcousticsAnalysisEngine.PitchFloor);

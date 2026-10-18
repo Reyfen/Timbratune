@@ -8,6 +8,8 @@
 
 `RESONANCE-PLAN.md` is the v0.4.0 port of the research formant ceiling that follows the voice and of perceived size (research clone `C:\Projects\Reyfen\Timbratune-research`, `HANDOFF-RESEARCH.md`), phase by phase; HANDOFF §8t records what was built and measured, §8u the cut in its live cost. Read both before changing formants, resonance or size.
 
+`HIGH-PITCH-PLAN.md` is the plan for the formant ceiling chooser on high-pitched, soft voices, where v0.4.0's chooser failed on the owner's own takes (HANDOFF §8v), and it states the principle that pitch, perceived size and weight are separate measurements, each checked by `HighPitchTests`. Its scoring (`CeilingScoring.Plateau`: smoothness plus the formants' stability across neighbouring ceilings) became the default in HANDOFF §8w, which also put the live and saved formant resampling on one grid; since §8x the default is `CeilingScoring.Steady`, the same plus a cost on changing the *reading* across a pause (the owner's low voice has two self-consistent readings, `Fixtures/OWNER-TAKES.md`). Read it before changing the ceiling path, formants, size or weight; its benches run with `tools/ceiling-bench`.
+
 `NOISE-PLAN.md` is the measured plan for noise and microphone robustness (high-pass, noise reduction, stray voicing, recording-quality notes), with the bench in `tools/noise-bench`. Read it before changing the analysis input or pitch post-processing.
 
 ## Ground rules
@@ -33,15 +35,16 @@
 | `src/Reyfen.Timbratune` | Avalonia UI library (CommunityToolkit.Mvvm). One folder per feature under `Features/` (View, ViewModel, Manager, Router where it opens overlays, `Add<Feature>Feature()`): `Record` (`RecordingManager` = the live session and Stop), `LiveMonitor` (`LiveTimelinesViewModel`, `RecentWindow.cs` live smoothing/prediction), `TakeDetails` (`TakeViewModel`), `TakeLibrary`, `TakeActions`, `MetricCompare`, `Import`, `About`, `CheatSheet`. Features never reference each other; they share `Shared/` (`State/` catalog, active take, live session, entitlements; `Navigation/` overlay stack and launchers; `Messaging/`; `Platform/` ports; `Telemetry/` analytics and crash-report ports, consent and rollout, all off and sending nothing yet, REFACTOR-PLAN §5). `Shell/` places the features (`ShellViewModel`, `ShellView`); `App/` composes them (`CompositionRoot.AddTimbratune()`, MS.DI; the hand-written `ViewLocator`). Also `Controls/TimelineChart.cs`, `Controls/ContourChart.cs`, `Themes/Styles.axaml`. Heads register their platform adapters and pass the container to `TimbratuneApp`. |
 | `src/Reyfen.Timbratune.Desktop` | Desktop head (Windows/Linux/macOS); `--import <audio file|.tmbr> … --label "…"` (any format a decoder here reads). Publish profiles in `Properties/PublishProfiles/`. |
 | `src/Reyfen.Timbratune.Android` | Android head. **Not in `Timbratune.slnx`** so the solution builds without the Android workload. |
-| `tests/` | Acoustics tests (synthetic, Praat oracle, streaming), Core tests (parity with `analyze.py` on VCTK fixtures, live-vs-saved, golden snapshots in `Golden/`) architecture tests (dependency rules of `REFACTOR-PLAN.md`) and UI-library tests without a UI (`Reyfen.Timbratune.Tests`: composition, shared services). |
+| `tests/` | Acoustics tests (synthetic, Praat oracle, streaming), Core tests (parity with `analyze.py` on VCTK fixtures, live-vs-saved, golden snapshots in `Golden/`, the owner's own takes in `Fixtures/` with `OWNER-TAKES.md`) architecture tests (dependency rules of `REFACTOR-PLAN.md`) and UI-library tests without a UI (`Reyfen.Timbratune.Tests`: composition, shared services). |
 | `tools/live-steadiness` | Dev tool measuring how steady and accurate the live dots are. |
 | `tools/analysis-bench` | Dev tool timing the full and live analysis and counting allocations; `-baseline baseline-p0.json` checks the refactoring gate (HANDOFF §8i). |
 | `tools/formant-check` | Dev tool: dumps the saved analysis in the research benches' format and compares live with saved (RESONANCE-PLAN F5, F8). |
 | `tools/phone-bench` | The phone A/B: `ab.sh` (alternating Release profiling builds under a separate app id), `run.sh`, `analyze.py` (frame times, probes, shuffle test), `clean.sh`. |
+| `tools/ceiling-bench` | Dev tool: scores `formant-check -dump` directories against the EARS high-pitch, VTR and trans/masc benches and the owner's takes, as distributions (see `HIGH-PITCH-PLAN.md` §4). |
 | `tools/noise-bench` | Dev tool: noisy and degraded copies of the fixtures, candidate clean-up chains, analysis and scoring (see `NOISE-PLAN.md`). |
 | `scripts/` | `fetch-praat.ps1`, `make-long-wav.ps1`, `screenshot.ps1` (Windows UI checks), `linux-ui.sh`, `package-linux.sh`, `make-emoji-font.py` (re-run when adding emoji to the UI). |
 
-Live analysis shares per-frame kernels with the full analysis, so live ≈ saved (exact for pitch, jitter, shimmer, phrases; small tolerances elsewhere). On Stop the WAV is trimmed by ≤ 10 ms so both frame grids line up. Don't break this; `LiveAnalysisTests` checks it.
+Live analysis shares per-frame kernels with the full analysis, so live ≈ saved (exact for pitch, jitter, shimmer, phrases; small tolerances elsewhere). On Stop the WAV is trimmed by ≤ 10 ms so both frame grids line up. The formant resampling of each live block lands on the whole take's samples (a grid origin and a 20 Hz low-pass transition, HANDOFF §8w), so live and saved formant frames agree and the ceiling path with them. Don't break this; `LiveAnalysisTests` and `ResamplerTests` check it.
 
 ## Commands
 
