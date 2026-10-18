@@ -36,6 +36,23 @@
       <SmartLink>false</SmartLink>
     </NativeReference>
   </ItemGroup>
+  <!-- SkiaSharp 3.119.4 has its iOS build for net10.0-ios26.2 and net9.0-ios18.0; this project's
+       net10.0-ios26.0 can't use the first, and NuGet then prefers plain net10.0 over the second.
+       That one imports "libSkiaSharp", which doesn't find the framework (DllNotFoundException at
+       start, build 11); the iOS build imports @rpath/libSkiaSharp.framework/libSkiaSharp. So the
+       iOS build from the same package replaces it. Remove once the TFM is ios26.2 or newer. -->
+  <Target Name="UseSkiaSharpForIos" AfterTargets="ResolvePackageAssets">
+    <ItemGroup>
+      <_SkiaSharpGeneric Include="@(RuntimeCopyLocalItems)" Condition="'%(RuntimeCopyLocalItems.NuGetPackageId)' == 'SkiaSharp' And '%(Filename)%(Extension)' == 'SkiaSharp.dll'" />
+      <_SkiaSharpIos Include="@(_SkiaSharpGeneric->'%(RootDir)%(Directory)..\net9.0-ios18.0\SkiaSharp.dll')" />
+    </ItemGroup>
+    <Error Condition="'@(_SkiaSharpGeneric)' == '' Or !Exists('@(_SkiaSharpIos)')" Text="SkiaSharp's iOS assembly not found (was: @(_SkiaSharpGeneric))." />
+    <ItemGroup>
+      <RuntimeCopyLocalItems Remove="@(_SkiaSharpGeneric)" />
+      <RuntimeCopyLocalItems Include="@(_SkiaSharpIos->'%(FullPath)')" NuGetPackageId="SkiaSharp" NuGetPackageVersion="%(_SkiaSharpGeneric.NuGetPackageVersion)" AssetType="runtime" DestinationSubPath="SkiaSharp.dll" />
+    </ItemGroup>
+    <Message Importance="high" Text="SkiaSharp for iOS: @(_SkiaSharpIos->'%(FullPath)')" />
+  </Target>
   <ItemGroup>
     <ProjectReference Include="..\Reyfen.Timbratune\Reyfen.Timbratune.csproj" />
     <ProjectReference Include="..\Reyfen.Timbratune.Audio.SoundFlow\Reyfen.Timbratune.Audio.SoundFlow.csproj" />

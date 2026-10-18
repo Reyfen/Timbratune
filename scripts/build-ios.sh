@@ -59,6 +59,12 @@ for framework in libSkiaSharp libHarfBuzzSharp miniaudio; do
     exit 1
   fi
 done
+# ... and SkiaSharp's iOS assembly, the one that loads it from the framework (build 11 had the
+# generic one: DllNotFoundException: libSkiaSharp).
+if ! unzip -p "$final" 'Payload/*.app/SkiaSharp.dll' | grep -aq '@rpath/libSkiaSharp.framework/libSkiaSharp'; then
+  echo "SkiaSharp.dll in the .ipa isn't the iOS build (it doesn't load @rpath/libSkiaSharp.framework)" >&2
+  exit 1
+fi
 
 if [ "$upload" = true ]; then
   : "${ASC_KEY_ID:?ASC_KEY_ID is needed for --upload}" "${ASC_ISSUER_ID:?ASC_ISSUER_ID is needed for --upload}"
