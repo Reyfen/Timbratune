@@ -5,8 +5,8 @@ live while you speak. Runs on Windows, Linux and Android from one C#/Avalonia co
 
 **Timbratune is a fork of [Euphonia](https://github.com/Yuuzulight/Euphonia)** (Electron/React with a Python and
 Praat analysis). It started as a C# port with the same metrics, zones and `recordings.json` data format, and has grown
-from there: live analysis, a native analysis engine, more platforms, one folder per take, import and export. The original is available as an optional
-submodule in [`Euphonia-TypeScript`](Euphonia-TypeScript) (see [Optional submodules](#optional-submodules)).
+from there: live analysis, a native analysis engine, more platforms, one folder per take, import and export. It is
+developed independently now, and Euphonia is not its reference.
 
 The voice analysis is **pure C#** (`Reyfen.Timbratune.Acoustics`). It needs no Praat, Python, ffmpeg or anything else
 installed. Its algorithms are **inspired by [Praat](https://github.com/praat/praat.github.io)**. They are written
@@ -304,22 +304,23 @@ using the microphone.
 - `Zones.ZoneOf` puts values *below* the lowest zone into the **last** zone, as `zones.ts` does.
 - The cheat sheet's F2 and weight guide numbers disagree with the zone tables, as `CheatSheet.tsx` does.
 
-## Optional submodules
-
-Two reference sources are git submodules that are **not** fetched by default; their `update = none` in `.gitmodules`
-means a plain clone or `git submodule update --init` skips them. Nothing in the build or the tests needs them.
-
-| Path | What | Fetch it with |
-|---|---|---|
-| `Euphonia-TypeScript` | the original [Euphonia](https://github.com/Yuuzulight/Euphonia) app (Timbratune's fork origin) | `git submodule update --init --checkout Euphonia-TypeScript` |
-| `Praat` | [Praat](https://github.com/praat/praat.github.io)'s source (GPLv3, ~380 MB), for reading only | `git submodule update --init --checkout --depth 1 Praat` |
-
 ## Licensing and credits
 
-All of Timbratune's code, including `Reyfen.Timbratune.Acoustics`, is under the MIT License, like the original
-Euphonia.
-- **Fork of Euphonia:** the app started as a port of [Euphonia](https://github.com/Yuuzulight/Euphonia). Its metric
-  definitions, zones, texts and data format come from there.
+Timbratune, including `Reyfen.Timbratune.Acoustics`, is **source-available** under the
+[PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0) with the Timbratune
+Additional Terms; the full text is in [`LICENSE.md`](LICENSE.md). In short:
+- you may use, study, change and share it for any **noncommercial** purpose;
+- it may not be used **commercially**, changed or not;
+- neither it nor any fork may be published in an **app store or software marketplace** (Google Play, App Store,
+  Microsoft Store, F-Droid, Flathub, Steam, …); sharing the source and builds from your own site or repository is fine;
+- forks must use **their own name and icon**, not "Timbratune" or "Reyfen".
+
+Versions 0.3.0 and older were published under the MIT License and stay under it. Code contributions are not accepted
+at the moment; see [`CONTRIBUTING.md`](CONTRIBUTING.md). Third-party parts are listed in
+[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).
+
+- **Fork of Euphonia:** the app started as a port of [Euphonia](https://github.com/Yuuzulight/Euphonia) (MIT). Parts
+  of its metric definitions, zones, texts and data format come from there.
 - **Inspired by Praat:** the analysis algorithms follow the methods that
   [Praat](https://github.com/praat/praat.github.io) (Boersma & Weenink) uses. They are written from scratch from the
   published papers, with defaults and conventions taken from the public Praat manual, so the numbers line up with Praat.

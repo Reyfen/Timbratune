@@ -1,7 +1,7 @@
 # Euphonia voice analysis (as used by Timbratune's parity tests) — the Praat half of the C# port of analyze.py.
 #
 # Every Praat command and parameter below mirrors a parselmouth call in
-# Euphonia-TypeScript/analyze.py (analyze(), vowel_formants(),
+# Euphonia's analyze.py (analyze(), vowel_formants(),
 # spectral_weight(), analyze_register(), segment_phrases()). Anything that is
 # plain statistics there (medians, SDs, the F2 stability gate, the ceiling
 # choice, the Iseli–Alwan correction, the LTAS fit, phrase stats) happens in
