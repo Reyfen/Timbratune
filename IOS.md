@@ -59,6 +59,11 @@ portal, then update the secrets.
   automatic gain, noise suppression or echo cancellation on the analysed voice), preferred
   44.1 kHz. Bluetooth headset microphones (8–16 kHz) aren't offered.
 - **Microphone permission**: asked at the first recording (`NSMicrophoneUsageDescription`).
+- **Crashes**: fatal .NET exceptions are written to `Documents/crash.txt` (Files app ›
+  Timbratune), newest first (`CrashLog`). A Release build's own log lines show as `<private>`
+  in the device log, so this file is where the reason is. Over USB from Windows:
+  `pymobiledevice3 syslog live` (the log) and `pymobiledevice3 apps afc --documents
+  pl.eleanorakagner.timbratune` (the file), with Apple Devices installed for the driver.
 - **Share sheet**: `UIActivityViewController` from `Library/Caches/share`.
 - **miniaudio**: SoundFlow 1.4.1 ships it as `miniaudio.framework`, embedded and signed in the
   bundle's `Frameworks/` (`NativeReference`). SoundFlow's own resolver looks for it under
