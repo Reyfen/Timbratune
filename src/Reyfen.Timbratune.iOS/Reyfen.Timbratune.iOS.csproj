@@ -18,6 +18,12 @@
     <ApplicationDisplayVersion>$(Version)</ApplicationDisplayVersion>
     <!-- Devices only: SoundFlow ships miniaudio for ios-arm64, not for the simulator. -->
     <RuntimeIdentifier>ios-arm64</RuntimeIdentifier>
+    <!-- Everything is compiled ahead of time except SoundFlow, which runs in the interpreter: it
+         hands miniaudio an instance method as the audio callback (MiniAudioEngine.OnAudioData), and
+         that native-to-managed wrapper can't be compiled ahead of time ("Attempting to JIT compile
+         method … while running in aot-only mode" at Record, build 13). The interpreter makes the
+         wrapper when needed. The callback only passes buffers on to the (AOT) recorder. -->
+    <MtouchInterpreter>-all,SoundFlow</MtouchInterpreter>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia.iOS" />

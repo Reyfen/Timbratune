@@ -71,6 +71,10 @@ portal, then update the secrets.
   The runtime swallows that failure and asks `AssemblyLoadContext.ResolvingUnmanagedDll` last;
   `MiniaudioFramework.Prepare()` answers it with the embedded framework. Drop it if a later
   SoundFlow finds the framework itself.
+- **SoundFlow runs in the interpreter** (`MtouchInterpreter` `-all,SoundFlow`), everything else
+  ahead of time: its audio callback is an instance method handed to miniaudio, whose
+  native-to-managed wrapper iOS's ahead-of-time compilation can't make. Its cost on the audio
+  thread isn't measured yet.
 - **SkiaSharp**: Avalonia's renderer needs `SkiaSharp.NativeAssets.iOS` referenced by the head
   (it arrives without its build file otherwise, so no `libSkiaSharp.framework`), and SkiaSharp's
   iOS assembly: for `net10.0-ios26.0` NuGet picks the generic one, which can't load the framework.
