@@ -68,9 +68,13 @@ portal, then update the secrets.
 - **miniaudio**: SoundFlow 1.4.1 ships it as `miniaudio.framework`, embedded and signed in the
   bundle's `Frameworks/` (`NativeReference`). SoundFlow's own resolver looks for it under
   `runtimes/ios-arm64/native/` in the app, where the App Store doesn't allow frameworks.
-  `MiniaudioFramework.Prepare()` makes that path in `Library/Caches` as a link to the real
-  framework and sets the base directory to it. Drop the shim if a later SoundFlow finds the
-  framework itself.
+  The runtime swallows that failure and asks `AssemblyLoadContext.ResolvingUnmanagedDll` last;
+  `MiniaudioFramework.Prepare()` answers it with the embedded framework. Drop it if a later
+  SoundFlow finds the framework itself.
+- **SkiaSharp**: Avalonia's renderer needs `SkiaSharp.NativeAssets.iOS` referenced by the head
+  (it arrives without its build file otherwise, so no `libSkiaSharp.framework`), and SkiaSharp's
+  iOS assembly: for `net10.0-ios26.0` NuGet picks the generic one, which can't load the framework.
+  The `UseSkiaSharpForIos` target swaps it; `build-ios.sh` checks both in the `.ipa`.
 - **Icon**: `Assets.xcassets/AppIcon.appiconset/icon-1024.png`, drawn by
   `scripts/make-ios-icon.py` (the Android icon's design at 1024 px, square and opaque).
 

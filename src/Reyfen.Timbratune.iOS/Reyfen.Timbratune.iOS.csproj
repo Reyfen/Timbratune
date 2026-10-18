@@ -30,7 +30,7 @@
   </ItemGroup>
   <ItemGroup>
     <!-- miniaudio as an embedded, signed framework in Frameworks/ (the only place the App Store
-         accepts it). SoundFlow 1.4.1 looks for it elsewhere: MiniaudioFramework.cs points it here. -->
+         accepts it). SoundFlow 1.4.1 looks for it elsewhere: MiniaudioFramework.cs loads it from here. -->
     <NativeReference Include="$(PkgSoundFlow)/runtimes/ios-arm64/native/miniaudio.framework">
       <Kind>Framework</Kind>
       <SmartLink>false</SmartLink>
