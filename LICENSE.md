@@ -6,10 +6,10 @@ Required Notice: Copyright (c) 2026 Eleanora Kagner (Reyfen) (https://github.com
 
 Required Notice: Timbratune is licensed under the PolyForm Noncommercial License 1.0.0 with the Timbratune Additional Terms. It may not be distributed through app stores or software marketplaces, and modified versions may not use the Timbratune or Reyfen names or icons.
 
-This license covers every version of Timbratune published after version 0.3.0, including
-all source code, documentation and assets in this repository unless a file or folder says
-otherwise. Versions 0.3.0 and older were published under the MIT License, and those copies
-remain under it.
+This license covers Timbratune from version 0.3.1 on (every version published after version
+0.3.0), including all source code, documentation and assets in this repository unless a file
+or folder says otherwise. Versions 0.3.0 and older were published under the MIT License, and
+those copies remain under it.
 
 Parts of Timbratune come from other projects under their own licenses; see
 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). Those parts are not covered by this license.
