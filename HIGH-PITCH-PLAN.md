@@ -1,5 +1,7 @@
 # High-pitch plan: a formant ceiling chooser that works for high, soft voices, and the separation of pitch, size and weight
 
+*Superseded for the formant estimate itself by `FORMANTS-PLAN.md` (2026-10-19): the chooser's levers are exhausted; this plan stays as the record, and its principle (§1) and its tests (§5) stay in force.*
+
 *Status (2026-10-18, third session):* the owner's take 24 (a high voice, then a low one of about 80 Hz with six resonances below 6 kHz) showed the plateau scoring hopping between two self-consistent readings at nearly every pause; the default is now `CeilingScoring.Steady` = `Plateau` plus a cost on changing the reading across a pause (§3, HANDOFF §8x), uncommitted, every §4 line as before (the women's tail and men's VTR F3 still open). The first three owner takes are fixtures with graph-line tests (§5). Left: C (more of the owner's takes: the low voice's true reading is the owner's call by ear) and D (a better formant estimate for voices above about 290 Hz).
 *Base:* `dev/v0.4.0` after `dd0f4fc`.
 *Owner's decisions (2026-10-18):* a **pitch-blind** chooser (no fix that reads F0 to pick the ceiling); **no reliability notes, fallbacks or hidden readings** in place of a fix ("find a proper solution, not avoid issues"); the owner's own takes are committed as fixtures and more can be recorded on request.
