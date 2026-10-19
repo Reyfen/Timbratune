@@ -58,6 +58,8 @@ The profiles are in `src/Reyfen.Timbratune.Desktop/Properties/PublishProfiles/`.
 `build.ps1` builds every published file into `publish/`, or only the platforms named: `./build.ps1 win android`.
 `./build.ps1 android debug` makes a quick Android Debug APK (about a minute instead of four, no LLVM, slower at
 runtime) into `publish/Timbratune-android-debug/`, for testing rather than installing.
+`./build.ps1 android store` makes the Google Play bundle (`.aab`) and its native debug symbols (`.zip`) into
+`publish/Timbratune-android-store/`; it needs the signing keystore (below).
 It runs in Windows PowerShell 5.1 and in PowerShell 7 (`pwsh`, also on Linux); on Windows it can also be started
 by double-click or right-click → Run with PowerShell (the window then stays open at the end). It needs the .NET 10
 SDK or newer and says so if it's missing, and at the end lists the files of the platforms it built. On Windows the Linux packages are made in WSL (`Ubuntu-24.04`); on Linux

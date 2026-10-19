@@ -10,10 +10,17 @@
 #            (files/fake-mic.wav). Slower at runtime: for UI checks and emulator or phone smoke
 #            tests, not for performance numbers or anything the user installs as a release.
 #            win and linux listed with it still build as Release.
+#   store    Android only (`./build.ps1 store` means `android store`): the Google Play build into
+#            publish/Timbratune-android-store/: Timbratune-v<ver>-android.aab and
+#            Timbratune-v<ver>-android-native-debug-symbols.zip (Play Console: App bundle
+#            explorer -> Downloads, or uploaded with the bundle by the Android workflow). Needs
+#            the Timbratune keystore (HANDOFF 10). Version code: TIMBRATUNE_VERSION_CODE, else
+#            the csproj's ApplicationVersion; Play needs a higher one for every upload.
 #
 # Usage:  ./build.ps1                 all three (Release)
 #         ./build.ps1 win android     only those
 #         ./build.ps1 android debug   quick Android Debug build
+#         ./build.ps1 android store   Google Play bundle and symbols
 # On Windows it can also be double-clicked or started with right-click -> "Run with PowerShell";
 # the window then stays open at the end.
 #
@@ -81,17 +88,19 @@ function Invoke-Dotnet([string]$arguments, [string]$aotDir = $null) {
 
 Push-Location $root
 
-$doWin = $false; $doLinux = $false; $doAndroid = $false; $debug = $false
+$doWin = $false; $doLinux = $false; $doAndroid = $false; $debug = $false; $store = $false
 foreach ($t in $Targets) {
     switch ($t.ToLowerInvariant()) {
         'win' { $doWin = $true }
         'linux' { $doLinux = $true }
         'android' { $doAndroid = $true }
         'debug' { $debug = $true }
-        default { Write-Host "Unknown platform `"$t`" (use win, linux, android, debug)."; Finish $false }
+        'store' { $store = $true }
+        default { Write-Host "Unknown platform `"$t`" (use win, linux, android, debug, store)."; Finish $false }
     }
 }
-if ($debug -and -not ($doWin -or $doLinux -or $doAndroid)) { $doAndroid = $true }   # `debug` alone: Android Debug only
+if ($debug -and $store) { Write-Host 'debug and store exclude each other: a store build is Release.'; Finish $false }
+if (($debug -or $store) -and -not ($doWin -or $doLinux -or $doAndroid)) { $doAndroid = $true }   # `debug` / `store` alone: Android only
 if (-not ($doWin -or $doLinux -or $doAndroid)) { $doWin = $true; $doLinux = $true; $doAndroid = $true }
 
 # The projects target net10.0: an older SDK fails with a confusing error, so check first.
@@ -224,6 +233,7 @@ if ($doAndroid) {
         }
     }
 
+    $canBuild = $false
     if (-not (dotnet workload list 2>$null | Select-String -Pattern '^\s*android\s')) {
         $failed = $true; Write-Host 'Android build FAILED: the .NET android workload isn''t installed (dotnet workload install android).'
     }
@@ -247,11 +257,20 @@ if ($doAndroid) {
         # as here), else with this machine's debug key. See HANDOFF 10.
         $keystore = $env:TIMBRATUNE_KEYSTORE
         if (-not $keystore) { $keystore = Join-Path ([Environment]::GetFolderPath('UserProfile')) '.timbratune/android/timbratune.keystore' }
-        if (Test-Path -LiteralPath $keystore) { Write-Host "Key: Timbratune keystore ($keystore)" }
+        $canBuild = $true
+        $haveKey = Test-Path -LiteralPath $keystore
+        if ($haveKey) { Write-Host "Key: Timbratune keystore ($keystore)" }
         else {
             Write-Host "Key: this machine's DEBUG key: no keystore at $keystore."
             Write-Host '     This APK will not install over the app on the phones (signed with the Timbratune key).'
         }
+    }
+    if ($canBuild -and $store -and -not $haveKey) {
+        # The first bundle uploaded to Play fixes its upload key: never let that be a debug key.
+        $failed = $true
+        Write-Host 'Android store build FAILED: it needs the Timbratune keystore (HANDOFF 10).'
+    }
+    elseif ($canBuild) {
         # "The Android SDK directory could not be found" (XA5300) with a valid SDK comes from a
         # long-running MSBuild node that kept a failed SDK lookup (e.g. from another build that
         # didn't pass the SDK path). Stop those nodes first, tell every MSBuild process where the
@@ -270,12 +289,25 @@ if ($doAndroid) {
             Write-Host 'Debug build: no LLVM AOT, slower at runtime (not for performance measurements).'
             Invoke-Dotnet "publish src/Reyfen.Timbratune.Android -c Debug -o publish/$outName -p:EmbedAssembliesIntoApk=true -v quiet -nologo --disable-build-servers `"-p:AndroidSdkDirectory=$sdk`" `"-p:JavaSdkDirectory=$jdk`""
         }
+        elseif ($store) {
+            # Store: the Release build as an AAB, its AOT libraries' symbols kept (csproj).
+            $outName = 'Timbratune-android-store'
+            $aotDir = Join-Path $root 'src/Reyfen.Timbratune.Android/obj/Release/net10.0-android'
+            $codeArg = ''
+            if ($env:TIMBRATUNE_VERSION_CODE) { $codeArg = "-p:ApplicationVersion=$($env:TIMBRATUNE_VERSION_CODE)"; Write-Host "Version code: $($env:TIMBRATUNE_VERSION_CODE)" }
+            Remove-Item -LiteralPath (Join-Path $root "publish/$outName") -Recurse -Force -ErrorAction SilentlyContinue
+            Invoke-Dotnet "publish src/Reyfen.Timbratune.Android -c Release -o publish/$outName -p:TimbratuneStore=true $codeArg -v quiet -nologo --disable-build-servers `"-p:AndroidSdkDirectory=$sdk`" `"-p:JavaSdkDirectory=$jdk`"" $aotDir
+        }
         else {
             $outName = 'Timbratune-android'
             $aotDir = Join-Path $root 'src/Reyfen.Timbratune.Android/obj/Release/net10.0-android'
             Invoke-Dotnet "publish src/Reyfen.Timbratune.Android -c Release -o publish/$outName -v quiet -nologo --disable-build-servers `"-p:AndroidSdkDirectory=$sdk`" `"-p:JavaSdkDirectory=$jdk`"" $aotDir
         }
-        if ($LASTEXITCODE -eq 0) { Write-Host 'Android build done.'; $built += "$outName/Timbratune-v$version-android.apk" }
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host 'Android build done.'
+            if ($store) { $built += "$outName/Timbratune-v$version-android.aab"; $built += "$outName/Timbratune-v$version-android-native-debug-symbols.zip" }
+            else { $built += "$outName/Timbratune-v$version-android.apk" }
+        }
         else { $failed = $true; Write-Host 'Android build FAILED.' }
     }
 }
