@@ -1,0 +1,66 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- iOS head (iPhone and iPad): the same shared UI (Reyfen.Timbratune) and audio
+       (SoundFlow/miniaudio) as the desktop and Android. Not in Timbratune.slnx, like the Android
+       head: it needs the ios workload and a Mac with Xcode. Built and uploaded to TestFlight by
+       .github/workflows/ios.yml through scripts/build-ios.sh; see IOS.md. -->
+  <PropertyGroup>
+    <!-- The iOS SDK version is pinned: .NET 10.0.4xx offers 26.0 and 27.0, and the unversioned
+         TFM takes 27.0, which needs Xcode 27 (the GitHub macOS runners have 26.x). The workflow
+         builds with the matching Xcode 26.0.x. -->
+    <TargetFramework>net10.0-ios26.0</TargetFramework>
+    <SupportedOSPlatformVersion>15.0</SupportedOSPlatformVersion>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Reyfen.Timbratune.iOS</RootNamespace>
+    <ApplicationId>pl.eleanorakagner.timbratune</ApplicationId>
+    <ApplicationTitle>Timbratune</ApplicationTitle>
+    <!-- CFBundleVersion: must grow with every upload; CI passes its run number. -->
+    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationDisplayVersion>$(Version)</ApplicationDisplayVersion>
+    <!-- Devices only: SoundFlow ships miniaudio for ios-arm64, not for the simulator. -->
+    <RuntimeIdentifier>ios-arm64</RuntimeIdentifier>
+    <!-- Everything is compiled ahead of time except SoundFlow, which runs in the interpreter: it
+         hands miniaudio an instance method as the audio callback (MiniAudioEngine.OnAudioData), and
+         that native-to-managed wrapper can't be compiled ahead of time ("Attempting to JIT compile
+         method … while running in aot-only mode" at Record, build 13). The interpreter makes the
+         wrapper when needed. The callback only passes buffers on to the (AOT) recorder. -->
+    <MtouchInterpreter>-all,SoundFlow</MtouchInterpreter>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia.iOS" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <!-- libSkiaSharp.framework (Avalonia's renderer): see Directory.Packages.props. Without it the
+         app dies at start with DllNotFoundException: libSkiaSharp (builds 9, 10). -->
+    <PackageReference Include="SkiaSharp.NativeAssets.iOS" />
+    <!-- Referenced again here only for $(PkgSoundFlow), the package folder (see NativeReference). -->
+    <PackageReference Include="SoundFlow" GeneratePathProperty="true" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- miniaudio as an embedded, signed framework in Frameworks/ (the only place the App Store
+         accepts it). SoundFlow 1.4.1 looks for it elsewhere: MiniaudioFramework.cs loads it from here. -->
+    <NativeReference Include="$(PkgSoundFlow)/runtimes/ios-arm64/native/miniaudio.framework">
+      <Kind>Framework</Kind>
+      <SmartLink>false</SmartLink>
+    </NativeReference>
+  </ItemGroup>
+  <!-- SkiaSharp 3.119.4 has its iOS build for net10.0-ios26.2 and net9.0-ios18.0; this project's
+       net10.0-ios26.0 can't use the first, and NuGet then prefers plain net10.0 over the second.
+       That one imports "libSkiaSharp", which doesn't find the framework (DllNotFoundException at
+       start, build 11); the iOS build imports @rpath/libSkiaSharp.framework/libSkiaSharp. So the
+       iOS build from the same package replaces it. Remove once the TFM is ios26.2 or newer. -->
+  <Target Name="UseSkiaSharpForIos" AfterTargets="ResolvePackageAssets">
+    <ItemGroup>
+      <_SkiaSharpGeneric Include="@(RuntimeCopyLocalItems)" Condition="'%(RuntimeCopyLocalItems.NuGetPackageId)' == 'SkiaSharp' And '%(Filename)%(Extension)' == 'SkiaSharp.dll'" />
+      <_SkiaSharpIos Include="@(_SkiaSharpGeneric->'%(RootDir)%(Directory)..\net9.0-ios18.0\SkiaSharp.dll')" />
+    </ItemGroup>
+    <Error Condition="'@(_SkiaSharpGeneric)' == '' Or !Exists('@(_SkiaSharpIos)')" Text="SkiaSharp's iOS assembly not found (was: @(_SkiaSharpGeneric))." />
+    <ItemGroup>
+      <RuntimeCopyLocalItems Remove="@(_SkiaSharpGeneric)" />
+      <RuntimeCopyLocalItems Include="@(_SkiaSharpIos->'%(FullPath)')" NuGetPackageId="SkiaSharp" NuGetPackageVersion="%(_SkiaSharpGeneric.NuGetPackageVersion)" AssetType="runtime" DestinationSubPath="SkiaSharp.dll" />
+    </ItemGroup>
+    <Message Importance="high" Text="SkiaSharp for iOS: @(_SkiaSharpIos->'%(FullPath)')" />
+  </Target>
+  <ItemGroup>
+    <ProjectReference Include="..\Reyfen.Timbratune\Reyfen.Timbratune.csproj" />
+    <ProjectReference Include="..\Reyfen.Timbratune.Audio.SoundFlow\Reyfen.Timbratune.Audio.SoundFlow.csproj" />
+  </ItemGroup>
+</Project>

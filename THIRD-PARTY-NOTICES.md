@@ -46,10 +46,11 @@ These packages are linked into the app. Their full license texts ship inside eac
 
 | Package | License |
 |---|---|
-| [Avalonia](https://github.com/AvaloniaUI/Avalonia) (and its Desktop, Android, Fluent theme and Inter font packages) | MIT |
+| [Avalonia](https://github.com/AvaloniaUI/Avalonia) (and its Desktop, Android, iOS, Fluent theme and Inter font packages) | MIT |
 | [CommunityToolkit.Mvvm](https://github.com/CommunityToolkit/dotnet) | MIT |
 | [Microsoft.Extensions.DependencyInjection](https://github.com/dotnet/runtime) | MIT |
 | [SoundFlow](https://github.com/LSXPrime/SoundFlow) (with miniaudio) | MIT |
+| [SkiaSharp](https://github.com/mono/SkiaSharp) and HarfBuzzSharp (Avalonia's renderer and text shaping; the iOS head references `SkiaSharp.NativeAssets.iOS` itself) | MIT; the native Skia library BSD-3-Clause, HarfBuzz "Old MIT" |
 
 ## Not included
 
