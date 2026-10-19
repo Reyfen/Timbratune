@@ -15,10 +15,10 @@ Xcode, so the build runs on GitHub Actions (`.github/workflows/ios.yml`) and goe
 
 ## Building
 
-On every push to `feature/ios` and every `v*` tag, the workflow builds the signed `.ipa`, uploads
-it to App Store Connect, and keeps it as a run artifact. After Apple processes it (5–30 min), it
-shows in TestFlight. Once the workflow is on `main`, it can also be started by hand (Actions › iOS ›
-Run workflow), with or without the upload.
+The workflow runs only when started by hand (Actions › iOS › Run workflow, choosing the branch),
+with or without the upload; pushes and tags don't start it (since v0.3.2). It builds the signed
+`.ipa`, uploads it to App Store Connect, and keeps it as a run artifact. After Apple processes it
+(5–30 min), it shows in TestFlight.
 
 On a Mac: install Xcode 26.0.x (it matches the iOS 26.0 SDK the project targets) with its iOS platform, the .NET 10 SDK and `dotnet workload install ios`, put the certificate
 in the keychain and the profile in Xcode, then run `scripts/build-ios.sh [--build-number N] [--upload]`.

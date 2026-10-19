@@ -8,10 +8,8 @@
 #   ASC_APP_ID                 optional: the app's Apple ID (a number, App Information in App Store Connect)
 name: iOS
 
+# Manual only (Actions › iOS › Run workflow): pushes and tags don't start it.
 on:
-  push:
-    branches: [feature/ios]
-    tags: ['v*']
   workflow_dispatch:
     inputs:
       upload:
