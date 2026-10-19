@@ -84,6 +84,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit 1 }
           $symbols = Get-ChildItem publish/Timbratune-android-store/*-native-debug-symbols.zip | Select-Object -First 1
           "symbols=$($symbols.FullName)" >> $env:GITHUB_OUTPUT
+          # Release name as in Play Console by hand: "<version name> (<version code>)", e.g. "0.3.2 (101)".
+          $name = (Select-Xml -Path Directory.Build.props -XPath '//Version').Node.InnerText
+          "release_name=$name ($($env:TIMBRATUNE_VERSION_CODE))" >> $env:GITHUB_OUTPUT
 
       - uses: actions/upload-artifact@v5
         with:
@@ -100,6 +103,7 @@ jobs:
           packageName: com.reyfen.timbratune
           releaseFiles: publish/Timbratune-android-store/*.aab
           debugSymbols: ${{ steps.build.outputs.symbols }}
+          releaseName: ${{ steps.build.outputs.release_name }}
           track: ${{ inputs.track }}
           status: ${{ inputs.status }}
 
