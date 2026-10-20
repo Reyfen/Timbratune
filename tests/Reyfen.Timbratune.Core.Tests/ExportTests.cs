@@ -119,6 +119,60 @@ public sealed class ExportTests : IDisposable
     }
 
     [Fact]
+    public async Task DevicesAreKeptByTheStoreAndCarriedByExports()
+    {
+        var result = await new AcousticsAnalysisEngine().AnalyzeAsync(Wav);
+        var store = new RecordingStore(new DataPaths(_root));
+        var phone = new DeviceDescription { Os = "android", OsVersion = "15", Manufacturer = "Google", Model = "Pixel 9" };
+        var entry = result.Metrics;
+        entry.RecordedOn = phone;
+        var take = store.Add(entry, result.Detail, Wav, result.Series);
+
+        var reloaded = new RecordingStore(new DataPaths(_root)).Load().Single();
+        Assert.Equivalent(phone, reloaded.RecordedOn);
+        var takeJson = File.ReadAllText(Path.Combine(store.FolderOf(take), RecordingStore.TakeJson));
+        Assert.Contains("\"recorded_on\":{\"os\":\"android\",\"os_version\":\"15\",\"manufacturer\":\"Google\",\"model\":\"Pixel 9\"}", takeJson);
+        Assert.DoesNotContain("exported_on", takeJson);
+
+        var pc = new DeviceDescription { Os = "windows", OsVersion = "10.0.26100.4061" };
+        using var file = new MemoryStream();
+        TakeArchive.Write(file, reloaded, store.LoadDetail(reloaded)!, store.LoadSeries(reloaded)!, store.Paths.Resolve(reloaded.Audio)!,
+            exportedOn: pc);
+        file.Position = 0;
+        var audio = Path.Combine(_root, "extracted.wav");
+        var export = TakeArchive.Extract(file, audio);
+        Assert.Equivalent(pc, export.ExportedOn);
+        Assert.Equivalent(phone, export.Take.RecordedOn);
+        Assert.Null(export.Metrics.RecordedOn); // once, under take
+
+        var other = new RecordingStore(new DataPaths(Path.Combine(_root, "other")));
+        Assert.Equivalent(phone, other.AddImported(export, audio).RecordedOn);
+        Assert.Equivalent(phone, other.Load().Single().RecordedOn);
+    }
+
+    [Fact]
+    public void TakesWithoutADeviceLeaveItOut()
+    {
+        var export = TakeArchive.Describe(new Recording { Label = "old" }, new RecordingDetail(), (string?)null, keepSource: true);
+        using var json = new MemoryStream();
+        Json.TimbratuneJson.WriteExport(json, export);
+        var text = System.Text.Encoding.UTF8.GetString(json.ToArray());
+        Assert.DoesNotContain("recorded_on", text);
+        Assert.DoesNotContain("exported_on", text);
+    }
+
+    [Fact]
+    public void ThisComputerIsDescribed()
+    {
+        var device = new Platform.SystemDeviceInfo().Describe();
+        Assert.Equal(OperatingSystem.IsWindows() ? "windows" : OperatingSystem.IsLinux() ? "linux" : "macos", device.Os);
+        Assert.False(string.IsNullOrWhiteSpace(device.OsVersion));
+        Assert.Null(Platform.SystemDeviceInfo.Clean(" To Be Filled By O.E.M. "));
+        Assert.Null(Platform.SystemDeviceInfo.Clean(""));
+        Assert.Equal("LENOVO", Platform.SystemDeviceInfo.Clean(" LENOVO "));
+    }
+
+    [Fact]
     public void ReadRefusesOtherZips()
     {
         using var file = new MemoryStream();

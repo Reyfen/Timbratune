@@ -4,6 +4,7 @@ using Reyfen.Timbratune.Core.Analysis;
 using Reyfen.Timbratune.Core.Audio;
 using Reyfen.Timbratune.Core.Diagnostics;
 using Reyfen.Timbratune.Core.Models;
+using Reyfen.Timbratune.Core.Platform;
 using Reyfen.Timbratune.Core.Storage;
 using Reyfen.Timbratune.Diagnostics;
 using Reyfen.Timbratune.Shared.Messaging;
@@ -29,6 +30,7 @@ public sealed class RecordingManager : ILiveSession
     private readonly IAudioRecorder _recorder;
     private readonly IAnalysisEngine _engine;
     private readonly RecordingStore _store;
+    private readonly IDeviceInfo? _device;
     private readonly IAnalysisScheduler _scheduler;
     private readonly IPermissions _permissions;
     private readonly ITakeCatalog _catalog;
@@ -44,8 +46,9 @@ public sealed class RecordingManager : ILiveSession
 
     public RecordingManager(IAudioRecorder recorder, IAnalysisEngine engine, RecordingStore store, IAnalysisScheduler scheduler,
         IPermissions permissions, ITakeCatalog catalog, IActiveTakeService active, IMessenger messenger,
-        IAnalytics? analytics = null, ICrashReporter? crashes = null, IAppLog? log = null)
+        IAnalytics? analytics = null, ICrashReporter? crashes = null, IAppLog? log = null, IDeviceInfo? device = null)
     {
+        _device = device;
         _analytics = analytics ?? NullAnalytics.Instance;
         _crashes = crashes ?? NullCrashReporter.Instance;
         _log = log ?? NullAppLog.Instance;
@@ -201,6 +204,7 @@ public sealed class RecordingManager : ILiveSession
             entry.Date = DateTime.Now.ToString("yyyy-MM-dd");
             entry.RecordedAt = Recording.Timestamp(DateTime.Now);
             entry.SourceFile = Path.GetFileName(wav);
+            entry.RecordedOn = _device?.Describe();
             var sourceWav = wav;
             Recording saved;
             using (Perf.Measure("stop.save")) saved = await Task.Run(() => _store.Add(entry, result.Detail, sourceWav, result.Series));

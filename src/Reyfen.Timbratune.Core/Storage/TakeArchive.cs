@@ -44,17 +44,20 @@ public static class TakeArchive
             RecordedAt = recording.RecordedAt,
             DurationS = recording.DurationS,
             SourceFile = keepSource && !string.IsNullOrEmpty(recording.SourceFile) ? recording.SourceFile : null,
+            RecordedOn = recording.RecordedOn,
         },
         Audio = openAudio is null ? new ExportedAudio() : ReadFormat(openAudio),
         Analysis = Settings(detail),
         Metrics = Metrics(recording),
     };
 
+    /// <param name="exportedOn">The device exporting it (take.json <c>exported_on</c>).</param>
     public static void Write(Stream target, Recording recording, RecordingDetail detail, TakeSeries series, string wavPath,
-        string? appVersion = null)
+        string? appVersion = null, DeviceDescription? exportedOn = null)
     {
         var export = Describe(recording, detail, wavPath, keepSource: false);
         if (appVersion is not null) export.AppVersion = appVersion;
+        export.ExportedOn = exportedOn;
         export.Detail = WithTrends(detail);
         export.Series = series;
 

@@ -636,8 +636,9 @@ The choices:
 **The .tmbr format** (`Storage/TakeArchive.cs`): a zip with
 - `take.wav`: the stored WAV byte for byte (Fastest compression: 3.4 MB → 1.8 MB);
 - `take.json`: `Models/TakeExport`, snake_case, source-generated (`TimbratuneJsonContext`):
-  - `format`: "timbratune-take", `exporter_version` 1, `app_version` (`Features.Version`), `exported_at` (UTC);
-  - `take`: id, label, note, date, duration_s;
+  - `format`: "timbratune-take", `exporter_version` 1, `app_version` (`Features.Version`), `exported_at` (UTC), `exported_on` (the exporting device; only in .tmbr files, not in take folders);
+  - `take`: id, label, note, date, duration_s, `recorded_on` (the recording device; absent for imported audio files and takes from before 0.3.3, kept through .tmbr round trips);
+  - a device (`Models/DeviceDescription`, from `IDeviceInfo`) is `os` ("windows", "linux", "macos", "android", "ios"), `os_version`, `manufacturer`, `model`, each left out when the system doesn't say. Desktop: `Core/Platform/SystemDeviceInfo` (Windows registry: version with UBR, BIOS SystemManufacturer/SystemProductName; Linux: os-release PRETTY_NAME, DMI sys_vendor/product_name; macOS: version only, model not read yet), firmware placeholders ("To Be Filled By O.E.M.") dropped. Android: `Build.VERSION.Release`, `Build.Manufacturer`, `Build.Model` (`AndroidDeviceInfo`). iOS: `UIDevice.SystemVersion`, sysctl `hw.machine` ("iPhone17,1"; `IosDeviceInfo`, not yet run on a device). Optional fields, so `exporter_version` stays 1;
   - `audio`: file, sample_rate, channels, bits_per_sample (read from the WAV's fmt chunk);
   - `analysis`: the settings behind the numbers: pitch floor/ceiling/step, intensity step, HNR step, formant ceiling/count/window/step, register floor, semitone reference, trend step;
   - `metrics`: the take's `Recording` numbers, without data-folder paths or the source file name;

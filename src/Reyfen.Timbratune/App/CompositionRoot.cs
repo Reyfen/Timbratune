@@ -6,6 +6,7 @@ using Reyfen.Timbratune.Core.Analysis.Metrics;
 using Reyfen.Timbratune.Core.Audio;
 using Reyfen.Timbratune.Core.Audio.Decoding;
 using Reyfen.Timbratune.Core.Diagnostics;
+using Reyfen.Timbratune.Core.Platform;
 using Reyfen.Timbratune.Core.Storage;
 using Reyfen.Timbratune.Core.Storage.Settings;
 using Reyfen.Timbratune.Diagnostics;
@@ -45,8 +46,9 @@ public static class CompositionRoot
     /// It may add <see cref="IAudioDecoderProvider"/>s (miniaudio, the OS's decoders, FFmpeg; the
     /// managed WAV/AIFF one is always there), register <see cref="IFileSharer"/>
     /// (a share sheet), and replace the defaults of <see cref="IPermissions"/>,
-    /// <see cref="IThreadPriority"/>, <see cref="ReferenceVoiceFolder"/> and <see cref="IDataStore"/>
-    /// (the app's own files, such as settings; default: the data folder's root).
+    /// <see cref="IThreadPriority"/>, <see cref="ReferenceVoiceFolder"/>, <see cref="IDataStore"/>
+    /// (the app's own files, such as settings; default: the data folder's root) and
+    /// <see cref="IDeviceInfo"/> (the device written into takes; default: read from the desktop system).
     /// Telemetry is off by default (REFACTOR-PLAN §5): <see cref="IAppLog"/>, <see cref="IAnalytics"/>
     /// and <see cref="ICrashReporter"/> are do-nothing defaults until an adapter replaces them, and
     /// an adapter is only created when <see cref="TelemetryConsent"/> says this install sends.
@@ -60,6 +62,7 @@ public static class CompositionRoot
             new NativeAnalysisScheduler(LiveCores(), sp.GetRequiredService<IThreadPriority>().LowerCurrentThread));
         services.TryAddSingleton<IAnalysisEngine>(sp => new AcousticsAnalysisEngine(sp.GetRequiredService<IAnalysisScheduler>()));
         services.TryAddSingleton(sp => new RecordingStore(sp.GetRequiredService<DataPaths>()));
+        services.TryAddSingleton<IDeviceInfo, SystemDeviceInfo>();
         services.AddSingleton<IAudioDecoderProvider, ManagedDecoderProvider>();
         services.TryAddSingleton(sp => new DecoderRegistry(sp.GetServices<IAudioDecoderProvider>(), sp.GetRequiredService<IAppLog>()));
         services.TryAddSingleton(sp => new TakeImportService(sp.GetRequiredService<RecordingStore>(),

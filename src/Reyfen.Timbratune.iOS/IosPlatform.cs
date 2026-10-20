@@ -1,5 +1,8 @@
+using System.Runtime.InteropServices;
 using AVFoundation;
 using Foundation;
+using Reyfen.Timbratune.Core.Models;
+using Reyfen.Timbratune.Core.Platform;
 using Reyfen.Timbratune.Shared.Platform;
 using UIKit;
 
@@ -22,27 +25,6 @@ internal static class IosFolders
         var path = NSFileManager.DefaultManager.GetUrls(which, NSSearchPathDomain.User)[0].Path!;
         Directory.CreateDirectory(path);
         return path;
-    }
-}
-
-/// <summary>
-/// The audio session: record and play back at once (playback through the loudspeaker, not the
-/// earpiece), in measurement mode so iOS applies no automatic gain, noise suppression or echo
-/// cancellation to the voice being analysed. Bluetooth headsets aren't offered for input: their
-/// microphones run at 8-16 kHz (HFP), too little for the formants.
-/// </summary>
-internal static class IosAudioSession
-{
-    public static void Configure()
-    {
-        var session = AVAudioSession.SharedInstance();
-        if (session.SetCategory(AVAudioSessionCategory.PlayAndRecord,
-                AVAudioSessionCategoryOptions.DefaultToSpeaker | AVAudioSessionCategoryOptions.AllowBluetoothA2DP) is { } error)
-            Console.WriteLine($"Timbratune: audio session category: {error.LocalizedDescription}");
-        if (!session.SetMode(AVAudioSession.ModeMeasurement, out var modeError))
-            Console.WriteLine($"Timbratune: audio session mode: {modeError?.LocalizedDescription}");
-        session.SetPreferredSampleRate(44100, out _);
-        session.SetActive(true, out _);
     }
 }
 
@@ -105,5 +87,49 @@ internal sealed class IosFileSharer : IFileSharer
         var controller = window?.RootViewController;
         while (controller?.PresentedViewController is { } presented) controller = presented;
         return controller;
+    }
+}
+
+/// <summary>
+/// The iPhone or iPad: iOS's version ("18.1") and the hardware model ("iPhone17,1"); UIDevice
+/// only says "iPhone", so the model comes from sysctl hw.machine.
+/// </summary>
+internal sealed class IosDeviceInfo : IDeviceInfo
+{
+    private static readonly string? Machine = ReadMachine();
+
+    public DeviceDescription Describe() => new()
+    {
+        Os = "ios",
+        OsVersion = SystemDeviceInfo.Clean(UIDevice.CurrentDevice.SystemVersion),
+        Manufacturer = "Apple",
+        Model = Machine,
+    };
+
+    [DllImport(ObjCRuntime.Constants.SystemLibrary)]
+    private static extern int sysctlbyname(string name, IntPtr value, ref nint length, IntPtr newValue, nint newLength);
+
+    private static string? ReadMachine()
+    {
+        try
+        {
+            nint length = 0;
+            if (sysctlbyname("hw.machine", IntPtr.Zero, ref length, IntPtr.Zero, 0) != 0 || length <= 0) return null;
+            var buffer = Marshal.AllocHGlobal(length);
+            try
+            {
+                return sysctlbyname("hw.machine", buffer, ref length, IntPtr.Zero, 0) == 0
+                    ? SystemDeviceInfo.Clean(Marshal.PtrToStringAnsi(buffer))
+                    : null;
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(buffer);
+            }
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 }

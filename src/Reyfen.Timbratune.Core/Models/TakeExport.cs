@@ -18,6 +18,9 @@ public sealed class TakeExport
     public string AppVersion { get; set; } = "";
     /// <summary>UTC, ISO 8601.</summary>
     public string ExportedAt { get; set; } = "";
+    /// <summary>The device that exported the .tmbr file (null in a take folder's take.json and in older files).</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public DeviceDescription? ExportedOn { get; set; }
 
     public ExportedTake Take { get; set; } = new();
     public ExportedAudio Audio { get; set; } = new();
@@ -48,6 +51,9 @@ public sealed class ExportedTake
     /// <summary>The file the take was imported from (kept in take folders, left out of exports).</summary>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public string? SourceFile { get; set; }
+    /// <summary>The device it was recorded on (kept through exports); null for imported audio files and older takes.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public DeviceDescription? RecordedOn { get; set; }
 }
 
 public sealed class ExportedAudio

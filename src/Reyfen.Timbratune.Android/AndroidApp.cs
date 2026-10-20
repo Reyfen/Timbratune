@@ -10,6 +10,7 @@ using Reyfen.Timbratune.Audio.Android;
 using Reyfen.Timbratune.Audio.SoundFlow;
 using Reyfen.Timbratune.Core.Audio;
 using Reyfen.Timbratune.Core.Audio.Decoding;
+using Reyfen.Timbratune.Core.Platform;
 using Reyfen.Timbratune.Core.Storage;
 using Reyfen.Timbratune.Shared.Platform;
 
@@ -68,6 +69,7 @@ public sealed class AndroidApp : AvaloniaAndroidApplication<TimbratuneApp>
         services.AddSingleton<IAudioPlayer>(sp => sp.GetRequiredService<SoundFlowAudio>().CreatePlayer());
         services.AddSingleton<IPermissions, AndroidPermissions>();
         services.AddSingleton<IThreadPriority, AndroidThreadPriority>();
+        services.AddSingleton<IDeviceInfo, AndroidDeviceInfo>();
         services.AddSingleton<IFileSharer>(new AndroidFileSharer(() => MainActivity.Current));
         // Settings in the app's private folder, not with the takes in shared storage (a PC sees
         // that one over USB, and settings would be lost with a moved data folder).

@@ -6,6 +6,7 @@ using Reyfen.Timbratune.App;
 using Reyfen.Timbratune.Audio.SoundFlow;
 using Reyfen.Timbratune.Core.Audio;
 using Reyfen.Timbratune.Core.Audio.Decoding;
+using Reyfen.Timbratune.Core.Platform;
 using Reyfen.Timbratune.Core.Storage;
 using Reyfen.Timbratune.Shared.Platform;
 
@@ -49,10 +50,11 @@ public sealed class AppDelegate : AvaloniaAppDelegate<TimbratuneApp>
         });
         services.AddSingleton(_ => new SoundFlowAudio());
         services.AddSingleton<IAudioDecoderProvider>(sp => new MiniaudioDecoderProvider(sp.GetRequiredService<SoundFlowAudio>));
-        services.AddSingleton<IAudioRecorder>(sp => sp.GetRequiredService<SoundFlowAudio>().CreateRecorder());
+        services.AddSingleton<IAudioRecorder>(sp => new IosRecorder(sp.GetRequiredService<SoundFlowAudio>().CreateRecorder()));
         services.AddSingleton<IAudioPlayer>(sp => sp.GetRequiredService<SoundFlowAudio>().CreatePlayer());
         services.AddSingleton<IPermissions, IosPermissions>();
         services.AddSingleton<IFileSharer, IosFileSharer>();
+        services.AddSingleton<IDeviceInfo, IosDeviceInfo>();
         // Settings in Library/Application Support, not with the takes in Documents (which the Files app shows).
         services.AddSingleton<IDataStore>(new FileSystemDataStore(IosFolders.ApplicationSupport));
         return services.BuildServiceProvider();

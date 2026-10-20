@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.Messaging;
 using Reyfen.Timbratune.Core.Analysis;
 using Reyfen.Timbratune.Core.Models;
+using Reyfen.Timbratune.Core.Platform;
 using Reyfen.Timbratune.Core.Storage;
 using Reyfen.Timbratune.Services;
 using Reyfen.Timbratune.Shared;
@@ -16,7 +17,7 @@ namespace Reyfen.Timbratune.Features.TakeActions;
 /// </summary>
 /// <param name="sharer">The share sheet, where the platform has one (Android): takes are then shared instead of saved.</param>
 public sealed class TakeActionsManager(RecordingStore store, IAnalysisEngine engine, PlaybackService playback, IFileDialogs dialogs,
-    ITakeCatalog catalog, IMessenger messenger, IFileSharer? sharer = null)
+    ITakeCatalog catalog, IMessenger messenger, IFileSharer? sharer = null, IDeviceInfo? device = null)
 {
     private readonly HashSet<int> _exporting = [];
 
@@ -80,7 +81,8 @@ public sealed class TakeActionsManager(RecordingStore store, IAnalysisEngine eng
 
             var (d, s) = (detail, series);
             var name = $"voice-take-{take.Id}.{TakeArchive.Extension}";
-            Func<Stream, Task> write = target => Task.Run(() => TakeArchive.Write(target, take, d, s, audioPath, AppInfo.Version));
+            Func<Stream, Task> write = target => Task.Run(() => TakeArchive.Write(target, take, d, s, audioPath, AppInfo.Version,
+                device?.Describe()));
             if (sharer is not null)
             {
                 await sharer.ShareAsync("Share this take's data", name, "application/octet-stream", write);

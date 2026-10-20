@@ -22,6 +22,9 @@ public sealed class Recording
     public static string Timestamp(DateTime local) =>
         new DateTimeOffset(local).ToString("yyyy-MM-ddTHH:mm:sszzz", System.Globalization.CultureInfo.InvariantCulture);
     public string SourceFile { get; set; } = "";
+    /// <summary>The device it was recorded on; null for imported audio files and takes saved before it was kept.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public DeviceDescription? RecordedOn { get; set; }
     /// <summary>Relative to the data root, e.g. "audio/001.wav". Null when no audio was kept.</summary>
     public string? Audio { get; set; }
     /// <summary>Relative to the data root, e.g. "analysis/1.json".</summary>

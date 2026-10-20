@@ -104,6 +104,7 @@ public sealed class RecordingStore
         entry.RecordedAt = export.Take.RecordedAt;
         entry.DurationS = export.Take.DurationS ?? entry.DurationS;
         entry.SourceFile = export.Take.SourceFile ?? "";
+        entry.RecordedOn = export.Take.RecordedOn;
         lock (_gate)
         {
             entry.Id = NextIdUnlocked();
@@ -294,6 +295,7 @@ public sealed class RecordingStore
         r.RecordedAt = export.Take.RecordedAt ?? AudioTime(take, r.Date);
         r.DurationS = export.Take.DurationS ?? r.DurationS;
         r.SourceFile = export.Take.SourceFile ?? "";
+        r.RecordedOn = export.Take.RecordedOn;
         SetPaths(r, take);
         return r;
     }
