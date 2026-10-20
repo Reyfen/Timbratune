@@ -1,5 +1,4 @@
 using AVFoundation;
-using Foundation;
 using Reyfen.Timbratune.Core.Audio;
 
 namespace Reyfen.Timbratune.iOS;
@@ -24,7 +23,7 @@ internal static class IosAudioSession
         if (session.SetCategory(AVAudioSessionCategory.PlayAndRecord,
                 AVAudioSessionCategoryOptions.DefaultToSpeaker | AVAudioSessionCategoryOptions.AllowBluetoothA2DP) is { } error)
             Console.WriteLine($"Timbratune: audio session category: {error.LocalizedDescription}");
-        SetMode(AVAudioSession.ModeDefault);
+        SetMode(AVAudioSessionMode.Default);
         session.SetPreferredSampleRate(44100, out _);
         session.SetActive(true, out _);
     }
@@ -33,7 +32,7 @@ internal static class IosAudioSession
     public static string EnterRecording()
     {
         var session = AVAudioSession.SharedInstance();
-        var mode = SetMode(AVAudioSession.ModeMeasurement);
+        var mode = SetMode(AVAudioSessionMode.Measurement);
         var gainBefore = session.InputGain;
         string gain;
         if (!session.InputGainSettable)
@@ -47,9 +46,9 @@ internal static class IosAudioSession
     }
 
     /// <summary>After the microphone closed: back to the default mode, for playback.</summary>
-    public static void LeaveRecording() => SetMode(AVAudioSession.ModeDefault);
+    public static void LeaveRecording() => SetMode(AVAudioSessionMode.Default);
 
-    private static string SetMode(NSString mode)
+    private static string SetMode(AVAudioSessionMode mode)
     {
         var session = AVAudioSession.SharedInstance();
         return session.SetMode(mode, out var error)
