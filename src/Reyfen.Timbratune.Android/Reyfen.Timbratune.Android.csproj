@@ -23,6 +23,32 @@
     <AndroidEnableProfiledAot>false</AndroidEnableProfiledAot>
     <EnableLLVM>true</EnableLLVM>
   </PropertyGroup>
+  <!-- Signing: every build (Release, Debug, profiling) signs with one release keystore when it's
+       there, so any build installs over the app on a phone without an uninstall (which deletes
+       the takes). It lives outside the repo and outside AppData (Claude's shells see another
+       AppData): %USERPROFILE%/.timbratune/android/timbratune.keystore, or the path in
+       TIMBRATUNE_KEYSTORE. Password: TIMBRATUNE_KEYSTORE_PASS, else password.txt beside the
+       keystore (the password on two lines, see below). Without the keystore the local debug key signs, which differs per machine and
+       per shell (HANDOFF §10). -->
+  <PropertyGroup>
+    <TimbratuneKeystore Condition="'$(TimbratuneKeystore)' == ''">$(TIMBRATUNE_KEYSTORE)</TimbratuneKeystore>
+    <TimbratuneKeystore Condition="'$(TimbratuneKeystore)' == ''">$([System.Environment]::GetFolderPath(SpecialFolder.UserProfile))/.timbratune/android/timbratune.keystore</TimbratuneKeystore>
+  </PropertyGroup>
+  <PropertyGroup Condition="Exists('$(TimbratuneKeystore)')">
+    <AndroidKeyStore>true</AndroidKeyStore>
+    <AndroidSigningKeyStore>$(TimbratuneKeystore)</AndroidSigningKeyStore>
+    <AndroidSigningKeyAlias>timbratune</AndroidSigningKeyAlias>
+    <AndroidSigningStorePass Condition="'$(TIMBRATUNE_KEYSTORE_PASS)' != ''">env:TIMBRATUNE_KEYSTORE_PASS</AndroidSigningStorePass>
+    <AndroidSigningStorePass Condition="'$(TIMBRATUNE_KEYSTORE_PASS)' == ''">file:$([System.IO.Path]::GetDirectoryName('$(TimbratuneKeystore)'))/password.txt</AndroidSigningStorePass>
+    <!-- PKCS12: the key's password is the store's. Given the same file for both, apksigner
+         reads the store password from its first line and the key's from the second, so
+         password.txt holds the password twice, on two lines. -->
+    <AndroidSigningKeyPass>$(AndroidSigningStorePass)</AndroidSigningKeyPass>
+  </PropertyGroup>
+  <Target Name="ReportTimbratuneSigning" BeforeTargets="Build">
+    <Message Importance="high" Text="Signing with the Timbratune keystore: $(TimbratuneKeystore)" Condition="Exists('$(TimbratuneKeystore)')" />
+    <Warning Text="No Timbratune keystore at $(TimbratuneKeystore): signing with this machine's debug key. The APK won't install over a build signed with the Timbratune key (HANDOFF §10)." Condition="!Exists('$(TimbratuneKeystore)')" />
+  </Target>
   <!-- Profiling build: dotnet publish … -p:TimbratuneProfiling=true. Timing probes go to logcat
        (adb logcat -s Timbratune), the APK is profileable, and a fake mic file can be used. -->
   <PropertyGroup Condition="'$(TimbratuneProfiling)' == 'true'">
@@ -50,17 +76,56 @@
     <ProjectReference Include="..\Reyfen.Timbratune.Audio.SoundFlow\Reyfen.Timbratune.Audio.SoundFlow.csproj" />
     <ProjectReference Include="..\Reyfen.Timbratune.Audio.Android\Reyfen.Timbratune.Audio.Android.csproj" />
   </ItemGroup>
-  <!-- Publish output: just the signed APK, named Timbratune-v<Version>-android.apk. -->
-  <Target Name="NameApkForRelease" AfterTargets="Publish">
+  <!-- Store build (./build.ps1 android store, or -p:TimbratuneStore=true): an AAB for Google Play
+       and its native debug symbols. The SDK strips the LLVM AOT libraries (libaot-*.so) as it
+       compiles them; here they're compiled unstripped, copied to the symbols folder under the
+       names they have in the bundle, and stripped again before packaging, so the AAB's libraries
+       are the same size as an APK's. AOT always re-runs (its stamp and outputs are deleted),
+       or an incremental build would copy already-stripped libraries. The version code Play needs to
+       grow with every upload: -p:ApplicationVersion=N. HANDOFF §10. -->
+  <PropertyGroup Condition="'$(TimbratuneStore)' == 'true'">
+    <AndroidPackageFormat>aab</AndroidPackageFormat>
+    <_AndroidAotStripLibraries>false</_AndroidAotStripLibraries>
+    <TimbratuneSymbolsDir Condition="'$(TimbratuneSymbolsDir)' == ''">$(MSBuildProjectDirectory)/obj/native-debug-symbols/</TimbratuneSymbolsDir>
+  </PropertyGroup>
+  <Target Name="ForceTimbratuneStoreAot" BeforeTargets="_AndroidAotCompilation" Condition="'$(TimbratuneStore)' == 'true'">
+    <Delete Files="$(IntermediateOutputPath)stamp/_AndroidAot.stamp" />
+    <!-- Libraries of assemblies an older build had but this one doesn't would end up among the symbols. -->
+    <RemoveDir Directories="$(IntermediateOutputPath)aot" />
+  </Target>
+  <Target Name="KeepTimbratuneNativeSymbols" AfterTargets="_AndroidAotCompilation" Condition="'$(TimbratuneStore)' == 'true' and '$(RuntimeIdentifier)' != ''">
     <PropertyGroup>
-      <_TimbratuneApk>$(PublishDir)$(ApplicationId)-Signed.apk</_TimbratuneApk>
+      <_TimbratuneAbi Condition="'$(RuntimeIdentifier)' == 'android-arm64'">arm64-v8a</_TimbratuneAbi>
+      <_TimbratuneAbi Condition="'$(RuntimeIdentifier)' == 'android-x64'">x86_64</_TimbratuneAbi>
+      <_TimbratuneStrip>$(AndroidBinUtilsDirectory)/llvm-strip</_TimbratuneStrip>
+      <_TimbratuneStrip Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(_TimbratuneStrip).exe</_TimbratuneStrip>
     </PropertyGroup>
     <ItemGroup>
-      <_TimbratuneExtra Include="$(PublishDir)$(ApplicationId).apk;$(PublishDir)*.dll" />
+      <_TimbratuneAotLib Include="$(IntermediateOutputPath)aot/*.so" />
+    </ItemGroup>
+    <Error Condition="'$(_TimbratuneAbi)' == ''" Text="No ABI name for $(RuntimeIdentifier)" />
+    <RemoveDir Directories="$(TimbratuneSymbolsDir)$(_TimbratuneAbi)" />
+    <!-- In the bundle, Avalonia.Base.dll.so is lib/<abi>/libaot-Avalonia.Base.dll.so. -->
+    <Copy SourceFiles="@(_TimbratuneAotLib)" DestinationFiles="@(_TimbratuneAotLib->'$(TimbratuneSymbolsDir)$(_TimbratuneAbi)/libaot-%(Filename)%(Extension)')" />
+    <Exec Command="&quot;$(_TimbratuneStrip)&quot; --strip-all @(_TimbratuneAotLib->'&quot;%(FullPath)&quot;', ' ')" />
+  </Target>
+  <!-- Publish output: just the signed APK, named Timbratune-v<Version>-android.apk (a store
+       build: the signed AAB, Timbratune-v<Version>-android.aab). -->
+  <Target Name="NameApkForRelease" AfterTargets="Publish">
+    <PropertyGroup>
+      <_TimbratunePackageExt>apk</_TimbratunePackageExt>
+      <_TimbratunePackageExt Condition="'$(AndroidPackageFormat)' == 'aab'">aab</_TimbratunePackageExt>
+      <_TimbratuneApk>$(PublishDir)$(ApplicationId)-Signed.$(_TimbratunePackageExt)</_TimbratuneApk>
+      <_TimbratuneOut>$(PublishDir)Timbratune-v$(Version)-android.$(_TimbratunePackageExt)</_TimbratuneOut>
+    </PropertyGroup>
+    <ItemGroup>
+      <_TimbratuneExtra Include="$(PublishDir)$(ApplicationId).apk;$(PublishDir)$(ApplicationId).aab;$(PublishDir)*.dll" />
     </ItemGroup>
     <!-- Move won't replace an existing file: drop the previous build first. -->
-    <Delete Files="$(PublishDir)Timbratune-v$(Version)-android.apk" Condition="Exists('$(_TimbratuneApk)')" />
-    <Move SourceFiles="$(_TimbratuneApk)" DestinationFiles="$(PublishDir)Timbratune-v$(Version)-android.apk" Condition="Exists('$(_TimbratuneApk)')" />
+    <Delete Files="$(_TimbratuneOut)" Condition="Exists('$(_TimbratuneApk)')" />
+    <Move SourceFiles="$(_TimbratuneApk)" DestinationFiles="$(_TimbratuneOut)" Condition="Exists('$(_TimbratuneApk)')" />
     <Delete Files="@(_TimbratuneExtra)" />
+    <!-- Store build: the symbols as Play takes them (<abi>/libaot-*.so at the zip's root). -->
+    <ZipDirectory Condition="'$(TimbratuneStore)' == 'true'" SourceDirectory="$(TimbratuneSymbolsDir)" DestinationFile="$(PublishDir)Timbratune-v$(Version)-android-native-debug-symbols.zip" Overwrite="true" />
   </Target>
 </Project>
