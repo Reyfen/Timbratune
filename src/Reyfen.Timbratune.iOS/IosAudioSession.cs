@@ -9,14 +9,18 @@ namespace Reyfen.Timbratune.iOS;
 /// (HFP), too little for the formants.
 /// <para>
 /// While recording, the session is in measurement mode, so iOS applies no automatic gain, noise
-/// suppression or echo cancellation to the voice being analysed; the input gain is raised to its
-/// maximum then, as measurement mode records the built-in microphone very quietly (takes peaked
-/// at -38 to -32 dBFS on iPhones in 0.3.2). The rest of the time the session is in the default
-/// mode, as measurement mode also plays back quietly.
+/// suppression or echo cancellation to the voice being analysed. Measurement mode records quietly
+/// at iOS's default input gain (0.50 on an iPad Air: peaks at -38 dBFS in 0.3.2), so the gain is
+/// set to <see cref="RecordingGain"/> where iOS allows it (1.0 was too much there: +32 dB, a loud
+/// voice clipped). An iPhone 12 doesn't allow it (fixed at 1.0, peaks near -26 dBFS). The rest of
+/// the time the session is in the default mode, as measurement mode also plays back quietly.
 /// </para>
 /// </summary>
 internal static class IosAudioSession
 {
+    /// <summary>The input gain while recording, where it can be set (0 to 1; iPad Air: 0.5 to 1.0 is +32 dB).</summary>
+    public const float RecordingGain = 0.8f;
+
     public static void Configure()
     {
         var session = AVAudioSession.SharedInstance();
@@ -28,21 +32,25 @@ internal static class IosAudioSession
         session.SetActive(true, out _);
     }
 
-    /// <summary>Before the microphone opens: measurement mode, input gain at its maximum. Returns what was set, for the report.</summary>
-    public static string EnterRecording()
+    /// <summary>Before the microphone opens: measurement mode, then <see cref="ApplyGain"/>. Returns what was set, for the report.</summary>
+    public static string EnterRecording(out bool gainSettable) =>
+        $"mode {SetMode(AVAudioSessionMode.Measurement)} · input gain {ApplyGain(out gainSettable)}";
+
+    /// <summary>
+    /// Sets the input gain to <see cref="RecordingGain"/>; <paramref name="settable"/> is false when
+    /// iOS doesn't allow it now (also while the input route is still changing after the mode, so the
+    /// recorder tries once more with the microphone open). Returns what happened, for the report.
+    /// </summary>
+    public static string ApplyGain(out bool settable)
     {
         var session = AVAudioSession.SharedInstance();
-        var mode = SetMode(AVAudioSessionMode.Measurement);
-        var gainBefore = session.InputGain;
-        string gain;
-        if (!session.InputGainSettable)
-            gain = $"{gainBefore:0.00}, not settable";
-        else if (session.SetInputGain(1f, out var gainError))
-            gain = $"{gainBefore:0.00} -> {session.InputGain:0.00}";
-        else
-            gain = $"{gainBefore:0.00}, raising failed: {gainError?.LocalizedDescription}";
+        var before = session.InputGain;
+        settable = session.InputGainSettable;
+        var gain = !settable ? $"{before:0.00}, not settable"
+            : session.SetInputGain(RecordingGain, out var error) ? $"{before:0.00} -> {session.InputGain:0.00}"
+            : $"{before:0.00}, setting failed: {error?.LocalizedDescription}";
         var input = session.CurrentRoute.Inputs is { Length: > 0 } inputs ? $"{inputs[0].PortName} ({inputs[0].PortType})" : "none";
-        return $"mode {mode} · input gain {gain} · input {input} · {session.SampleRate:0} Hz";
+        return $"{gain} · input {input} · {session.SampleRate:0} Hz";
     }
 
     /// <summary>After the microphone closed: back to the default mode, for playback.</summary>
@@ -59,13 +67,15 @@ internal static class IosAudioSession
 
 /// <summary>
 /// The recorder with the audio session around it (<see cref="IosAudioSession"/>), and a line per
-/// take in <see cref="AudioReport"/>: the session it recorded with, its length and peak level.
+/// take in <see cref="AudioReport"/>: the session it recorded with, its length, peak level and
+/// clipped samples (the recorder limits samples to full scale, see SoundFlowRecorder).
 /// </summary>
 internal sealed class IosRecorder : IAudioRecorder
 {
     private readonly IAudioRecorder _inner;
     private float _peak;
     private long _samples;
+    private long _clipped;
 
     public IosRecorder(IAudioRecorder inner)
     {
@@ -84,10 +94,14 @@ internal sealed class IosRecorder : IAudioRecorder
         if (_inner.IsRecording) return;
         _peak = 0;
         _samples = 0;
-        AudioReport.Write("record · " + IosAudioSession.EnterRecording());
+        _clipped = 0;
+        AudioReport.Write("record · " + IosAudioSession.EnterRecording(out var gainSettable));
         try
         {
             _inner.Start();
+            // Not settable before the microphone opened (the route may still have been changing): once more.
+            if (!gainSettable)
+                AudioReport.Write("microphone open · input gain " + IosAudioSession.ApplyGain(out _));
         }
         catch
         {
@@ -106,7 +120,7 @@ internal sealed class IosRecorder : IAudioRecorder
         {
             IosAudioSession.LeaveRecording();
             var peakDb = _peak > 0 ? $"{20 * Math.Log10(_peak):0.0} dBFS" : "silent";
-            AudioReport.Write($"stop · {(double)_samples / SampleRate:0.0} s · peak {peakDb}");
+            AudioReport.Write($"stop · {(double)_samples / SampleRate:0.0} s · peak {peakDb} · clipped {_clipped} samples");
         }
     }
 
@@ -128,7 +142,11 @@ internal sealed class IosRecorder : IAudioRecorder
     {
         var peak = _peak;
         foreach (var s in samples)
-            if (Math.Abs(s) > peak) peak = Math.Abs(s);
+        {
+            var a = Math.Abs(s);
+            if (a > peak) peak = a;
+            if (a >= 1f) _clipped++;
+        }
         _peak = peak;
         _samples += samples.Length;
         SamplesCaptured?.Invoke(samples);

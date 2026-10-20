@@ -58,11 +58,14 @@ portal, then update the secrets.
 - **Audio session** (`IosAudioSession`): play-and-record, playback on the loudspeaker, preferred
   44.1 kHz. Bluetooth headset microphones (8–16 kHz) aren't offered. While recording
   (`IosRecorder`), **measurement mode** (no automatic gain, noise suppression or echo
-  cancellation on the analysed voice) with the input gain raised to 1.0; otherwise the default
-  mode. Measurement mode records the built-in microphone very quietly (0.3.2 takes peaked at
-  −38 to −32 dBFS, loudness below the zones) and plays back quietly too.
+  cancellation on the analysed voice) with the input gain set to 0.8 where iOS allows it
+  (`RecordingGain`); otherwise the default mode. Measurement mode at iOS's default gain (0.50)
+  records very quietly (0.3.2 on an iPad Air: peaks at −38 dBFS, loudness below the zones) and
+  plays back quietly too; gain 1.0 there was +32 dB, and a loud voice clipped. An iPhone 12
+  doesn't allow setting it (fixed at 1.0; peaks near −26 dBFS).
 - **Audio report**: `Documents/audio.txt` (Files app › Timbratune), newest first: per take the
-  session mode, input gain before → after, input port and rate, then the length and peak dBFS.
+  session mode, input gain before → after, input port and rate, then the length, peak dBFS and
+  clipped samples.
 - **Microphone permission**: asked at the first recording (`NSMicrophoneUsageDescription`).
 - **Crashes**: fatal .NET exceptions are written to `Documents/crash.txt` (Files app ›
   Timbratune), newest first (`CrashLog`). A Release build's own log lines show as `<private>`

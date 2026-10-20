@@ -100,6 +100,10 @@ internal sealed class SoundFlowRecorder(MiniAudioEngine engine) : IAudioRecorder
     // Audio thread.
     private void OnSamples(Span<float> samples, Capability capability)
     {
+        // Limited to full scale here, as the WAV can't hold more, so listeners (the live analysis)
+        // see exactly the saved samples (iOS's measurement mode delivers more than full scale).
+        foreach (ref var s in samples)
+            s = Math.Clamp(s, -1f, 1f);
         lock (_write)
         {
             if (_writer is null) return;
