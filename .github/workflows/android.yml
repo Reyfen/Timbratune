@@ -1,0 +1,112 @@
+# Android: builds the Google Play bundle (.aab) and its native debug symbols with
+# `build.ps1 android store` on a Linux runner, keeps both as a run artifact, and optionally
+# uploads them to Google Play. Manual only: Actions › Android › Run workflow. See HANDOFF §10.
+# Secrets (Settings › Secrets and variables › Actions):
+#   ANDROID_KEYSTORE_B64       base64 of the Timbratune keystore (%USERPROFILE%\.timbratune\android)
+#   ANDROID_KEYSTORE_PASS      its password (one line)
+#   PLAY_SERVICE_ACCOUNT_JSON  only for the upload: the JSON key of a Google Cloud service account
+#                              invited in Play Console (Users and permissions) with release rights
+# The app must already exist in Play Console, and Google takes the very first bundle only by hand
+# (Play Console › Test and release); every later one can come from here.
+name: Android
+
+on:
+  workflow_dispatch:
+    inputs:
+      upload:
+        description: Upload to Google Play
+        type: boolean
+        default: false
+      track:
+        description: Play track
+        type: choice
+        options: [internal, alpha, beta, production]
+        default: internal
+      status:
+        description: Release status (draft while the app has never been published)
+        type: choice
+        options: [draft, completed]
+        default: draft
+      version_code:
+        description: Version code (empty = 100 + this workflow's run number; Play needs a higher one for every upload)
+        type: string
+        required: false
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: microsoft
+          java-version: '17'
+
+      - name: Install the android workload and SDK packages
+        run: |
+          dotnet workload install android
+          # The platform and build tools the project targets, into the runner's SDK.
+          dotnet build src/Reyfen.Timbratune.Android -t:InstallAndroidDependencies -f net10.0-android \
+            "-p:AndroidSdkDirectory=$ANDROID_HOME" "-p:JavaSdkDirectory=$JAVA_HOME" -p:AcceptAndroidSDKLicenses=True
+
+      - name: Install the keystore
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          if [ -z "$KEYSTORE" ]; then echo "::error::The ANDROID_KEYSTORE_B64 secret is needed (HANDOFF §10)"; exit 1; fi
+          printf '%s' "$KEYSTORE" | tr -d ' \r\n' | base64 --decode > "$RUNNER_TEMP/timbratune.keystore"
+
+      - name: Build the bundle
+        id: build
+        shell: pwsh
+        env:
+          # build.ps1 finds the runner's SDK (ANDROID_HOME) and setup-java's JDK (JAVA_HOME).
+          TIMBRATUNE_KEYSTORE: ${{ runner.temp }}/timbratune.keystore
+          TIMBRATUNE_KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASS }}
+          VERSION_CODE_INPUT: ${{ inputs.version_code }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          $env:TIMBRATUNE_VERSION_CODE = if ($env:VERSION_CODE_INPUT) { $env:VERSION_CODE_INPUT } else { 100 + [int]$env:RUN_NUMBER }
+          ./build.ps1 android store
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $symbols = Get-ChildItem publish/Timbratune-android-store/*-native-debug-symbols.zip | Select-Object -First 1
+          "symbols=$($symbols.FullName)" >> $env:GITHUB_OUTPUT
+          # Release name as in Play Console by hand: "<version name> (<version code>)", e.g. "0.3.2 (101)".
+          $name = (Select-Xml -Path Directory.Build.props -XPath '//Version').Node.InnerText
+          "release_name=$name ($($env:TIMBRATUNE_VERSION_CODE))" >> $env:GITHUB_OUTPUT
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: Timbratune-android-store-${{ github.run_number }}
+          path: publish/Timbratune-android-store/
+          if-no-files-found: error
+
+      - name: Upload to Google Play
+        if: inputs.upload
+        # r0adkll/upload-google-play v1.1.5, pinned by commit.
+        uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.reyfen.timbratune
+          releaseFiles: publish/Timbratune-android-store/*.aab
+          debugSymbols: ${{ steps.build.outputs.symbols }}
+          releaseName: ${{ steps.build.outputs.release_name }}
+          track: ${{ inputs.track }}
+          status: ${{ inputs.status }}
+
+      - name: Remove the keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/timbratune.keystore"

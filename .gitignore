@@ -18,3 +18,7 @@ publish/
 # OS / editor noise
 Thumbs.db
 .DS_Store
+
+# Android signing keys: they live in %USERPROFILE%/.timbratune/android (HANDOFF 10), never here
+*.keystore
+*.jks
