@@ -2,7 +2,7 @@
 
 This file brings a new engineer or agent up to date on everything done so far: what the user asked for, what was decided and why, how the code is organised, what was measured, and what is still open.
 
-Last updated 2026-10-19 (§10: Android signing, the store build and the Android workflow). The newest work is §8i–§8s (refactoring P0: golden, architecture, bench and phone baselines; P1: dependency injection and shared ports; P2: storage, settings and scheduling seams; P3: UI feature modules; P4: import formats; P5: analysis tracks; P6: metric modules; P7: registry-driven UI; P8: telemetry groundwork; P9: final performance check; P10: documentation, the refactoring is done); §8d–§8h cover v0.2.0 (Android performance, export, one folder per take, import, `build.ps1`); §8 is the current state.
+Last updated 2026-10-20 (§11: publishing, releases and the app's description, moved here from the README; §10: Android signing, the store build and the Android workflow). The newest work is §8i–§8s (refactoring P0: golden, architecture, bench and phone baselines; P1: dependency injection and shared ports; P2: storage, settings and scheduling seams; P3: UI feature modules; P4: import formats; P5: analysis tracks; P6: metric modules; P7: registry-driven UI; P8: telemetry groundwork; P9: final performance check; P10: documentation, the refactoring is done); §8d–§8h cover v0.2.0 (Android performance, export, one folder per take, import, `build.ps1`); §8 is the current state.
 
 **Name:** the project is **Timbratune — Gender Voice Analysis Tool**, by **Reyfen**.
 - **Before 2026-10-02 it was called Euphonia**, and it is a fork of [Euphonia](https://github.com/Yuuzulight/Euphonia). Older parts of this file and of the transcript say "Euphonia" and "Euphonia-CSharp"; read those as Timbratune and the repo root (the code moved from `Timbratune/` to the root on 2026-10-06).
@@ -1318,3 +1318,105 @@ Phase P10 of `REFACTOR-PLAN.md` closes the refactoring of v0.3.0 (P0–P10, §8i
 **The Android workflow** (`.github/workflows/android.yml`, manual only: Actions › Android › Run workflow): on `ubuntu-24.04` it installs the workload and SDK packages, decodes `ANDROID_KEYSTORE_B64` into the runner's temp folder, runs `build.ps1 android store` with `TIMBRATUNE_KEYSTORE_PASS` from `ANDROID_KEYSTORE_PASS`, and keeps the bundle and symbols as a run artifact. The version code is 100 + the run number unless given. With "Upload to Google Play" it also sends both to Play through `r0adkll/upload-google-play` (v1.1.5, pinned by commit) to the chosen track, as a draft by default, named like a hand-made release: `<version> (<code>)`, e.g. `0.3.2 (101)`. A `workflow_dispatch` workflow can only be started once the file is on the default branch (`main`); after that any branch can be picked. Not run yet.
 - **One-time setup for the upload:** create the app in Play Console (package `com.reyfen.timbratune`) and upload the first bundle by hand (the API can't create an app or make its first release); in Google Cloud create a service account in a project, enable the Google Play Android Developer API there, make a JSON key; in Play Console › Users and permissions invite the service account's e-mail with release rights for the app; save the JSON as the `PLAY_SERVICE_ACCOUNT_JSON` secret. Until the app has been published once, Play takes releases only as drafts (`status: draft`).
 - **iOS** (`ios.yml`) became manual only in the same version: pushes to `feature/ios` and `v*` tags no longer start it.
+
+## 11. Publishing, releases and the app's description (moved from the README, 2026-10-20)
+
+The owner wants the README to hold only what someone setting up the repo needs. Everything else it used to say is here.
+
+### 11.1 Publishing the desktop builds
+
+Each platform gets **one self-contained executable**, with no .NET install needed on the target (~47 MB). The profiles are in `src/Reyfen.Timbratune.Desktop/Properties/PublishProfiles/`; the Linux build can be made from Windows.
+
+```powershell
+dotnet publish src/Reyfen.Timbratune.Desktop -p:PublishProfile=win-x64     # → publish\Timbratune-win-x64\Timbratune-v<version>-win-x64.exe
+dotnet publish src/Reyfen.Timbratune.Desktop -p:PublishProfile=linux-x64   # → publish/Timbratune-linux-x64/Timbratune-v<version>-linux-x64
+```
+
+- **Names:** every published file is `<app>-v<version>-<platform>`, the version from `<Version>` in `Directory.Build.props`. The app shows the same version in its footer.
+- **What's bundled:** the native libraries (Skia, HarfBuzz, miniaudio) are inside the file and unpacked once to the .NET bundle cache on first start.
+
+**Linux packages.** Run on Linux or in WSL; needs `dpkg-deb`, ImageMagick and `appimagetool`:
+
+```bash
+scripts/package-linux.sh      # → …-v<version>-linux-x64.deb and …-v<version>-linux-x64.AppImage.tar.gz (replaces the binary)
+```
+
+- **`.deb` (~39 MB), for Mint, Ubuntu and Debian:** double-click it, then Install. Timbratune appears in the app menu with its icon, and `timbratune` works in a terminal. No permission step.
+- **`.AppImage.tar.gz` (~40 MB), for any distribution:** double-click it and choose Extract, then double-click the AppImage. It runs from a terminal too. The AppImage ships inside an archive because downloads and Windows drives drop a bare file's "run as program" flag; the archive keeps it.
+
+### 11.2 `build.ps1`: all builds at once
+
+`./build.ps1` builds every published file into `publish/`, or only the platforms named: `./build.ps1 win android` (details in §8h).
+- `./build.ps1 android debug`: a quick Android Debug APK (about a minute instead of four, no LLVM, slower at runtime) into `publish/Timbratune-android-debug/`, for testing rather than installing.
+- `./build.ps1 android store`: the Google Play bundle (`.aab`) and its native debug symbols (`.zip`) into `publish/Timbratune-android-store/`; needs the signing keystore (§10).
+- It runs in Windows PowerShell 5.1 and PowerShell 7 (`pwsh`, also on Linux); on Windows it can also be started by double-click or right-click → Run with PowerShell (the window then stays open at the end). It checks for the .NET 10 SDK and at the end lists the files of the platforms it built.
+- On Windows the Linux packages are made in WSL (`Ubuntu-24.04`); on Linux `scripts/package-linux.sh` runs directly.
+- The Android SDK and a JDK 17–21 are found through `ANDROID_SDK` / `ANDROID_HOME` / `ANDROID_SDK_ROOT` and `ANDROID_JDK` / `JAVA_HOME`, or in the usual install folders (Android Studio, Visual Studio, the README setup, Linux packages). If either is missing, the script lists every place it looked.
+
+### 11.3 Android release builds
+
+`./build.ps1 android`, or by hand:
+
+```powershell
+dotnet publish src/Reyfen.Timbratune.Android -c Release -f net10.0-android -o publish/Timbratune-android `
+  "-p:AndroidSdkDirectory=$env:LOCALAPPDATA\Android\Sdk" "-p:JavaSdkDirectory=$env:LOCALAPPDATA\Android\jdk"
+# → publish\Timbratune-android\Timbratune-v<version>-android.apk  (~42 MB, arm64 + x86_64, LLVM AOT; Android 8.0+)
+adb install -r publish\Timbratune-android\Timbratune-v<version>-android.apk
+```
+
+- **Signing:** the Release build is sideloadable. It's signed with the keystore at `%USERPROFILE%\.timbratune\android\timbratune.keystore` (`~/.timbratune/android/` on Linux; password in `password.txt` beside it, written twice on two lines, or `TIMBRATUNE_KEYSTORE` for the path and `TIMBRATUNE_KEYSTORE_PASS` for the password), else with the local debug key. An app can only be updated by an APK signed with the same key (§10).
+- **Microphone:** Android asks for microphone access the first time you press Record.
+- **Takes:** in `Android/data/com.reyfen.timbratune/files/takes`, which a PC sees over USB.
+- **Emulator:** created with `avdmanager create avd -n EuphoniaPixel -k "system-images;android-35;google_apis;x86_64" -d pixel_7`. It uses the Windows Hypervisor Platform. Its virtual microphone plays a steady 100 Hz tone, which Timbratune measures as 100.0 Hz.
+- **Fake mic on Android** (Debug builds only): `adb push take.wav /data/local/tmp/` then `adb shell run-as com.reyfen.timbratune cp /data/local/tmp/take.wav files/fake-mic.wav`.
+- **Emoji:** the app carries a 56 KB subset of Noto Color Emoji (OFL), built by `scripts/make-emoji-font.py`. Android's own emoji font is COLRv1, which this Skia can't draw. Re-run the script after adding emoji to the UI.
+- **Reference voices:** `dotnet build -p:TimbratuneReferenceVoices=true` turns the VCTK reference voices back on in the metric comparison; off by default (`Features.cs`, §8a).
+
+### 11.4 Where takes are stored
+
+`%APPDATA%\Timbratune\takes\` (Linux `~/.config/Timbratune/takes/`; Android `Android/data/com.reyfen.timbratune/files/takes`). The footer link opens the folder. Each take is one folder, found by listing the folder (there is no index), so takes can be copied in or deleted by hand:
+
+```
+takes/003 rainbow passage/
+  take.wav        44.1 kHz mono PCM16, recorded directly (no ffmpeg step)
+  take.json       label, note, date, metrics, audio format, analysis settings
+  detail.json     10 ms pitch contour + phrases + register summary + trends
+  series.json     per-frame lists (pitch, loudness, HNR, F1–F3, weight, jitter), used for export
+```
+
+Audio or `.tmbr` files dropped into `takes/` are imported on the next start; the 📥 import button does the same from a file picker. Data folders from earlier versions (`recordings.json` + `audio/` + `analysis/`, the Electron app's layout) are converted on first start; `recordings.json` is kept as `recordings.json.migrated`. Takes from builds made before the rename, in `Euphonia-CSharp`, are moved over first. This is deliberately separate from the original Electron app's `%APPDATA%\Euphonia`.
+
+### 11.5 How the analysis works (as the README described it)
+
+`AcousticsAnalysisEngine` repeats `analyze.py`'s measurement steps with `Reyfen.Timbratune.Acoustics`, using the same settings: autocorrelation pitch 75–500 Hz; Burg formants at 5500 and 5000 Hz ceilings; cross-correlation harmonicity; pulses for jitter and shimmer; intensity and silence-based phrases; a Hamming-windowed spectrum per voiced frame for H1/A3; a 100 Hz LTAS. `AnalysisPostProcessor` then does the numpy/statistics half: the F2 gate, the ceiling choice, medians, the Iseli–Alwan H1*–A3* correction, phrase and register statistics. Independent analyses run in parallel; a 10 s take takes about 0.2 s (about 1.4 s on a single core). (`analyze.py` is only the frozen expectation of the parity tests now, not a reference.)
+
+**Verification:**
+- `tests/Reyfen.Timbratune.Core.Tests/ParityTests` compares every metric with `analyze.py`'s output for four VCTK clips. Everything matches to the rounded digit except jitter and shimmer, within 4%: the fixtures were made with parselmouth's bundled Praat 6.1.38, whose pulse picking differs slightly from Praat 7, which the C# code follows.
+- `tests/Reyfen.Timbratune.Acoustics.Tests/OracleTests` compares each component frame by frame with real Praat 7 when it is installed: F0 < 1e-5 Hz with the same voicing decisions; intensity < 1e-13 dB; HNR < 1e-10 dB; pulses all identical; formants < 0.001 Hz where there is signal; spectrum / LTAS to machine precision. The same run checks that the final metrics are identical to the Praat-backed engine.
+
+### 11.6 Live analysis (as the README described it; details in §5)
+
+`LiveAnalyzer` receives microphone samples and processes every newly complete 10 ms frame; the UI refreshes about 10× per second. Timelines above the stat cards (pitch, loudness, pitch variability, HNR, F2, F3, weight, in-register melody, jitter) are drawn over their metric's zone bands. The time axis grows in 10 s steps; the "live graphs show" dropdown switches to a sliding window of the last 10, 30, 60 or 120 s. On Stop the live view freezes, the full analysis runs, and the saved take replaces it.
+
+Each line is smoothed over a window centred on its time (a median, an energy average for loudness, or an SD for movement); near "now" only the past is available, so the newest part is an estimate that settles as more audio arrives. A window never reaches across a pause. Four layers, most to least certain: the full analysis after Stop; the live frame points; the smoothed live line (its tail still missing future data); the prediction, which leans toward 50% of the settled line's recent trend and carries the line to "now" (loudness and pitch hold their newest value instead). The chart eases each redraw over 0.25 s. The live pitch line uses a ~0.2 s median and breaks at unvoiced gaps over 60 ms and at jumps over 3 semitones in 20 ms; saved takes draw the exact 10 ms contour.
+
+Live and full analysis share the frame kernels (`Acoustics/Streaming`) and the assembler (`RawAnalysisAssembler`); the saved WAV is trimmed by up to 10 ms so both grids match. After that the final live snapshot matches the saved analysis exactly for pitch statistics, contour, register and melody, phrases and landed endings, jitter and shimmer; formants within 11 Hz, HNR 0.2 dB, weight 0.3 dB, loudness 0.03 dB (`LiveAnalysisTests`). Delayed or approximate while live: the last ~0.1–0.3 s of the pitch path; phrases appear only after a pause; jitter and shimmer once a voiced stretch ends; formants, weight and phrase boundaries are relative to the loudest moment so far; LTAS tilt only at Stop.
+
+### 11.7 Feature status, as of v0.2–v0.3
+
+**Ported from Euphonia:** recording with an optional label; analysis; the seven stat cards with zone bars; the metric reference modal (take dots in lanes, click-to-play; VCTK reference ticks off by default); resonance gauges; register & phrasing (contour chart, stat tiles, drop-position bars, tip); trends within the take (equal whole-second slices, at most 10 points, ten charts, stored as `trends` in `detail.json`; older takes re-analyzed once in the background); the take title with its date; the recordings list (waveform player, rename, delete, save menu: `.wav`, `.tmbr`, PDF shown but not implemented); import of audio and `.tmbr` files (WAV, AIFF, MP3, FLAC everywhere; M4A/AAC, ALAC, WMA, AMR, WebM and video audio through Windows' and Android's decoders; nearly anything with FFmpeg); the take switcher; the cheat sheet; light and dark themes following the OS.
+
+**Not yet ported:** template and Gemini insights; the settings screen (API key, delete-all); PDF export; the other six themes; installer and auto-update; migrating the Electron app's `.webm` takes.
+
+**Quirks carried over on purpose** (`TODO(port)` in the code): `Zones.ZoneOf` puts values below the lowest zone into the last zone, as `zones.ts` does; the cheat sheet's F2 and weight guide numbers disagree with the zone tables, as `CheatSheet.tsx` does.
+
+**Platforms verified:**
+
+| When | Platform | Where | What was checked |
+|---|---|---|---|
+| 2026-10-01 | Windows 10 x64 | single-file exe | starts; records with fake and real mic; live graphs; saves |
+| 2026-10-01 | Linux | Ubuntu 24.04 in WSL 2 (WSLg) | same as Windows; results identical to every digit |
+| 2026-10-01 | Android 15 | Pixel 7 emulator (x86_64) | Debug and Release; microphone prompt; real AAudio capture (100 Hz tone measured 100.01 Hz); phone layout |
+| 0.2.0 | Android | Pixel 9 (Android 17), Pixel 4a, USB | live recording speed (Pixel 9: ~58 fps, 2–3 % slow frames), analysis time, scrolling |
+| 2026-10-08 | Android | Pixel 7 emulator | phone layout of take, live view, trends and cards in both themes; importing dropped files |
+| 0.2.0 | Windows / Linux | single-file exe; WSL | `build.ps1` builds; the Linux-built exe runs on Windows; import, export, rename, folder link |
